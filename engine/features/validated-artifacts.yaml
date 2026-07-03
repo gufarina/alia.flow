@@ -1,0 +1,45 @@
+# Alia Flow - Validated Artifacts (contrato estruturado)
+# Define como um Artifact e validado contra o contrato do seu tipo, de forma deterministica.
+# Prosa e contexto em validated-artifacts.md. A Frugal Skill validate-artifact (frugal-skills.yaml)
+# executa esta validacao dentro do Quality Gate. Squads podem ADICIONAR tipos e regras; o passo
+# format-before-content e o Fail-com-desvio nao mudam. Sem acentos, sem emojis. UTF-8 sem BOM.
+
+feature: validated-artifacts
+spec: engine/features/validated-artifacts.md
+runs_as: frugal-skill                 # validate-artifact, custo zero de token
+runs_in: quality-gate                 # porta deterministica do criterio "Funciona"
+gate_criterion: 1                     # Funciona (quality-gate.yaml)
+
+# A regra dura: formato antes de conteudo. Estrutura barata reprova antes do julgamento caro.
+policy:
+  format_before_content: true
+  on_contract_fail:
+    verdict: Fail
+    automatic: true
+    report: deviation                 # campo faltante / formato errado, apontado
+  on_contract_pass: proceed_to_content_review
+
+# Contratos por tipo de Artifact. Cada tipo declara um schema/checklist de formato.
+# Lista extensivel por squad; estes sao os tipos base que o studio.example exercita.
+artifact_contracts:
+  - type: json
+    contract: json-schema
+    checks: [valid_json, required_fields, types]
+  - type: copy
+    contract: copy-checklist
+    checks: [headline_present, cta_present, expert_mind_cited]
+  - type: story
+    contract: story-checklist
+    checks: [acceptance_criteria_given_when_then]
+  - type: migration
+    contract: migration-checklist
+    checks: [reversible, idempotent, no_destructive_without_flag]
+  - type: component
+    contract: component-checklist
+    checks: [renders, props_typed, no_domain_logic_leak]
+
+links:
+  prose: features/validated-artifacts.md
+  quality_gate: governance/quality-gate.md
+  quality_gate_contract: governance/quality-gate.yaml
+  frugal_skill: features/frugal-skills.yaml

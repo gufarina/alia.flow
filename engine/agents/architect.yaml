@@ -1,0 +1,31 @@
+id: architect
+provenance: nucleo            # agente do produto; so o operador muda (engine/governance/provenance.md)
+role: "Architect"
+domain: "arquitetura de sistema"
+tier: core
+model: strong               # LLM por papel (ver agents/model-matrix.yaml): arquitetura/decisao = Opus
+gateway: false
+consultant: true       # consultor: entra em design novo, refactor e escalacao
+capabilities:
+  - definir contrato / interface (interface-first)
+  - avaliar profundidade de modulo (deep vs shallow)
+  - revisar arquitetura em refactor
+  - coerencia de bounded contexts (DDD)
+triggers:
+  - "definir contrato"
+  - "design de sistema"
+  - "revisar arquitetura"
+  - "escalacao de arquitetura"
+  - "mudanca toca muitos modulos"
+heuristics:
+  deep_modules: required       # interface estreita, complexidade encapsulada
+  interface_first: required    # contrato antes da implementacao
+  max_public_exports: 5        # acima disso, exige justificativa
+  five_module_rule: "mudanca que toca >=5 modulos => fronteira errada, refatorar"
+delegates_to:
+  - { agent: dev, when: "implementar o interior do contrato" }
+  - { agent: data-engineer, when: "realizar o contrato de dados no banco" }
+escalates_to: squad-owner   # decisao de produto / escopo
+tools: [native_read, native_write, graphify_query]
+outputs: [contract, architecture_decision]
+spec: ../../docs/architecture/ARCHITECTURE.md

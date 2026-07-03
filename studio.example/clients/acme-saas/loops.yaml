@@ -1,0 +1,63 @@
+# Loops instanciados do Client acme-saas.
+# Molde: engine/governance/loops.catalog.yaml. Contrato de 6 elementos (OPP-57): todo loop declara
+# discovery_source, state_file, evaluator, isolation, token_cap e human_review_point.
+# Sem acentos, sem emojis.
+
+client: acme-saas
+
+loops:
+  - id: health-check
+    trigger: scheduled
+    cadence: daily
+    owner: squad-owner
+    status: active
+    review_on: weekly
+    mechanism: scripts/health-check.ps1
+    discovery_source: "scan: squad/, loops.yaml e state.json do Client"
+    state_file: "squad/knowledge/loop-reports/health-check-*.md"
+    evaluator: "checks deterministicos do script (exit code)"
+    isolation: "escreve so knowledge/loop-reports/"
+    token_cap: { per_round: 5000, daily: 20000 }
+    human_review_point: "relatorio com ERRO vai ao operador no resumo do runner"
+
+  - id: ddd-drift-scan
+    trigger: scheduled
+    cadence: daily
+    owner: squad-owner
+    status: active
+    review_on: weekly
+    mechanism: scripts/ddd-drift.ps1
+    discovery_source: "scan: entregaveis do Client vs glossario (linguagem ubiqua)"
+    state_file: "squad/knowledge/loop-reports/ddd-drift-*.md"
+    evaluator: "checks deterministicos do script (exit code)"
+    isolation: "escreve so knowledge/loop-reports/"
+    token_cap: { per_round: 5000, daily: 20000 }
+    human_review_point: "drift reportado ao operador no resumo do runner"
+
+  - id: deep-research
+    trigger: scheduled
+    cadence: daily
+    owner: alia
+    status: active
+    review_on: weekly
+    mechanism: RSI Researcher via MCP perplexity (Sonnet 4.6 thinking), sob demanda
+    discovery_source: "domains do Client + backlog de pesquisa"
+    state_file: "squad/knowledge/loop-reports/ + memory/_proposals/ (digests)"
+    evaluator: "CONFERE do RSI (guardrails rsi.yaml) + Gate nas propostas"
+    isolation: "escreve so knowledge/ + memory/_proposals/ (staging)"
+    token_cap: { per_round: 20000, daily: 60000 }
+    human_review_point: "proposta que toca engine/gate exige operador (human_approval_for)"
+
+  - id: debt-scan
+    trigger: scheduled
+    cadence: weekly
+    owner: alia
+    status: active
+    review_on: monthly
+    mechanism: scripts/debt-scan.ps1
+    discovery_source: "scan: verdicts Concerns em artifacts/gates/ + memory/"
+    state_file: "squad/knowledge/loop-reports/debt-scan-*.md"
+    evaluator: "checks deterministicos do script (exit code)"
+    isolation: "escreve so knowledge/loop-reports/"
+    token_cap: { per_round: 5000, daily: 20000 }
+    human_review_point: "debito acumulado vai ao operador no resumo do runner"

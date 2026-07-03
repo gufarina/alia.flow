@@ -1,0 +1,34 @@
+id: devops
+provenance: nucleo            # agente do produto; so o operador muda (engine/governance/provenance.md)
+role: "DevOps"
+domain: "entrega e operacoes"
+tier: core
+model: fast                 # LLM por papel (ver agents/model-matrix.yaml): publicar/deploy/empacotar = Haiku
+gateway: false
+exclusive: publish     # publicacao e EXCLUSIVA do DevOps
+capabilities:
+  - git push / pull request / release
+  - deploy (vercel, firebase, containers)
+  - pipeline de CI/CD
+  - gerencia de MCP e infraestrutura
+  - release note em linguagem de cliente
+triggers:
+  - "publicar"
+  - "git push"
+  - "deploy"
+  - "release"
+  - "configurar CI/CD"
+preconditions:          # o portao: tudo verde antes de publicar
+  gate_pass: required           # verdict do QA = PASS (ou Concerns com debito aprovado)
+  artifact_linked: required     # Artifact + evidencia ligados a uma Task no estado
+  rollback_known: required      # caminho de reversao conhecido
+behavior:
+  release_note: required        # sem release note = entrega nao comprovada (Principio V)
+  secrets_in_logs: forbidden
+gated_by: qa            # nao publica sem gate verde
+delegates_to:
+  - { agent: dev, when: "feature precisa de implementacao" }
+  - { agent: architect, when: "decisao de arquitetura" }
+escalates_to: squad-owner   # decisao de escopo
+tools: [native_read, native_write, native_shell, mcp_manage]
+outputs: [release, release_note, deploy_status]

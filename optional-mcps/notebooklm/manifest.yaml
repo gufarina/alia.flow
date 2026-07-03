@@ -1,0 +1,92 @@
+# Manifesto de MCP - notebooklm (pesquisa ancorada em fontes, respostas com citacao).
+# Convencao: optional-mcps/{nome}/manifest.yaml. Ver optional-mcps/README.md.
+# Presenca neste diretorio = aprovado para uso (presenca = aprovacao).
+# Gerencia de MCP e exclusiva do DevOps (engine/tools.md, Governanca de MCP).
+# Sem acentos, sem emojis. UTF-8 sem BOM.
+
+nome: notebooklm
+
+# Como o cliente fala com o servidor: stdio (processo local) ou http (endpoint remoto).
+# stdio EXIGE command e proibe url; http EXIGE url e proibe command.
+# A autenticacao vive no profile persistente do proprio servidor (browser), nao em env.
+transport: stdio
+command: "npx -y notebooklm-mcp@latest"
+
+# As tools que o servidor expoe. default_enabled deixa o catalogo declarar a
+# allow-list fina: liga o caminho de pesquisa que o agente de pesquisa precisa;
+# gestao, auth, audio e sessao entram desligados e o DevOps habilita sob demanda.
+tools:
+  # Caminho de pesquisa (ligado): achar o notebook certo e perguntar a fonte.
+  - name: list_notebooks
+    description: "Lista os notebooks disponiveis na biblioteca."
+    default_enabled: true
+  - name: search_notebooks
+    description: "Acha um notebook por tema/assunto."
+    default_enabled: true
+  - name: get_notebook
+    description: "Detalhes de um notebook (fontes, metadados)."
+    default_enabled: true
+  - name: select_notebook
+    description: "Define o notebook ativo da sessao de pesquisa."
+    default_enabled: true
+  - name: ask_question
+    description: "Pergunta ancorada nas fontes do notebook; resposta com citacao (Gemini)."
+    default_enabled: true
+
+  # Gestao de notebook (desligado): muda o acervo, nao a pesquisa.
+  - name: add_notebook
+    description: "Adiciona um notebook a biblioteca."
+    default_enabled: false
+  - name: update_notebook
+    description: "Atualiza metadados de um notebook."
+    default_enabled: false
+  - name: remove_notebook
+    description: "Remove um notebook da biblioteca."
+    default_enabled: false
+  - name: add_source
+    description: "Anexa uma fonte a um notebook."
+    default_enabled: false
+
+  # Audio overview (desligado): gera/baixa o resumo em audio, fora do escopo de pesquisa.
+  - name: generate_audio
+    description: "Gera o audio overview do notebook."
+    default_enabled: false
+  - name: get_audio_status
+    description: "Status da geracao de audio."
+    default_enabled: false
+  - name: download_audio
+    description: "Baixa o audio gerado."
+    default_enabled: false
+
+  # Auth e sessao (desligado): infra, exclusivo do DevOps.
+  - name: setup_auth
+    description: "Faz o login inicial no Google/NotebookLM."
+    default_enabled: false
+  - name: re_auth
+    description: "Refaz a autenticacao quando expira."
+    default_enabled: false
+  - name: list_sessions
+    description: "Lista sessoes de browser ativas."
+    default_enabled: false
+  - name: reset_session
+    description: "Reinicia a sessao de browser."
+    default_enabled: false
+  - name: close_session
+    description: "Fecha a sessao de browser."
+    default_enabled: false
+
+  # Sistema (desligado): saude, estatistica e limpeza - operacao do DevOps.
+  - name: get_health
+    description: "Checa a saude do servidor."
+    default_enabled: false
+  - name: get_library_stats
+    description: "Estatisticas da biblioteca de notebooks."
+    default_enabled: false
+  - name: cleanup_data
+    description: "Limpa dados/cache do servidor."
+    default_enabled: false
+
+# A nota de governanca: estar neste diretorio = aprovado para uso.
+# Espelha o ciclo proposed/active da provenance (engine/governance/provenance.md):
+# diretorio presente = active; arquivar o diretorio = retirar a aprovacao.
+approval: "presenca = aprovacao (estar em optional-mcps/ = aprovado; curado pelo DevOps)"

@@ -1,0 +1,6 @@
+{
+  "studio": "fixture: caminho feliz do budget-check (OPP-58)",
+  "costs": [
+    { "id": "loop-teste", "tokens": 1000, "ts": "2026-07-01T08:00:00Z" }
+  ]
+}

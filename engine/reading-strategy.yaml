@@ -1,0 +1,39 @@
+# Estrategia de Leitura - contrato maquinavel (par de reading-strategy.md).
+# Ler sem ler tudo: indice mestre + assinatura + grep-por-secao. OPP-69.
+# Sem acentos, sem emojis. UTF-8.
+
+id: reading-strategy
+provenance: nucleo
+
+# Os tres padroes que toda leitura de KB markdown segue, na ordem.
+patterns:
+  - id: master_index
+    is: "Indice de 1 linha por item por nivel (knowledge/MAP.md; engine/MAP.md e o exemplo)."
+    rule: "Ler o indice decide o que abrir; indice acima do teto e fatiado, nao inchado."
+  - id: signature_first
+    is: "Cada doc abre com titulo (# ...) + descricao de 1 linha (blockquote > ...)."
+    rule: "Decidir por assinatura antes de abrir o corpo (outline-first)."
+  - id: section_grep
+    is: "Headers previsiveis (## ...) permitem ler so a fatia necessaria."
+    rule: "Buscar o header e ler N linhas; nunca o arquivo inteiro por padrao."
+
+order: [master_index, signature_first, section_grep]
+
+# Teto do indice mestre (repo-map cabe pequeno).
+index_budget_lines: 80
+
+# O que fica de fora de proposito (KISS/YAGNI).
+rejected:
+  - embeddings
+  - rag_vetorial
+  - pagerank_sobre_markdown
+
+mechanism:
+  script: scripts/kb-index.ps1
+  does: "Gera/valida knowledge/MAP.md de um Client; reprova indice acima do teto ou doc sem assinatura."
+
+references:
+  - reading-strategy.md
+  - tools.md
+  - MAP.md
+  - workflows/story-cycle.md

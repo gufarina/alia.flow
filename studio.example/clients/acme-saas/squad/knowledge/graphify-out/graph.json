@@ -1,0 +1,18 @@
+{
+  "generated": "2026-06-14",
+  "source": "clients/acme-saas/squad/knowledge",
+  "nodes": [
+    { "id": "n1", "label": "Acme SaaS", "type": "produto" },
+    { "id": "n2", "label": "Painel Pulse", "type": "conceito" },
+    { "id": "n3", "label": "Cartao", "type": "conceito" },
+    { "id": "n4", "label": "Ativacao", "type": "metrica" },
+    { "id": "n5", "label": "Headline", "type": "copy" },
+    { "id": "n6", "label": "Chamada de acao", "type": "copy" }
+  ],
+  "edges": [
+    { "from": "n1", "to": "n2", "rel": "tem" },
+    { "from": "n2", "to": "n3", "rel": "contem" },
+    { "from": "n2", "to": "n4", "rel": "dirige" },
+    { "from": "n5", "to": "n6", "rel": "precede" }
+  ]
+}

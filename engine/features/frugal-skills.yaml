@@ -1,0 +1,48 @@
+# Alia Flow - Frugal Skills (contrato estruturado)
+# Espelho estruturado: catalogo das capacidades deterministicas (sem LLM). Prosa e contexto em
+# frugal-skills.md (fonte canonica). O smoke valida o pareamento prosa<->yaml. O Frugality Check
+# (passo mechanical_before_judgment) descreve a regra script-vs-Specialist que este catalogo encoda.
+# Squads podem ADICIONAR skills; a invariante mechanical_only nunca muda.
+# Sem acentos, sem emojis. UTF-8 sem BOM.
+
+feature: frugal-skills
+spec: engine/features/frugal-skills.md
+principle: VIII                       # Frugality Without Quality Loss
+frugality_check_step: 4              # mechanical_before_judgment (tools.yaml)
+
+# Lei do roteamento: so o deterministico vira script. Julgamento sempre vai pro Specialist.
+invariant:
+  mechanical_only: true
+  on_doubt: specialist               # qualidade acima de economia
+  cost: zero_model_tokens
+
+# Catalogo. Cada skill e deterministica e produz saida verificavel sem chamar modelo.
+skills:
+  - id: validate-artifact
+    does: "Valida um Artifact contra o contrato do seu tipo"
+    used_by: validated-artifacts     # roda dentro do Quality Gate
+    output: pass | fail+deviation
+  - id: state-digest
+    does: "Resume state.json num digest legivel"
+    used_by: governance-status-loop
+  - id: path-healthcheck
+    does: "Verifica existencia e integridade de paths"
+    used_by: task-preflight
+  - id: file-organize
+    does: "Renomeia/move arquivos por regra declarada"
+    used_by: studio-hygiene
+  - id: data-compute
+    does: "Contagens, somas e formatacoes deterministicas"
+    used_by: specialist-data-prep
+
+# Metrica viva que prova a economia ao longo do tempo (observada pelo RSI).
+living_metric:
+  name: cost_per_artifact
+  direction: decreasing
+  owner: rsi
+
+links:
+  prose: features/frugal-skills.md
+  frugality_check: tools.yaml
+  quality_gate: governance/quality-gate.md
+  validated_artifacts: features/validated-artifacts.md

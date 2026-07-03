@@ -1,0 +1,42 @@
+{
+  "studio": "Fixture Paradas",
+  "updated": "2026-07-03",
+  "tasks": [
+    {
+      "id": "TASK-OLD",
+      "client": "cliente-x",
+      "project": "cliente-x / projeto-a",
+      "title": "Tarefa aberta ha muito tempo (prato caindo)",
+      "specialist": "alia",
+      "status": "in_progress",
+      "artifact": "",
+      "base_artifact": "cliente-x / brief",
+      "session": "sess-fixture",
+      "created": "2026-06-01T09:00:00Z"
+    },
+    {
+      "id": "TASK-NEW",
+      "client": "cliente-x",
+      "project": "cliente-x / projeto-a",
+      "title": "Tarefa aberta recente (dentro do prazo)",
+      "specialist": "alia",
+      "status": "in_progress",
+      "artifact": "",
+      "base_artifact": "cliente-x / brief",
+      "session": "sess-fixture",
+      "created": "2026-07-01T09:00:00Z"
+    },
+    {
+      "id": "TASK-DONE",
+      "client": "cliente-x",
+      "project": "cliente-x / projeto-a",
+      "title": "Tarefa concluida ha tempo (nao conta como parada)",
+      "specialist": "alia",
+      "status": "done",
+      "artifact": "cliente-x/art.md",
+      "base_artifact": "cliente-x / brief",
+      "session": "sess-fixture",
+      "created": "2026-05-01T09:00:00Z"
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+# Alia Flow - Manifesto de Selecao de Ferramentas e Frugalidade
+# Espelho estruturado de tools.md. Encoda a prioridade de camadas, o Frugality Check e a
+# metrica de Budget em forma checavel. Fonte canonica: tools.md. O smoke valida o pareamento.
+# Sem acentos, sem emojis. UTF-8 sem BOM.
+
+principle: VIII   # Frugality Without Quality Loss
+invariant: "Reduzir custo e obrigatorio; reduzir qualidade e proibido."
+
+# Prioridade de camadas: a mais barata que resolve com qualidade vence.
+# Subir de camada exige justificativa explicita.
+tool_priority:
+  - layer: native
+    rank: 1
+    use_for: [read, write, search, run_command]
+    cost: low
+  - layer: mcp_specific
+    rank: 2
+    use_for: [browser, scraping, database, web_search, external_api]
+    cost: medium
+    requires: justification_to_climb
+  - layer: mcp_generic
+    rank: 3
+    use_for: []        # evitar: sempre preferir nativa ou MCP especifico
+    cost: high
+
+# Os cinco filtros, em ordem. Pare no primeiro que resolve.
+frugality_check:
+  - step: 1
+    name: memory_before_reprocessing
+    question: "Existe contexto na Memory para recall em vez de recalcular?"
+    principle: VII
+  - step: 2
+    name: graph_before_scan
+    question: "A Memory em grafo leva direto ao alvo, evitando grep/glob cego?"
+  - step: 3
+    name: right_force
+    question: "E o modelo/agente certo? Sem canhao para mosquito."
+  - step: 4
+    name: mechanical_before_judgment
+    question: "Da para resolver por Frugal Skill (script, custo zero de token)?"
+    ref: features/frugal-skills.md
+  - step: 5
+    name: compact_before_handoff
+    question: "Compactar o handoff e extrair so o essencial antes de entregar?"
+
+# Budget por operacao + a metrica viva que o RSI observa.
+budget:
+  unit: tokens
+  per_operation: true
+  living_metric:
+    name: cost_per_artifact
+    direction: decreasing      # regressao se sobe sem ganho de qualidade
+    owner: rsi
+
+governance:
+  mcp_management: devops_exclusive   # instalar/configurar/remover MCP
+
+# LEI de Pesquisa Segura: agente de pesquisa nao se multiplica nem entra em loop.
+# Todo agente com second_brain_engines (notebooklm, perplexity...) declara research_limits
+# com estes valores; o smoke (produto + studio) reprova quem nao tiver.
+research_safety:
+  applies_to: "agentes com second_brain_engines (MCP de web/fontes)"
+  routing:
+    order: [perplexity_normal, notebooklm]   # Perplexity busca normal primeiro; NotebookLM quando nao bastar
+    perplexity_model: claude_sonnet_46_thinking  # modelo PADRAO (pplx_claude_sonnet_think), liberado no Pro
+    sonar: forbidden                         # JAMAIS Sonar (regra dura do operador)
+    deep_research: forbidden_unless_operator # quota escassa; so a pedido explicito
+    notebooklm: escalation                   # cerebro ancorado, mais forte para profundidade
+  research_limits:
+    max_parallel: 1                  # uma consulta por vez; nunca enxame
+    self_spawn: forbidden            # nao cria sub-agentes nem dispara lote sozinho
+    fanout: human_approval           # lote/paralelo exige aviso de escala/custo + sim do operador
+    max_queries_per_task: 8          # teto duro; atingiu, para e entrega o que tem
+    on_quota_or_error: stop_and_report  # checa quota antes; erro/quota = para, nunca re-tenta em loop
+  required_fields: [max_parallel, self_spawn, fanout, on_quota_or_error]
+
+links:
+  prose: tools.md
+  constitution: constitution.md
+  persona: agents/persona.md
+  frugal_skills: features/frugal-skills.md

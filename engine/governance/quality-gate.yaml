@@ -1,0 +1,73 @@
+# Alia Flow - Quality Gate (contrato estruturado)
+# Fonte de verdade dos criterios e verdicts. Prosa e contexto em quality-gate.md.
+# Validadores deterministicos e gate artifacts (clients/{id}/artifacts/gates/*.gate.md) herdam
+# este contrato. Squads podem ADICIONAR criterios; nunca REMOVER os minimos.
+# Sem acentos, sem emojis. UTF-8 sem BOM.
+
+gate: quality-gate
+spec: engine/governance/quality-gate.md
+triggered_by: gate-on-artifact          # loop dinamico em governance/loops.md
+
+# Quando roda: a cada Artifact, antes de chegar ao operador.
+runs_on: every-artifact
+
+# Os 6 criterios minimos. mutable=false: nenhum squad pode remover. Squads adicionam extras.
+minimum_criteria:
+  mutable: false
+  criteria:
+    - id: 1
+      name: Funciona
+      question: "O entregavel faz o que deveria, sem quebrar?"
+      # OPP-59 (avaliador que AGE; mudanca de Gate aprovada pelo CEO em 01/jul):
+      evidence: execution                    # PASS exige EVIDENCIA DE EXECUCAO anexada [MEDIDO comando -> saida]; leitura de codigo NAO e prova
+      evaluator_stance: broken-until-proven  # postura no gate-on-artifact: quebrado ate prova em contrario
+      proof_by_artifact_type:
+        code: "roda teste/smoke e cita a saida observada"
+        ui: "abre preview e interage (Playwright/preview; DOM/funcional quando screenshot indisponivel)"
+        doc: "confere fatos contra a fonte lida (ja coberto pelo criterio 6, Grounding)"
+        script: "executa em fixture e cita a saida observada"
+      when_execution_impossible: Concerns    # ambiente indisponivel NUNCA vira Pass; motivo registrado no verdict
+    - id: 2
+      name: Aderente ao DDD
+      question: "Usa so termos da linguagem ubiqua do Client? Respeita os bounded contexts?"
+    - id: 3
+      name: Frugal
+      question: "Foi produzido sem desperdicio de tokens? Ha caminho mais barato?"
+    - id: 4
+      name: Rastreavel
+      question: "Tem Artifact (evidencia) ligado a uma Task?"
+    - id: 5
+      name: Simplicidade / Atrito
+      question: "A entrega REDUZ o atrito do usuario (menos passos, menos perguntas, menos peso), ou e so capacidade/peso a mais?"
+    - id: 6
+      name: Fundamentada
+      question: "Toda afirmacao de fato/diagnostico cita a fonte verificavel que foi LIDA, ou esta rotulada como inferencia?"
+      check: grounding-label-present       # deterministico: afirmacao de peso tem [MEDIDO arquivo:linha] ou [INFERIDO]?
+      fail_when: "afirmacao de peso sem rotulo de proveniencia"
+
+# Resultado possivel do gate. Todo verdict e registrado na Memory com evidencia.
+verdicts:
+  - verdict: Pass
+    meaning: "entrega liberada, sem ressalva"
+    action: "segue ao operador"
+  - verdict: Concerns
+    meaning: "liberada com ressalvas registradas"
+    action: "input de RSI; vira debito se nao resolvida (pego por debt-scan)"
+  - verdict: Fail
+    meaning: "volta para correcao"
+    action: "loop fix-on-fail (max N abordagens diferentes) -> re-gate; persistiu -> escala a alia"
+
+# DDD anti-drift: detalhamento do criterio 2.
+ddd_anti_drift:
+  precondition: "Client sem DDD documentado (glossario + bounded contexts) -> gate bloqueia entrega"
+  violations:
+    - type: termo-fora-do-glossario
+      result: Concerns | Fail
+      report: "aponta o termo divergente e sugere o termo correto"
+    - type: violacao-bounded-context
+      result: Fail
+    - type: contradicao-linguagem-estabelecida
+      result: Fail
+
+# Toda saida do gate exige prova ligada a uma Task.
+evidence_required: true

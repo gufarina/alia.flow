@@ -1,0 +1,9 @@
+# Agente rex (exemplo neutro). Sem acentos, sem emojis.
+agent:
+  id: rex
+  name: Rex
+  role: Specialist
+  gateway: false
+  layer: B
+  domain: requisitos-e-stories
+  expert_mind: "Especificacao por exemplo"

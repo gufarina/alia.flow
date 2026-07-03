@@ -1,0 +1,7 @@
+# Fixture: alvo de provenance agent-authored. Usado pelo smoke para provar
+# require_for_agent_authored: [diff, evidence].
+# Automacao sem diff+evidence neste alvo TEM que reprovar (exit 1);
+# com -Diff -Evidence TEM que permitir (exit 0).
+id: fixture-agent-authored
+provenance: agent-authored
+note: alvo agent-authored - automacao propoe via diff, com evidencia.

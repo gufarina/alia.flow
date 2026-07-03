@@ -1,0 +1,7 @@
+{
+  "studio": "fixture: prova negativa do budget-check (OPP-58)",
+  "costs": [
+    { "id": "loop-teste", "tokens": 4000, "ts": "2026-07-01T08:00:00Z" },
+    { "id": "loop-teste", "tokens": 9000, "ts": "2026-07-01T09:00:00Z" }
+  ]
+}

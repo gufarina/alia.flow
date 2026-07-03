@@ -1,0 +1,141 @@
+# Alia Flow - Catalogo de Loops (manifesto estruturado)
+# Fonte de verdade da taxonomia de loops. Prosa e contexto em loops.md.
+# A Alia (Loop Designer) le ESTE catalogo, seleciona os loops do projeto e os instancia em
+# clients/{id}/loops.yaml. Este arquivo NAO e um runtime instance - e o molde.
+# Execucao padrao dos agendados: SOB DEMANDA via a skill (a Alia sugere proativamente quando devido,
+# opt-in, e roda via scripts/run-loops.ps1). Task Scheduler (install-loops.ps1) e opcional.
+# Sem acentos, sem emojis. UTF-8 sem BOM.
+
+catalog: loops
+spec: engine/governance/loops.md
+
+# Contrato que TODO loop instanciado (clients/{id}/loops.yaml) deve obedecer.
+# Campos obrigatorios sao validados pelo smoke test.
+instance_schema:
+  required: [id, trigger, cadence, owner, status, review_on,
+             discovery_source, state_file, evaluator, isolation, token_cap, human_review_point]
+  recommended: [cost_class, domains, produces, mechanism, created, last_result, proactive]
+  # Contrato de 6 elementos (OPP-57, orange-book secao 09). Valores sao POR INSTANCIA (o Loop
+  # Designer preenche ao instanciar; o molde nao traz default). Loop active sem os 6 = FAIL no smoke.
+  contract_6_elements:
+    discovery_source: "de onde o loop ACHA o proprio trabalho (arquivo/scan/evento que le)"
+    state_file: "onde a volta registra onde parou (memoria em disco entre voltas)"
+    evaluator: "quem diz NAO (instancia != executor; deterministico quando possivel)"
+    isolation: "o que o loop pode tocar (escopo de escrita; 'none' explicito quando so le)"
+    token_cap: "teto de gasto { per_round: N, daily: N } - mecanismo scripts/budget-check.ps1 (OPP-58)"
+    human_review_point: "passo que para e espera humano; 'none' PROIBIDO em loop que escreve fora de staging"
+  enums:
+    trigger: [event, scheduled]
+    cadence: [none, daily, weekly]      # none = dinamico (event-driven)
+    owner: [squad-owner, specialist, alia]
+    cost_class: [baixo, medio, alto]
+    status: [proposed, active, retired]
+    proactive: [on, off]                # on = Alia sugere rodar quando devido (default em projeto ativo)
+
+tiers:
+  - tier: 1
+    actor: squad-owner
+    scope: "revisa o Artifact cru de cada Specialist; aplica o Quality Gate; checa DDD"
+  - tier: 2
+    actor: alia
+    scope: "audita os Owners por excecao: loops rodaram, gates passaram, ha drift, projeto evoluiu"
+
+# Loops dinamicos - disparam por evento, sem cadencia.
+dynamic_loops:
+  - id: gate-on-artifact
+    trigger: event
+    cadence: none
+    owner: squad-owner
+    cost_class: baixo
+    produces: "verdict do Quality Gate"
+    applies: quality-gate.md
+  - id: drift-on-commit
+    trigger: event
+    cadence: none
+    owner: squad-owner
+    cost_class: baixo
+    produces: "desvio de DDD (se houver)"
+  - id: pr-review
+    trigger: event
+    cadence: none
+    owner: squad-owner
+    cost_class: medio
+    produces: "verdict de revisao do PR"
+  - id: fix-on-fail
+    trigger: event
+    cadence: none
+    owner: specialist
+    cost_class: medio
+    produces: "tentativas de correcao (max N abordagens diferentes)"
+    escalates_to: alia
+
+# Loops agendados - rodam em cadencia fixa via mecanismo real (scripts/*.ps1 + Task Scheduler).
+scheduled_loops:
+  - id: health-check
+    trigger: scheduled
+    cadence: daily
+    owner: squad-owner
+    cost_class: baixo
+    produces: "status: projeto vivo e consistente?"
+    mechanism: scripts/health-check.ps1
+  - id: ddd-drift-scan
+    trigger: scheduled
+    cadence: daily
+    owner: squad-owner
+    cost_class: baixo
+    produces: "drift acumulado vs linguagem ubiqua"
+    mechanism: scripts/ddd-drift.ps1
+  - id: deep-research
+    trigger: scheduled
+    cadence: daily
+    owner: alia
+    cost_class: medio
+    produces: "knowledge atualizado + proposta de RSI"
+    mechanism: agente-driven (RSI Researcher via MCP perplexity), sob demanda
+  - id: evolution-scan
+    trigger: scheduled
+    cadence: weekly
+    owner: alia
+    cost_class: baixo
+    produces: "sinal de estagnacao (projeto avancou?)"
+    mechanism: scripts/evolution-scan.ps1
+  - id: debt-scan
+    trigger: scheduled
+    cadence: weekly
+    owner: alia
+    cost_class: baixo
+    produces: "Concerns abertos sem resolucao"
+    mechanism: scripts/debt-scan.ps1
+  - id: squad-report
+    trigger: scheduled
+    cadence: weekly
+    owner: squad-owner
+    cost_class: baixo
+    produces: "status do squad para o Tier 2 (Alia)"
+    mechanism: scripts/squad-report.ps1
+  - id: memory-curator
+    trigger: scheduled
+    cadence: weekly
+    owner: alia
+    cost_class: baixo
+    produces: "memorias/regras consolidadas; stale arquivado (nunca deletado)"
+    mechanism: scripts/memory-curator.ps1
+
+# Os tres sinais que a governanca caca.
+detects:
+  - signal: drift-ddd
+    by: [drift-on-commit, ddd-drift-scan]
+  - signal: estagnacao
+    by: [evolution-scan]
+  - signal: debito
+    by: [debt-scan]
+
+# Frugalidade - lei dura: loop caro e desligado.
+frugality:
+  - "consultar Memory/grafo antes de reprocessar"
+  - "revisao incremental: so o que mudou"
+  - "modelo certo para cada verificacao"
+  - "cost_class declarado por loop"
+
+# Ciclo de vida: criar -> gerenciar -> revisar (manter | ajustar | aposentar).
+lifecycle: [create, manage, review]

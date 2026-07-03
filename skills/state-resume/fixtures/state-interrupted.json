@@ -1,0 +1,19 @@
+{
+  "studio": "Fixture - Task interrompida",
+  "updated": "2026-06-14",
+  "tasks": [
+    {
+      "id": "TASK-ART-099",
+      "client": "acme-saas",
+      "title": "Run multi-passo que morreu no meio",
+      "specialist": "bruno",
+      "status": "in_progress"
+    }
+  ],
+  "events": [
+    { "ts": "2026-06-14T12:00:00Z", "task_id": "TASK-ART-099", "step": "IDENTIFICA", "type": "started",   "ref": "client=acme-saas" },
+    { "ts": "2026-06-14T12:01:00Z", "task_id": "TASK-ART-099", "step": "REGISTRA",   "type": "started",   "ref": "tasks[].TASK-ART-099" },
+    { "ts": "2026-06-14T12:02:00Z", "task_id": "TASK-ART-099", "step": "DELEGA",     "type": "delegated", "ref": "specialist=bruno" },
+    { "ts": "2026-06-14T12:30:00Z", "task_id": "TASK-ART-099", "step": "MONITORA",   "type": "artifact",  "ref": "clients/acme-saas/artifacts/ART-099-draft.md" }
+  ]
+}

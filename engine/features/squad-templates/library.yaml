@@ -1,0 +1,48 @@
+# Biblioteca de Squads - indice legivel por maquina
+# O Squad Creator consulta este arquivo para listar presets, validar camadas
+# e checar quais expert_mind ids existem antes de instanciar um Squad.
+# Spec: ./README.md | Registry de mentes: ../expert-minds/registry.yaml
+# Sem acentos, sem emojis. UTF-8 sem BOM.
+
+version: 1
+
+# Regra do segundo cerebro EM CAMADAS. brain define o peso do contexto carregado.
+layers:
+  - camada: A
+    quem: lider / gateway (Squad Owner)
+    brain: full
+    expert_mind: nao (carrega o cerebro COMPLETO do Client)
+  - camada: B
+    quem: specialist de dominio (julgamento especializado)
+    brain: expert
+    expert_mind: sim (um ou mais ids do registry)
+  - camada: C
+    quem: suporte / execucao
+    brain: light
+    expert_mind: nao (referencia knowledge compartilhado)
+
+presets:
+  - id: saas
+    label: SaaS / Produto
+    para: produto web, app
+    file: saas.md
+    gateway: Product Lead
+  - id: marketing
+    label: Marketing
+    para: trafego, conteudo, growth
+    file: presets/marketing.md
+    gateway: Marketing Lead
+  - id: content-infoproduto
+    label: Conteudo / Infoproduto
+    para: criadores, cursos, lancamentos
+    file: presets/content-infoproduto.md
+    gateway: Content Lead
+
+# Ids validos para o campo expert_mind dos presets (espelha ../expert-minds/registry.yaml).
+valid_expert_minds:
+  - copy/ogilvy
+  - ads/eugene-schwartz
+  - design/brad-frost
+  - dev/kent-beck
+  - growth/sean-ellis
+  - analytics/avinash-kaushik

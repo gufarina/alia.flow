@@ -1,0 +1,20 @@
+# Alia Flow - Studio (exemplo neutro)
+# Studio-modelo para um clone limpo nascer com ponto de partida.
+# Sem acentos, sem emojis. UTF-8 sem BOM.
+
+studio:
+  name: Studio Exemplo
+  operator: operador-exemplo
+  tagline: "Delegue. Nao opere."
+
+clients:
+  - id: acme-saas
+    name: Acme SaaS
+    type: b2b-saas
+    status: active
+    squad: clients/acme-saas/squad/squad.yaml
+
+defaults:
+  budget_class: medio
+  quality_gate: engine/governance/quality-gate.md
+  loops_catalog: engine/governance/loops.catalog.yaml

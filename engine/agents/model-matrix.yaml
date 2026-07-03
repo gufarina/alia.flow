@@ -1,0 +1,46 @@
+# Matriz de modelo por papel - qual LLM roda cada agente
+# ---------------------------------------------------------------------------
+# Por que existe: nem toda Task precisa do modelo mais caro. Planejar arquitetura
+# e julgar qualidade pedem raciocinio forte; executar uma mudanca mecanica ou
+# publicar um pacote pede velocidade/custo baixo. Casar o modelo ao PAPEL corta
+# custo sem perder qualidade onde ela conta. (Referencia: estudo SAW - matriz
+# ferramenta x modelo por papel.)
+#
+# Como e usado (contrato lido, igual a allow-list `tools:`):
+#   Cada persona (.yaml) declara `model: <tier>`. Quando a Alia DELEGA uma Task a
+#   um Specialist em contexto isolado (Agent tool / sub-agente), ela le o tier do
+#   `.yaml`, resolve aqui o ID concreto e passa pro sub-agente. O coordenador
+#   (Alia) roda sempre no tier forte. Sem declaracao, vale o `default` abaixo.
+#   O ENFORCEMENT duro (hook que casa tier->modelo na chamada) fica como evolucao
+#   futura declarada, no mesmo molde da allow-list de tools (orchestration.md).
+#
+# Trocar o line-up de modelos: edite SO os `id` abaixo. As personas referenciam o
+# tier (strong/standard/fast), nunca o ID - um lugar muda tudo.
+# Sem acentos, sem emojis. UTF-8 sem BOM.
+
+version: 1
+default: standard          # papel sem `model:` declarado roda aqui
+
+tiers:
+  strong:
+    id: claude-opus-4-8
+    quando: "raciocinio de alta alavancagem: orquestracao, governanca, arquitetura, decisao de escopo, julgamento de risco"
+    papeis: [alia, architect]
+  standard:
+    id: claude-sonnet-4-6
+    quando: "execucao capaz: implementar contra contrato, modelar dados, verificar qualidade (gate). Bom custo/capacidade"
+    papeis: [dev, qa, data-engineer]
+  fast:
+    id: claude-haiku-4-5-20251001
+    quando: "trabalho mecanico e rapido: publicar/deploy/empacotar, tarefas curtas e bem definidas"
+    papeis: [devops]
+
+# Tradeoff anotado pro Operator decidir (nao decidido sozinho):
+#   - QA esta em `standard` (Sonnet). O diferencial do produto e a verificacao
+#     independente (CONFERE); se a qualidade do gate pedir, ELEVAR qa -> strong.
+#     Custa mais, porem e o portao que segura tudo. Decisao do Operator.
+#   - O Squad Creator, ao montar um Specialist novo, atribui o tier por papel:
+#     papel de decisao/arquitetura -> strong; execucao -> standard; mecanico -> fast.
+notas_operator:
+  - "qa pode ir pra strong se a qualidade do CONFERE exigir (custa mais)."
+  - "novos Specialists herdam tier pelo tipo de papel (decisao=strong, execucao=standard, mecanico=fast)."

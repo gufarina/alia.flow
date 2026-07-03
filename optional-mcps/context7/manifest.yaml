@@ -1,0 +1,28 @@
+# Manifesto de MCP - context7 (docs de bibliotecas sob demanda).
+# Convencao: optional-mcps/{nome}/manifest.yaml. Ver optional-mcps/README.md.
+# Presenca neste diretorio = aprovado para uso (presenca = aprovacao).
+# Gerencia de MCP e exclusiva do DevOps (engine/tools.md, Governanca de MCP).
+# Sem acentos, sem emojis. UTF-8 sem BOM.
+
+nome: context7
+
+# Como o cliente fala com o servidor: stdio (processo local) ou http (endpoint remoto).
+# http EXIGE url e proibe command; stdio EXIGE command e proibe url.
+transport: http
+url: "https://mcp.context7.com/mcp"
+
+# As tools que o servidor expoe. default_enabled deixa o catalogo declarar a
+# allow-list fina: liga so o que o squad precisa; o resto entra desligado e o
+# DevOps habilita sob demanda.
+tools:
+  - name: resolve-library-id
+    description: "Resolve o nome de uma biblioteca no id do context7."
+    default_enabled: true
+  - name: query-docs
+    description: "Busca a doc atual de uma biblioteca por id."
+    default_enabled: true
+
+# A nota de governanca: estar neste diretorio = aprovado para uso.
+# Espelha o ciclo proposed/active da provenance (engine/governance/provenance.md):
+# diretorio presente = active; arquivar o diretorio = retirar a aprovacao.
+approval: "presenca = aprovacao (estar em optional-mcps/ = aprovado; curado pelo DevOps)"

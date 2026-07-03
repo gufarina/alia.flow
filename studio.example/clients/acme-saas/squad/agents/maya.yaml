@@ -1,0 +1,9 @@
+# Agente maya (exemplo neutro). Sem acentos, sem emojis.
+agent:
+  id: maya
+  name: Maya
+  role: Squad Owner
+  gateway: true
+  layer: A
+  domain: orquestracao-do-squad
+  expert_mind: "Coordenacao incremental"

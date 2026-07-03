@@ -1,0 +1,43 @@
+# Squad do Client acme-saas (exemplo neutro)
+# Sem acentos, sem emojis. UTF-8 sem BOM.
+
+squad:
+  client: acme-saas
+  name: Squad Acme
+  owner: maya
+
+members:
+  - id: maya
+    role: squad-owner
+    gateway: true
+    layer: A
+    domain: orquestracao-do-squad
+  - id: iris
+    role: specialist
+    gateway: false
+    layer: B
+    domain: design-de-produto
+  - id: rex
+    role: specialist
+    gateway: false
+    layer: B
+    domain: requisitos-e-stories
+  - id: bruno
+    role: specialist
+    gateway: false
+    layer: B
+    domain: copy-e-mensagem
+  - id: cleo
+    role: specialist
+    gateway: false
+    layer: C
+    domain: dados-e-metricas
+  - id: quinn
+    role: specialist
+    gateway: false
+    layer: C
+    domain: qualidade-e-testes
+
+routing:
+  policy: capability-routing
+  notes: "Roteia para o agente mais capaz por Domain Pack, Expert Mind e Memory."

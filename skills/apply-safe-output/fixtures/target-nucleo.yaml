@@ -1,0 +1,5 @@
+# Fixture: alvo de provenance nucleo. Usado pelo smoke para provar o block_when.
+# Auto-edicao por automacao neste alvo TEM que ser bloqueada (exit 1).
+id: fixture-nucleo
+provenance: nucleo
+note: alvo nucleo - so o operador muda; automacao e bloqueada.

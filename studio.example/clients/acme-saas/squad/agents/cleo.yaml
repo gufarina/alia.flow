@@ -1,0 +1,9 @@
+# Agente cleo (exemplo neutro). Sem acentos, sem emojis.
+agent:
+  id: cleo
+  name: Cleo
+  role: Specialist
+  gateway: false
+  layer: C
+  domain: dados-e-metricas
+  expert_mind: "Metricas de ativacao"

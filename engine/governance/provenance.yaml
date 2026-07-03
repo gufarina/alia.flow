@@ -1,0 +1,67 @@
+# Alia Flow - Manifesto de Provenance (mapa legivel por maquina).
+# Espelho estruturado de provenance.md, com o mapa nucleo/agent-authored e a regra de
+# enforcement em forma checavel. Fonte canonica: provenance.md. O smoke valida o pareamento.
+# Mudou um, mude o outro. Sem acentos, sem emojis. UTF-8 sem BOM.
+
+manifest: provenance
+spec: engine/governance/provenance.md
+
+# O campo provenance tem dois valores, e so dois.
+values:
+  - id: nucleo
+    who_changes: operador
+    automation_can_edit: false
+    note: Auto-edicao em nucleo e bloqueada pelo gate. So o operador muda.
+  - id: agent-authored
+    who_changes: automacao propoe, operador aprova
+    automation_can_edit: true
+    note: A automacao propoe SEMPRE via diff; nunca aplica sozinha.
+
+# Regra "nunca deletar, so arquivar" - espelha loops.catalog.yaml status proposed|active|retired.
+archival:
+  delete_by_automation: false
+  methods:
+    - demote_status: "status: retired + retired_reason + retired_on (para artefatos com campo status)"
+    - move_folder: "_retired/ irma, preservando o nome (para artefatos sem status)"
+  retired_folder: _retired
+  retired_fields: [retired_reason, retired_on]
+  note: Deletar e prerrogativa exclusiva do operador.
+
+# Auto-edicao amarrada aos guardrails do RSI (rsi.md:81-87).
+self_edit:
+  always_diff: true
+  test_before_apply: true
+  human_applies: true
+  rsi_guardrails_ref: engine/rsi/rsi.md
+
+# O mapa. Padrao: engine/ = nucleo; studio/ = agent-authored. Excecao explicita vence.
+map:
+  defaults:
+    - path: engine/
+      provenance: nucleo
+    - path: studio/
+      provenance: agent-authored
+  nucleo:
+    - engine/constitution.md
+    - engine/constitution.yaml
+    - engine/glossary.md
+    - engine/governance/loops.catalog.yaml
+    - engine/governance/quality-gate.yaml
+    - engine/agents/persona.md
+    - engine/agents/*.yaml
+    - engine/agents/*.md
+    - skills/loop-designer/
+    - skills/file-organization/
+  agent_authored:
+    - studio/clients/*/squad/knowledge/
+    - studio/clients/*/memory/
+    - studio/clients/*/loops.yaml
+    - studio/clients/*/artifacts/
+    - "skills geradas por agente (nao as do produto)"
+    - "relatorios de loop, graphify-out, propostas de RSI"
+
+# Como o gate consome o campo.
+enforcement:
+  block_when: provenance == nucleo AND change_source == automation
+  require_for_agent_authored: [diff, evidence]
+  human_only: nucleo

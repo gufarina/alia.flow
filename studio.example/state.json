@@ -1,0 +1,48 @@
+{
+  "studio": "Studio Exemplo",
+  "updated": "2026-06-19",
+  "tasks": [
+    {
+      "id": "TASK-ART-001",
+      "client": "acme-saas",
+      "project": "acme-pulse / landing",
+      "title": "Landing copy para Acme SaaS",
+      "specialist": "bruno",
+      "status": "done",
+      "artifact": "clients/acme-saas/artifacts/ART-001-landing-copy.md",
+      "base_artifact": "clients/acme-saas/squad/knowledge/client-brief.md",
+      "session": "sess-demo-2026-06-14",
+      "gate": "clients/acme-saas/artifacts/gates/ART-001.gate.md",
+      "memory": "clients/acme-saas/memory/MEM-001-decisoes.md",
+      "gate_verdict": "PASS"
+    },
+    {
+      "id": "TASK-ART-002",
+      "client": "acme-saas",
+      "project": "acme-pulse / painel",
+      "title": "Story do Painel Pulse",
+      "specialist": "rex",
+      "status": "done",
+      "artifact": "clients/acme-saas/artifacts/ART-002-story-painel-pulse.md",
+      "base_artifact": "clients/acme-saas/artifacts/ART-001-landing-copy.md",
+      "session": "sess-demo-2026-06-14",
+      "gate": "clients/acme-saas/artifacts/gates/ART-002.gate.md",
+      "memory": "clients/acme-saas/memory/MEM-001-decisoes.md",
+      "gate_verdict": "PASS"
+    }
+  ],
+  "events": [
+    { "ts": "2026-06-14T09:00:00Z", "task_id": "TASK-ART-001", "step": "IDENTIFICA", "type": "started",   "ref": "client=acme-saas" },
+    { "ts": "2026-06-14T09:01:00Z", "task_id": "TASK-ART-001", "step": "REGISTRA",   "type": "started",   "ref": "tasks[].TASK-ART-001" },
+    { "ts": "2026-06-14T09:02:00Z", "task_id": "TASK-ART-001", "step": "DELEGA",     "type": "delegated", "ref": "specialist=bruno" },
+    { "ts": "2026-06-14T09:30:00Z", "task_id": "TASK-ART-001", "step": "MONITORA",   "type": "artifact",  "ref": "clients/acme-saas/artifacts/ART-001-landing-copy.md" },
+    { "ts": "2026-06-14T09:45:00Z", "task_id": "TASK-ART-001", "step": "MONITORA",   "type": "gate",      "ref": "clients/acme-saas/artifacts/gates/ART-001.gate.md" },
+    { "ts": "2026-06-14T09:50:00Z", "task_id": "TASK-ART-001", "step": "FECHA",      "type": "done",      "ref": "clients/acme-saas/memory/MEM-001-decisoes.md" },
+    { "ts": "2026-06-14T10:00:00Z", "task_id": "TASK-ART-002", "step": "IDENTIFICA", "type": "started",   "ref": "client=acme-saas" },
+    { "ts": "2026-06-14T10:01:00Z", "task_id": "TASK-ART-002", "step": "REGISTRA",   "type": "started",   "ref": "tasks[].TASK-ART-002" },
+    { "ts": "2026-06-14T10:02:00Z", "task_id": "TASK-ART-002", "step": "DELEGA",     "type": "delegated", "ref": "specialist=rex" },
+    { "ts": "2026-06-14T10:40:00Z", "task_id": "TASK-ART-002", "step": "MONITORA",   "type": "artifact",  "ref": "clients/acme-saas/artifacts/ART-002-story-painel-pulse.md" },
+    { "ts": "2026-06-14T10:55:00Z", "task_id": "TASK-ART-002", "step": "MONITORA",   "type": "gate",      "ref": "clients/acme-saas/artifacts/gates/ART-002.gate.md" },
+    { "ts": "2026-06-14T11:00:00Z", "task_id": "TASK-ART-002", "step": "FECHA",      "type": "done",      "ref": "clients/acme-saas/memory/MEM-001-decisoes.md" }
+  ]
+}

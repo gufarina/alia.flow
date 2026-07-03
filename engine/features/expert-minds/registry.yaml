@@ -1,0 +1,58 @@
+# Expert Minds - registry (indice legivel por maquina)
+# O Squad Creator consulta este arquivo para escolher a mente certa por dominio,
+# sem reler cada .md. Cada entrada aponta para o arquivo-fonte do metodo.
+# Spec: ../expert-minds.md | Sem acentos, sem emojis. UTF-8 sem BOM.
+
+version: 1
+
+minds:
+  - id: copy/ogilvy
+    master: David Ogilvy
+    domain: copy
+    method: copy que vende, nao que impressiona
+    source: Ogilvy on Advertising
+    file: copy/ogilvy.md
+    use_when: copy de venda, landing, email, anuncio orientado a resposta
+
+  - id: ads/eugene-schwartz
+    master: Eugene Schwartz
+    domain: ads
+    method: niveis de consciencia e sofisticacao de mercado
+    source: Breakthrough Advertising
+    file: ads/eugene-schwartz.md
+    use_when: anuncio, lancamento, escolher a mensagem pelo estagio mental do mercado
+
+  - id: design/brad-frost
+    master: Brad Frost
+    domain: design
+    method: atomic design / design system
+    source: Atomic Design
+    file: design/brad-frost.md
+    use_when: UI, design system, componentizacao, tokens
+
+  - id: dev/kent-beck
+    master: Kent Beck
+    domain: dev
+    method: TDD (red, green, refactor)
+    source: Test-Driven Development By Example
+    file: dev/kent-beck.md
+    use_when: implementacao de codigo, frontend, backend, refactor seguro
+
+  - id: growth/sean-ellis
+    master: Sean Ellis
+    domain: growth
+    method: North Star Metric e priorizacao por ICE
+    source: Hacking Growth
+    file: growth/sean-ellis.md
+    use_when: aquisicao, ativacao, retencao, priorizacao de experimentos
+
+  - id: analytics/avinash-kaushik
+    master: Avinash Kaushik
+    domain: analytics
+    method: analytics acionavel, sempre segmentado
+    source: Web Analytics 2.0
+    file: analytics/avinash-kaushik.md
+    use_when: leitura de dados de marketing, atribuicao, decisao por segmento
+
+# Invariante: Expert Mind enriquece a decisao do Specialist (Camada B).
+# Nunca substitui o Quality Gate nem o DDD do Client.

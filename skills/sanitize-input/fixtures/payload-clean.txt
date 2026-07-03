@@ -1,0 +1,4 @@
+Briefing do cliente: precisamos de uma landing page para o lancamento.
+Publico: leigos. Tom: claro, sem jargao. Prazo: duas semanas.
+Referencia aprovada: https://docs.alia.flow/brand
+Contato: gufarina (sem ping).

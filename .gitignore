@@ -1,0 +1,39 @@
+# ============================================================
+# Este repo versiona SOMENTE o produto open source (o motor).
+# O studio/ (dados do operador, os 4 clientes reais) e SAGRADO e PRIVADO:
+# e onde se TESTA o produto antes de publicar. NUNCA entra no git.
+# O produto anda 1 passo a frente; o que valida no studio vira release.
+# ============================================================
+
+# Dados do operador - nunca versionar
+studio/
+
+# Segredos (defesa em profundidade, mesmo com studio/ ja ignorado)
+.secrets/
+**/.secrets/
+*.secret
+*.pem
+*.key
+.env
+.env.*
+
+# Quarentena (rascunho / em-dev / aposentado) - nunca versionar; expira. Ver CATALOG.md.
+_dev/
+_drafts/
+_retired/
+
+# Saidas geradas / temporarias (regeneraveis - nunca versionar no produto)
+release/
+.work/
+memory/_proposals/
+memory/_index/
+**/loop-reports/
+*.log
+*.tmp
+Thumbs.db
+desktop.ini
+
+# Dependencias (se houver no futuro)
+node_modules/
+__pycache__/
+*.pyc

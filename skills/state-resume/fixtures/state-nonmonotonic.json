@@ -1,0 +1,18 @@
+{
+  "studio": "Fixture - events fora de ordem (viola append-only/monotonico)",
+  "updated": "2026-06-14",
+  "tasks": [
+    {
+      "id": "TASK-ART-098",
+      "client": "acme-saas",
+      "title": "Journal adulterado: ts retrocede",
+      "specialist": "rex",
+      "status": "in_progress"
+    }
+  ],
+  "events": [
+    { "ts": "2026-06-14T13:00:00Z", "task_id": "TASK-ART-098", "step": "IDENTIFICA", "type": "started",   "ref": "client=acme-saas" },
+    { "ts": "2026-06-14T13:05:00Z", "task_id": "TASK-ART-098", "step": "DELEGA",     "type": "delegated", "ref": "specialist=rex" },
+    { "ts": "2026-06-14T13:02:00Z", "task_id": "TASK-ART-098", "step": "REGISTRA",   "type": "started",   "ref": "tasks[].TASK-ART-098" }
+  ]
+}

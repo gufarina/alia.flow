@@ -1,0 +1,9 @@
+# Agente iris (exemplo neutro). Sem acentos, sem emojis.
+agent:
+  id: iris
+  name: Iris
+  role: Specialist
+  gateway: false
+  layer: B
+  domain: design-de-produto
+  expert_mind: "Brad Frost (Atomic Design)"

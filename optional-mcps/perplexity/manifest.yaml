@@ -1,0 +1,71 @@
+# Manifesto de MCP - perplexity (pesquisa na web via sessao do browser).
+# Servidor: perplexity-web-mcp (jacob-bd) - https://github.com/jacob-bd/perplexity-web-mcp
+# Convencao: optional-mcps/{nome}/manifest.yaml. Ver optional-mcps/README.md.
+# Presenca neste diretorio = aprovado para uso (presenca = aprovacao).
+# Gerencia de MCP e exclusiva do DevOps (engine/tools.md, Governanca de MCP).
+# Segundo cerebro de pesquisa na web, ao lado do notebooklm (fontes ancoradas).
+# NAO e API por credito: usa a sessao do browser logado no Perplexity Pro (auth email/OTP, ~30 dias).
+# Orcamento real = pool semanal de Pro Search do plano Pro. Pesquisa normal, sem credito.
+# Sob a LEI de Pesquisa Segura (engine/tools.md): sequencial, sem runaway, deep research so a pedido.
+# Politica de uso (operador): modelo PADRAO = Claude Sonnet 4.6 com thinking (pplx_claude_sonnet_think).
+# JAMAIS Sonar (regra dura do operador - liberado o Sonnet 4.6 no Pro). Deep research so a pedido.
+# NotebookLM e a escalada quando a Perplexity nao der conta.
+# Sem acentos, sem emojis. UTF-8 sem BOM.
+
+nome: perplexity
+
+# stdio. Instalar: uv tool install perplexity-web-mcp-cli (ou pipx). Login: pwm login (email + OTP).
+# Curadoria/launch sao do DevOps; ja provisionado neste ambiente.
+transport: stdio
+command: "pwm-mcp"
+
+# Allow-list fina. Liga so o caminho de pesquisa frugal e quota-aware; modelos premium,
+# deep-research (quota escassa) e auth entram DESLIGADOS - o DevOps habilita sob demanda.
+tools:
+  # Trava de seguranca: checar quota ANTES de gastar (parte da Pesquisa Segura).
+  - name: pplx_usage
+    description: "Mostra a quota restante. Chamar ANTES de qualquer pesquisa (nao gastar as cegas)."
+    default_enabled: true
+
+  # Caminho de pesquisa PADRAO (ligado): Claude Sonnet 4.6 com thinking. O modelo da casa.
+  - name: pplx_claude_sonnet_think
+    description: "Claude Sonnet 4.6 com thinking. MODELO PADRAO de pesquisa (liberado no Pro do operador)."
+    default_enabled: true
+  - name: pplx_claude_sonnet
+    description: "Claude Sonnet 4.6 sem thinking. Opcao mais leve quando nao precisa de raciocinio extra."
+    default_enabled: true
+
+  # PROIBIDO (desligado): Sonar e auto-roteamento que pode cair no Sonar. Regra dura do operador.
+  - name: pplx_sonar
+    description: "Sonar 2. JAMAIS USAR (regra dura do operador). Desligado."
+    default_enabled: false
+  - name: pplx_smart_query
+    description: "Auto-roteia para o mais barato (pode cair no Sonar). Desligado - usar Sonnet 4.6 think."
+    default_enabled: false
+  - name: pplx_ask
+    description: "Auto-seleciona o modelo (pode cair no Sonar). Desligado - usar Sonnet 4.6 think."
+    default_enabled: false
+
+  # Premium / caro (desligado): custo alto, so com aprovacao explicita do operador.
+  - name: pplx_deep_research
+    description: "Relatorio profundo (quota mensal escassa). NUNCA autonomo - so a pedido do operador."
+    default_enabled: false
+  - name: pplx_council
+    description: "Multiplos modelos no mesmo prompt (caro)."
+    default_enabled: false
+
+  # Auth e sessao (desligado): infra, exclusivo do DevOps.
+  - name: pplx_auth_status
+    description: "Checa o estado da autenticacao."
+    default_enabled: false
+  - name: pplx_auth_request_code
+    description: "Envia codigo de verificacao por email."
+    default_enabled: false
+  - name: pplx_auth_complete
+    description: "Conclui a autenticacao com o codigo."
+    default_enabled: false
+
+# A nota de governanca: estar neste diretorio = aprovado para uso.
+# Espelha o ciclo proposed/active da provenance (engine/governance/provenance.md):
+# diretorio presente = active; arquivar o diretorio = retirar a aprovacao.
+approval: "presenca = aprovacao (estar em optional-mcps/ = aprovado; curado pelo DevOps)"

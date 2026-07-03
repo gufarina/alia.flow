@@ -1,0 +1,90 @@
+# Alia Flow - Loop Designer: regras de recomendacao (manifesto estruturado)
+# As regras R0-R6 que a Alia aplica para receitar loops por projeto. Prosa e contexto em
+# loop-designer.md. O catalogo de loops referenciado aqui vive em
+# engine/governance/loops.catalog.yaml - este arquivo NAO redefine o catalogo, so SELECIONA dele.
+# A saida da aplicacao destas regras e clients/{id}/loops.yaml (a instancia por projeto).
+# Sem acentos, sem emojis. UTF-8 sem BOM.
+
+rules: loop-designer
+spec: engine/features/loop-designer.md
+catalog: engine/governance/loops.catalog.yaml
+
+# Campos do perfil do projeto, lidos sem reprocessar (client.md / state.json / squad.yaml).
+profile_inputs:
+  status: [active, paused, archived]   # so 'active' liga agendados (ver R0)
+  has_code: [true, false]
+  has_ddd: [true, false]
+  domains: "lista de dominios ativos do squad"
+  knowledge_velocity:                  # por dominio: o quanto o estado-da-arte muda
+    fast: [design, growth, ai, marketing, copy]
+    slow: [ops-interno, juridico, processo]
+
+# Regras de selecao. Avaliadas em ordem; R0 e terminal para os agendados.
+# Cada regra adiciona loops do catalogo. 'precedence' decide conflito de cadencia.
+selection_rules:
+  - id: R0
+    name: frugal
+    when: "status != active"
+    effect: disable_all_scheduled      # so loops de evento sobrevivem, e so se o projeto for tocado
+    terminal: true
+    precedence: highest
+
+  - id: R1
+    name: baseline
+    when: "status == active"
+    add:
+      - { id: health-check,   cadence: daily }
+      - { id: evolution-scan, cadence: weekly }
+      - { id: debt-scan,      cadence: weekly }
+      - { id: squad-report,   cadence: weekly }
+
+  - id: R2
+    name: eventos
+    when: "status == active"
+    add:
+      - { id: gate-on-artifact, cadence: none }
+      - { id: fix-on-fail,      cadence: none }
+
+  - id: R3
+    name: codigo
+    when: "has_code == true"
+    add:
+      - { id: drift-on-commit, cadence: none }
+      - { id: pr-review,       cadence: none }
+
+  - id: R4
+    name: ddd
+    when: "has_ddd == true"
+    add:
+      - { id: ddd-drift-scan, cadence: daily }
+
+  - id: R5
+    name: conhecimento-rapido
+    when: "any(domain in knowledge_velocity.fast)"
+    add:
+      - { id: deep-research, cadence: daily, domains: "<dominios rapidos e ativos>" }
+
+  - id: R6
+    name: conhecimento-lento
+    when: "all(domain in knowledge_velocity.slow)"
+    add:
+      - { id: deep-research, cadence: weekly, optional: true }   # weekly ou nenhum
+
+# Regra de resolucao de conflito quando duas regras pedem o mesmo loop com cadencias diferentes.
+conflict_resolution:
+  - "R0 prevalece sobre tudo: fora de active, nenhum agendado entra."
+  - "deep-research: R5 (daily) vence R6 (weekly) se houver qualquer dominio rapido ativo."
+  - "cadencia escolhida e sempre a MINIMA que pega o problema (frugalidade)."
+
+# Toda instancia gerada herda o ciclo de vida e nasce com review_on (lei do operador).
+instance_defaults:
+  status: proposed                     # vira active so apos aprovacao do operador
+  review_horizon_days: 30              # review_on = created + 30 dias
+  cost_summed_before_approval: true    # a Alia soma cost_class do plano e expoe ao operador
+
+# Frugalidade aplicada na selecao (espelha loop-designer.md).
+frugality:
+  - "status != active -> zero agendado (R0)"
+  - "deep-research so nos dominios ativos de velocidade alta"
+  - "cadencia minima suficiente, nunca a maxima possivel"
+  - "custo do plano somado e aprovado antes de instanciar"

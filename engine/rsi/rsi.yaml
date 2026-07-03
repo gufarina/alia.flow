@@ -1,0 +1,116 @@
+# RSI - Politica de auto-melhoria do Alia Flow (manifesto estruturado)
+# Espelho estruturado de rsi.md, com triggers/guardrails/metrica em forma checavel.
+# Fonte canonica: engine/rsi/rsi.md. O smoke valida o pareamento prosa<->yaml.
+# O nucleo (constitution, principios) NUNCA aparece como alvo aqui.
+# Sem acentos, sem emojis. UTF-8 sem BOM.
+
+rsi: alia-flow
+version: 1
+
+# Camadas que o RSI pode modificar. Tudo fora desta lista e imutavel pelo RSI.
+evolvable:
+  - prompt            # instrucoes de agente / Specialist
+  - flow              # rota de uma Task recorrente
+  - domain_pack       # conhecimento DDD / Expert Mind
+  - gate              # criterios e thresholds de Quality Gate (requer aprovacao humana)
+  - loop_cadence      # frequencia de um Loop agendado
+
+immutable:
+  - constitution      # constitution.md e principios I-X
+  - engine_core       # orquestracao, governanca, fronteira Engine/Studio
+  - glossary          # linguagem ubiqua
+
+# Estagio 2 (DETECTA): padrao, nunca incidente. Cada trigger e um sinal que vira proposta.
+triggers:
+  - id: gate-fail-pattern
+    source: memory            # verdicts de Gate gravados pelos Loops
+    condition: "mesma Task falha no mesmo Gate"
+    threshold: 3              # N de ocorrencias na janela
+    window: 30d
+    proposes: prompt          # ou flow, conforme a causa-raiz
+    requires_human: false
+
+  - id: over-budget-path
+    source: budget-check      # contador executavel (scripts/budget-check.ps1) sobre state.json costs[];
+                              # deixa de ser trigger declarado sem execucao (OPP-58). O teto (token_cap
+                              # do loops.yaml) NUNCA e afrouxado em runtime - so por edicao de config.
+    condition: "mesmo caminho excede o Budget"
+    threshold: 3
+    window: 30d
+    proposes: flow
+    requires_human: false
+
+  - id: domain-pack-concerns
+    source: memory            # Concerns recorrentes do debt-scan / ddd-drift-scan
+    condition: "mesmo Domain Pack gera Concerns repetidos"
+    threshold: 3
+    window: 30d
+    proposes: domain_pack
+    requires_human: false
+
+  - id: research-finding
+    source: deep-research     # deep-research-loop
+    condition: "pratica externa nova muda o output do dominio"
+    threshold: 1
+    window: 1d
+    proposes: domain_pack
+    requires_human: false
+
+  - id: operator-friction-pattern
+    source: rsi-backlog        # atrito real do operador, captado pela skill rsi-friction
+    condition: "operador frustrado com o workflow (frase negativa ou pedido repetido)"
+    threshold: 2               # recorrencia >= 2 OU severidade 3 (parou tudo) propoe na hora
+    window: 14d
+    proposes: prompt           # ou flow / domain_pack, conforme o alvo do item
+    requires_human: false
+
+  - id: gate-criteria-shift
+    source: memory
+    condition: "Gate reprova/aprova de forma sistematicamente desalinhada"
+    threshold: 5
+    window: 30d
+    proposes: gate
+    requires_human: true      # mexer no crivo de qualidade exige o Operator
+
+# Estagio 4 (APLICA): cercas inegociaveis.
+guardrails:
+  scope: evolvable_only       # nunca toca immutable
+  evidence_required: true     # sem padrao na Memory, proposta rejeitada
+  test_before_apply: true     # roda contra caso de teste + Gate proprio
+  independent_verification: true  # CONFERE: quem propoe nao aprova; teste do APLICA roda em instancia separada
+  versioned_rollback: true    # versao anterior guardada; piora = reverte
+  max_proposals_per_cycle: 5  # frugalidade: nao inunda o ciclo
+  human_approval_for: [gate]  # alvos que exigem sinal do Operator
+
+# AUTONOMIA COM FREIO (decisao do CEO 30/jun): no fechamento do loop, a promocao de MEMORIA nao
+# pede cartao S/N item-a-item ao operador. O CONFERE independente (guardrails.independent_verification)
+# triagem cada proposta pelos 4 crivos; passou nos 4 = auto-promove (carimba approved_by), falhou/
+# duvida = escala pro humano. Fronteira dura: vale SO para memoria; nucleo/gate seguem em
+# human_approval_for. Espelho da prosa em skills/session-reflection/SKILL.md (AUTONOMIA COM FREIO).
+memory_promotion_policy:
+  scope: memory_only          # SO promocao de nota (prop-*.md -> memory/); nunca engine/nucleo/gate
+  verifier: independent       # instancia != autor (reusa guardrails.independent_verification)
+  criteria:                   # os 4 crivos; TODOS tem que passar para SEGURA_AUTO
+    - id: grounded            # (1) Fundamentada no digest, nao palpite
+    - id: not_duplicate       # (2) nao repete nota ativa em memory/
+    - id: additive_safe       # (3) aditiva: nao toca nucleo/engine/gate, nao contradiz/apaga nota
+                              #     ativa, sem gasto/credencial/acao destrutiva
+    - id: durable             # (4) regra/fato duravel, nao desabafo nem incidente transitorio
+  outcomes:
+    safe_auto:                # passou nos 4 crivos
+      when: all_criteria_pass
+      action: promote         # carimba approved_by (identidade do CONFERE) e promove sozinho
+      approved_by: confere    # != autor; materializado no frontmatter da prop-*.md
+      human_card: false
+    escalate_human:           # falhou qualquer crivo OU o CONFERE ficou em duvida
+      when: any_criterion_fail_or_doubt
+      action: block           # fica em staging sem approved_by (promote-memory.ps1 bloqueia)
+      human_card: true        # ai sim mostra o cartao S/N ao operador
+
+# Metrica viva: a prova de que RSI + Frugalidade funcionam.
+metric:
+  name: avg_tokens_per_artifact
+  source: state.json          # custo por Task, cruzado com verdicts de Gate na Memory
+  direction: down             # deve CAIR ao longo do tempo
+  guard: quality_not_below    # taxa de PASS no Gate estavel ou subindo
+  window: 30d

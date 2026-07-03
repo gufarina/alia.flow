@@ -1,0 +1,9 @@
+# Agente bruno (exemplo neutro). Sem acentos, sem emojis.
+agent:
+  id: bruno
+  name: Bruno
+  role: Specialist
+  gateway: false
+  layer: B
+  domain: copy-e-mensagem
+  expert_mind: "David Ogilvy"

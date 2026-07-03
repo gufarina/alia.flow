@@ -1,0 +1,16 @@
+# Teste de Ablacao de Conhecimento - Acme SaaS
+# Compara uma saida sem segundo cerebro (blind) com uma saida com segundo cerebro (informed).
+# Sem acentos, sem emojis.
+
+test:
+  id: knowledge-ablation-001
+  client: acme-saas
+  question: "Descreva o Painel Pulse e a copy da landing."
+  key_terms:
+    - Painel Pulse
+    - Cartao
+    - Ativacao
+    - Headline
+    - Chamada de acao
+  threshold: 3
+  pass_rule: "informed cobre pelo menos threshold termos-chave a mais que blind"
