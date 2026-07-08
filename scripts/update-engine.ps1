@@ -73,10 +73,33 @@ if (Test-Path -LiteralPath $labSmoke) {
 Write-Host ""
 
 # --- O que e PRODUTO (atualiza) vs o que e SEU (nunca aparece aqui, logo nunca e tocado) ---
-$engineDirs   = @("engine","scripts","skills","onboarding","optional-mcps","docs")   # 100% produto: espelha
-$mergeDirs    = @(".claude")                                                          # soma (preserva local)
+$engineDirs   = @("engine","scripts","skills","onboarding","optional-mcps")          # 100% produto: espelha
+$mergeDirs    = @(".claude","docs")                                                   # soma (preserva local: docs do produto atualizam, mas planos/docs locais do operador nao sao apagados)
 $productFiles = @("README.md","PRIMEIROS-PASSOS.md","VERSION","CHANGELOG.md","LICENSE","CREDITS.md","iniciar-alia.bat","atualizar-alia.bat",".gitattributes")
 # Camada do operador, intocada: clients/  state.json  studio.yaml  _inbox/  alia.config.json  AGENTS.md  .gitignore
+
+# --- GUARDA DE SEGURANCA DOS DADOS (nunca estragar info do usuario: clientes, estado, config) ---
+# (1) A camada de dados do operador NUNCA pode entrar no conjunto de copia. Se um dia alguem editar as
+#     listas acima e incluir 'clients', 'state.json' etc. por engano, ABORTA antes de tocar em nada.
+$protected = @("clients","state.json","studio.yaml","_inbox","alia.config.json","AGENTS.md",".gitignore",".git")
+$copySet = @($engineDirs + $mergeDirs + $productFiles)
+$overlap = @($copySet | Where-Object { $protected -contains $_ })
+if ($overlap.Count -gt 0) {
+  Write-Host ("[ABORTADO] guarda de seguranca: o update tentaria tocar a sua camada de dados (" + ($overlap -join ", ") + "). Nada foi alterado.")
+  exit 1
+}
+# (2) Backup automatico do registro/config ANTES de tocar no motor (recuperavel). clients/ (grande)
+#     nunca e copiado nem tocado - so estes arquivos-chave pequenos ganham copia de seguranca datada.
+if (-not $DryRun) {
+  $stampB = (Get-Date).ToString("yyyyMMdd-HHmmss")
+  $bkp = Join-Path $root ("_backups\pre-update-" + $verInst + "-para-" + $verLab + "-" + $stampB)
+  New-Item -ItemType Directory -Force -Path $bkp | Out-Null
+  foreach ($cf in @("state.json","studio.yaml","alia.config.json")) {
+    $cp = Join-Path $root $cf
+    if (Test-Path -LiteralPath $cp) { Copy-Item -LiteralPath $cp -Destination (Join-Path $bkp $cf) -Force }
+  }
+  Write-Host ("    [backup]  registro + config salvos (recuperavel) em _backups\" + (Split-Path $bkp -Leaf))
+}
 
 Write-Host "2/3 Atualizando o motor..."
 foreach ($d in $engineDirs) {

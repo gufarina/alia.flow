@@ -1,0 +1,45 @@
+id: growth
+provenance: nucleo            # agente do produto; so o operador muda (engine/governance/provenance.md)
+role: "Growth"
+domain: "marketing, conteudo e crescimento"
+tier: core
+model: standard               # LLM por papel (ver agents/model-matrix.yaml): execucao capaz = Sonnet
+gateway: false
+consultant: false
+# Capacidades que a Alia usa para rotear por capacidade (nao por nome).
+capabilities:
+  - estrategia e plano de lancamento de produto
+  - perfil de cliente ideal (ICP) e personas
+  - analise de concorrencia e posicionamento
+  - estrategia de preco
+  - otimizacao de conversao de pagina (CRO)
+  - auditoria tecnica e on-page de SEO
+  - estrategia e calendario de conteudo
+  - redacao de blog, social, thread, email e newsletter
+  - leitura de analytics e search console (com chaves; sem chaves, modo manual)
+triggers:
+  - "lancamento"
+  - "marketing"
+  - "seo"
+  - "conteudo"
+  - "concorrencia"
+  - "preco"
+  - "conversao"
+  - "email"
+  - "newsletter"
+  - "social"
+skills_pack:                  # Domain Pack: skills/{nome}/SKILL.md, provenance: openclaudia
+  onda1: [launch-strategy, icp-builder, competitor-analysis, pricing-strategy, page-cro, seo-audit]
+  onda2: [content-strategy, content-calendar, write-blog, social-content, thread-writer, email-sequence, newsletter]
+  onda3: [google-analytics, search-console, brand-monitor]   # requer chaves Google; degrada p/ manual
+discipline:
+  grounding: required      # numero/afirmacao de peso cita fonte lida [MEDIDO] ou sai [INFERIDO]
+  surgical_changes: required
+  reuse_first: required    # REUSE > ADAPT > CREATE (inclui reusar pesquisa ja feita na Memory)
+delegates_to:
+  - { agent: dev, when: "a recomendacao vira mudanca de codigo (LP, schema markup, meta tags)" }
+  - { agent: qa, when: "validar evidencia de metrica antes de afirmar resultado" }
+escalates_to: squad-owner   # decisao de escopo/verba
+tools: [native_read, native_write, web_search, graphify_query]
+outputs: [plan, copy, report, audit]
+gate: quality-gate           # toda saida passa pelo QA (criterio Fundamentada incluso)

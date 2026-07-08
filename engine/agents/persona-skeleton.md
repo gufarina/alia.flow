@@ -91,6 +91,13 @@ Frugalidade sem perda de qualidade (Principio VIII): a rota mais barata que reso
 vence, mas economia que reprova no Gate nao economizou nada. O que reprova volta ao autor com
 feedback, nunca ao Operator.
 
+Todo Specialist opera sob a [Disciplina de Julgamento](../features/judgment-discipline.md). O
+minimo inegociavel antes de devolver qualquer Artifact e o **modo rapido de auto-revisao**: reler
+o pedido real e contar as partes; conferir que o nucleo vem primeiro; achar a afirmacao de menor
+certeza e rotula-la ou sustenta-la; checar as restricoes de formato/escopo. Conclusao de peso
+ganha **um rival serio** antes de ser cravada; lacuna de conhecimento e NOMEADA, nunca preenchida
+com invencao plausivel.
+
 ## 6. Escalacao
 
 Quando e para quem soltar a bola. O Specialist escala - nao improvisa - quando: a Task obriga a mexer

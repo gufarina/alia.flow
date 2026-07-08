@@ -35,6 +35,19 @@ tiers:
     quando: "trabalho mecanico e rapido: publicar/deploy/empacotar, tarefas curtas e bem definidas"
     papeis: [devops]
 
+# Advisor Pattern (features/advisor-pattern.md): executor em tier barato pode
+# CONSULTAR o tier strong no meio da Task - conselho de rumo, nunca execucao.
+# Teto de consultas evita Task mal dimensionada virar ping-pong de modelos.
+advisor:
+  enabled: true
+  tier: strong               # quem aconselha e sempre o tier forte
+  executores: [standard, fast]
+  max_consultas_por_task: 3  # ideal medido: 2 (pos-orientacao + pos-testes)
+  checkpoints: [pos_orientacao, pos_escrita_e_testes]
+  api:                       # Forma B - pipelines headless direto na API
+    tool_type: advisor_20260301
+    beta_header: advisor-tool-2026-03-01
+
 # Tradeoff anotado pro Operator decidir (nao decidido sozinho):
 #   - QA esta em `standard` (Sonnet). O diferencial do produto e a verificacao
 #     independente (CONFERE); se a qualidade do gate pedir, ELEVAR qa -> strong.

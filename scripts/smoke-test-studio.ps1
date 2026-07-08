@@ -168,7 +168,7 @@ foreach ($rel in $rootFiles) {
 
 # Raiz limpa: SO a allowlist canonica (nada vaza). Layout: skills/file-organization/SKILL.md.
 # Pastas livres; dotfiles (.git*) ignorados; state.json/studio.yaml so contam se studio_dir=".".
-$rootAllow = @("README.md","PRIMEIROS-PASSOS.md","AGENTS.md","CHANGELOG.md","CATALOG.md","LICENSE","CREDITS.md","VERSION","alia.config.json","iniciar-alia.bat","atualizar-alia.bat","mission-control.html")
+$rootAllow = @("README.md","PRIMEIROS-PASSOS.md","AGENTS.md","CHANGELOG.md","CATALOG.md","LICENSE","CREDITS.md","VERSION","alia.config.json","iniciar-alia.bat","atualizar-alia.bat","mission-control.html","CLAUDE.md")
 $sdir = ""
 $cfgP = Join-Path $root "alia.config.json"
 if (Test-Path $cfgP) { try { $sdir = "$((Get-Content $cfgP -Raw | ConvertFrom-Json).studio_dir)".Trim() } catch {} }
@@ -230,6 +230,7 @@ $oppMarker = $sep + "opportunities" + $sep
 $researchMarker = $sep + "research" + $sep
 $proposalsMarker = $sep + "_proposals" + $sep
 $draftsMarker = $sep + "_drafts" + $sep
+$backupsMarker = $sep + "_backups" + $sep   # backups automaticos do updater copiam dado vivo (state.json) - mesma isencao do vivo
 $statePathFull = (Join-Path $studioRoot "state.json")
 $aioxHits = New-Object System.Collections.Generic.List[string]
 foreach ($f in $allFiles) {
@@ -237,6 +238,7 @@ foreach ($f in $allFiles) {
     if ($f.FullName.IndexOf($researchMarker, [StringComparison]::OrdinalIgnoreCase) -ge 0) { continue }
     if ($f.FullName.IndexOf($proposalsMarker, [StringComparison]::OrdinalIgnoreCase) -ge 0) { continue }
     if ($f.FullName.IndexOf($draftsMarker, [StringComparison]::OrdinalIgnoreCase) -ge 0) { continue }
+    if ($f.FullName.IndexOf($backupsMarker, [StringComparison]::OrdinalIgnoreCase) -ge 0) { continue }
     if ($f.FullName -eq $statePathFull) { continue }
     if (@("CREDITS.md","README.md","CHANGELOG.md","PRD.md") -contains $f.Name) { continue }   # docs creditam aiox/BMAD de proposito (PRD cita o molde do descritor); o check guarda o CODIGO, nao a atribuicao
     $content = [System.IO.File]::ReadAllText($f.FullName)

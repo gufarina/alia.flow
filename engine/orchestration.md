@@ -33,6 +33,13 @@ protocolo ja falhou no passo DELEGA.
 Os cinco passos sao o ciclo de vida que `studio/state.json` grava por Task. Os nomes sao contrato:
 o estado e os exemplos dependem deles.
 
+> Disciplina de julgamento: COMO cada passo pensa esta em
+> [features/judgment-discipline.md](features/judgment-discipline.md) - as tres leituras do pedido
+> (literal/intencional/adversarial) no IDENTIFICA, as cinco caixas + pedra-chave no DELEGA, o rival
+> por conclusao na execucao, os passes de verificacao no Gate, e destino-primeiro no FECHA. Todo
+> pedido e um proxy da decisao por tras dele: responda, depois amplie - nunca amplie em vez de
+> responder.
+
 > LEI (rastreabilidade e continuidade - 02/jul, incidente da LP com base errada): TODA demanda ao
 > operador vira Task de um Projeto de um Cliente ANTES de qualquer execucao - inclusive demandas
 > "meta" (mexer no proprio motor, na marca, no site: o Cliente e o proprio produto/estudio). A Task
@@ -59,6 +66,16 @@ o estado e os exemplos dependem deles.
 > entrega. As variacoes sao APLICACOES dele, nao modelos paralelos: [story-cycle](workflows/story-cycle.md)
 > e os 5 passos aplicados a dev (Story/AC/TDD); [qa-loop](workflows/qa-loop.md) e o sub-loop do passo
 > MONITORA quando o Gate da Fail. Nao existe um "segundo fluxo" - so este, vestido para o dominio.
+
+> LEI (fonte de verdade do cliente - 07/jul, dia das falhas de copy): antes de produzir QUALQUER
+> Artifact para um Client, quem produz CARREGA as fontes curadas dele (BRAND/PRD/persona/glossario)
+> na hierarquia da [governanca client-truth](governance/client-truth.md) - decisao do Operator >
+> fonte curada > doc interno > README/codigo. Peca publica so afirma claim do registro (numero
+> nunca se fabrica somando fontes; feature so LANCADA; tagline so a vigente, vetos respeitados).
+> Todo briefing de delegacao carrega as travas: nao re-delegar, criterio de encerramento
+> verificavel, fontes a ler antes, o que e proibido inventar. E o coordenador NAO produz artefato
+> de dominio: se existe Specialist da lente, delega - excecao so por ordem explicita do Operator,
+> registrada na Task.
 
 ## Roteamento por capacidade (o coracao do DELEGA)
 
@@ -109,7 +126,7 @@ regras cravam esse isolamento:
 
    | Nivel | Papel | Pode delegar? |
    |-------|-------|---------------|
-   | **0** | COO (Alia) | Sim - delega ao gateway/Squad Owner. |
+   | **0** | Coordenadora (Alia) | Sim - delega ao gateway/Squad Owner. |
    | **1** | Gateway / Squad Owner | Sim - delega ao Specialist mais capaz. |
    | **2** | Specialist (folha) | NAO. Executa e devolve Artifact + resumo. |
 
@@ -140,6 +157,14 @@ regras cravam esse isolamento:
    julgamento paga. Mesmo molde da allow-list - hoje e **contrato lido** pelo coordenador; o hook que
    casa tier->modelo na chamada fica como evolucao futura declarada. O coordenador (Alia) roda sempre
    no tier `strong`; papel sem `model:` cai no `default` da matriz.
+
+5. **Advisor Pattern (conselho no meio da execucao).** Um executor em tier barato (`standard`/`fast`)
+   pode CONSULTAR o tier `strong` durante a Task - ate 3 vezes, nos checkpoints certos (apos se
+   orientar e antes de trabalho substantivo; apos escrita/testes e antes de fechar). Conselho e rumo
+   curto, nunca execucao; nao e escalacao (a Task nao para) e nao substitui o Gate. Doutrina completa,
+   regras duras e a forma via API em [features/advisor-pattern.md](features/advisor-pattern.md);
+   pareamentos e tetos na [matriz](agents/model-matrix.yaml). Frugalidade em acao: antes de elevar um
+   papel a `strong` em definitivo, dar a ele o direito de consultar `strong` 2-3 vezes.
 
 ## Causa raiz antes de escalar
 

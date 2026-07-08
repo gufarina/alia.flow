@@ -37,6 +37,15 @@ Seis perguntas, todas inegociaveis. Reprovar uma e reprovar o Artifact.
 > contrato de formato deterministico (Validated Artifacts). Mas os 4 minimos acima sao a base que
 > nenhum squad pode rebaixar.
 
+> Criterios extras OBRIGATORIOS para Artifact do tipo PECA PUBLICA (landing, site, social, deck,
+> README publico) - a [lei da fonte de verdade do cliente](client-truth.md), 07/jul: (a) fontes
+> curadas do Client (BRAND/PRD/persona) DECLARADAS e carregadas antes de produzir; (b) todo claim
+> quantitativo, feature e tagline rastreado ao registro de claims - numero fabricado por soma de
+> fontes distintas = Fail; feature nao-LANCADA anunciada = Fail; identidade/angulo VETADO pelo
+> Operator ressuscitado = Fail; (c) gramatica completa da lingua do publico + zero vocabulario de
+> bastidor (regra interna de operacao nao vaza pra peca); (d) ativos de marca vindos do inventario
+> oficial do Client, nunca recriados por descuido.
+
 > Criterio 6 (Fundamentada) - por que existe e como checa: nasceu do incidente em que a Alia
 > entregou um diagnostico do proprio harness INFERIDO (estudo externo + memoria) em vez de LIDO do
 > codigo real, num canvas sem rotulo de palpite. E o espelho da LEI "investigar antes de escalar"
@@ -93,10 +102,21 @@ codebase. O Gate verifica o Artifact CONTRA o DDD do Client:
 receber entrega - o Gate bloqueia ANTES de avaliar os outros criterios. Sem linguagem ubiqua, nao
 ha como medir aderencia, e medir aderencia e metade do que este Gate existe para fazer.
 
+## Postura do avaliador (disciplina de julgamento)
+
+O avaliador verifica em POSTURA DIFERENTE da que gerou - reler no mesmo quadro nao verifica nada.
+Os passes, escolhidos pela aposta (profundidade segue irreversibilidade), estao na
+[Disciplina de Julgamento](../features/judgment-discipline.md): passe de extracao (afirmacoes
+peladas numa lista, fora do brilho da prosa), aritmetica recomputada, siga-a-premissa, leitura
+hostil (o implementador de segunda-feira), caca ao contraexemplo (zero, um, maximo, malformado).
+"Le bem" e "se sustenta" nao sao correlacionados; o paragrafo bonito e o mais perigoso. A regua
+de vocabulario dos verdicts (fraco/decente/forte/excelente) vive no mesmo doc.
+
 ## Liga com
 [Constituicao](../constitution.md) (principio VI - Quality Gate Always) - 
 [Governanca por Loops](loops.md) (quem dispara e reaplica o Gate) - 
-[quality-gate.yaml](quality-gate.yaml) (o contrato estruturado dos criterios e verdicts).
+[quality-gate.yaml](quality-gate.yaml) (o contrato estruturado dos criterios e verdicts) - 
+[Disciplina de Julgamento](../features/judgment-discipline.md) (os passes de verificacao do avaliador).
 
 ---
 

@@ -68,6 +68,7 @@ e VAZAMENTO; o smoke (raiz limpa) reprova.
 - `README.md`, `PRIMEIROS-PASSOS.md`, `AGENTS.md`, `CHANGELOG.md`, `LICENSE`, `CREDITS.md` - docs convencionais (AGENTS.md = boot loader; PRIMEIROS-PASSOS.md = guia de quem recebe o pacote).
 - `VERSION`, `alia.config.json` - versao + config que o motor le.
 - `iniciar-alia.bat`, `atualizar-alia.bat` - os botoes que o operador clica.
+- `CLAUDE.md` - boot do harness Claude Code quando a instancia roda nele (par do AGENTS.md).
 - `mission-control.html` - o painel da operacao (gerado por scripts/mission-control.ps1 a partir do state.json; regeneravel, nunca editado na mao).
 - `.gitignore`, `.gitattributes` - convencao git (dotfiles, nao policiados).
 - `state.json`, `studio.yaml` - SO quando `studio_dir="."` (dados na raiz). Senao vivem em `studio/`.

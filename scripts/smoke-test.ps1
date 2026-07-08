@@ -838,6 +838,54 @@ Check "Onboarding: pagina estatica (sem Python/servidor)" $noServer
 $bootSetup = (Test-Path (Join-Path $root "AGENTS.md")) -and ((ReadText (Join-Path $root "AGENTS.md")) -match '(?i)setup-alia')
 Check "Setup: AGENTS.md exige o cerebro (setup-alia no boot)" $bootSetup
 
+# --- Git-sync: commit+push sem git (OPP-72) ---
+# git-sync.ps1 versiona uma pasta no GitHub via API HTTPS (sem git.exe). O item so esta pronto quando
+# o smoke prova que ele discrimina: -DryRun com repo valido -> exit 0 + [DRY-RUN OK]; repo invalido
+# -> exit 1 com erro claro (sem tocar a rede, sem token). O instalador tambem tem que apontar pro repo
+# publico real (nao mais o placeholder).
+Write-Host ""
+Write-Host "-- Git-sync (commit+push sem git, OPP-72) --"
+$gsScript = Join-Path $root "scripts\git-sync.ps1"
+Check "Git-sync: git-sync.ps1 presente" (Test-Path $gsScript)
+if (Test-Path $gsScript) {
+  $gsOut = (& $gsScript -Repo "owner/repo" -Path (Join-Path $root "onboarding") -DryRun 6>&1) -join "`n"; $gsExit = $LASTEXITCODE
+  Check "Git-sync: -DryRun com repo valido -> exit 0 + DRY-RUN OK" (($gsExit -eq 0) -and ($gsOut -match 'DRY-RUN OK')) ("exit: " + $gsExit)
+  $gsBad = (& $gsScript -Repo "invalido" -DryRun 6>&1) -join "`n"; $gsBadExit = $LASTEXITCODE
+  Check "Git-sync: repo invalido -> exit 1 com erro claro" (($gsBadExit -eq 1) -and ($gsBad -match "owner/repo"))
+}
+# Instalador aponta pro repo publico real (nao o placeholder ORG/alia-flow).
+$instTxt = ReadText (Join-Path $root "scripts\install.ps1")
+Check "Git-sync: install.ps1 aponta pro repo publico real (nao placeholder)" (($instTxt -match 'gufarina/alia\.flow') -and ($instTxt -notmatch '\$repo\s*=\s*"ORG/alia-flow"'))
+
+# --- Growth: especialista + skills de marketing (OPP-73) ---
+# 1 especialista novo (growth) + 16 skills adaptadas do OpenClaudia (MIT) em 3 ondas. Guardrails:
+# (a) presenca do par growth.md/.yaml; (b) presenca das 16 skills; (c) toda skill do pack declara
+# provenance: openclaudia e o contrato Alia Flow (delegacao+Task+Gate+grounding); (d) roteamento da
+# lente marketing -> growth no alia.yaml; (e) growth passa pelo quality-gate com grounding required.
+Write-Host ""
+Write-Host "-- Growth: especialista + 16 skills marketing (OPP-73) --"
+Check "Growth: par growth.md + growth.yaml presente" ((Test-Path (Join-Path $agentsDir "growth.md")) -and (Test-Path (Join-Path $agentsDir "growth.yaml")))
+$growthTxt = ReadText (Join-Path $agentsDir "growth.yaml")
+Check "Growth: gate quality-gate + grounding required declarados" (($growthTxt -match '(?im)^\s*gate:\s*quality-gate') -and ($growthTxt -match '(?im)^\s*grounding:\s*required'))
+$aliaTxt = ReadText (Join-Path $agentsDir "alia.yaml")
+Check "Growth: lente marketing roteia pro growth (alia.yaml)" (($aliaTxt -match '(?im)lens:\s*marketing') -and ($aliaTxt -match '(?im)route_to:\s*growth'))
+$mktSkills = @(
+  "launch-strategy","icp-builder","competitor-analysis","pricing-strategy","page-cro","seo-audit",
+  "content-strategy","content-calendar","write-blog","social-content","thread-writer","email-sequence","newsletter",
+  "google-analytics","search-console","brand-monitor"
+)
+$mktMissing = @(); $mktNoProv = @(); $mktNoContract = @()
+foreach ($ms in $mktSkills) {
+  $msPath = Join-Path $root ("skills\" + $ms + "\SKILL.md")
+  if (-not (Test-Path $msPath)) { $mktMissing += $ms; continue }
+  $msTxt = ReadText $msPath
+  if ($msTxt -notmatch '(?im)^\s*provenance:\s*openclaudia') { $mktNoProv += $ms }
+  if ($msTxt -notmatch '(?i)Contrato Alia Flow') { $mktNoContract += $ms }
+}
+Check ("Growth: 16 skills do pack presentes (" + (16 - $mktMissing.Count) + "/16)") ($mktMissing.Count -eq 0) ("faltando: " + ($mktMissing -join ", "))
+Check "Growth: toda skill do pack declara provenance: openclaudia" ($mktNoProv.Count -eq 0) ("sem provenance: " + ($mktNoProv -join ", "))
+Check "Growth: toda skill do pack carrega o contrato Alia Flow (delegacao+Task+Gate+grounding)" ($mktNoContract.Count -eq 0) ("sem contrato: " + ($mktNoContract -join ", "))
+
 # --- Release (open source) ---
 # O produto e empacotavel: LICENSE (MIT), o empacotador CLEAN e o instalador de 1 linha existem,
 # e o README ensina a instalar. (A publicacao no GitHub e o passo manual do DevOps.)
@@ -847,6 +895,31 @@ Check "Release: LICENSE presente (MIT)" (Test-Path (Join-Path $root "LICENSE"))
 Check "Release: empacotador package-release.ps1 presente" (Test-Path (Join-Path $root "scripts\package-release.ps1"))
 Check "Release: instalador install.ps1 presente" (Test-Path (Join-Path $root "scripts\install.ps1"))
 Check "Release: README ensina a instalar (cita install.ps1)" ((ReadText (Join-Path $root "README.md")) -match 'install\.ps1')
+
+# --- Guard de vetos: termo derrubado pelo CEO nunca vive no motor (07/jul) ---
+# Le os GUARD: do docs/CLAIMS.md e reprova se qualquer regex aparecer em engine/.
+# Transforma "confie que o veto foi cumprido" em "o teste prova". Molde do check de termo legado.
+Write-Host ""
+Write-Host "-- Guard de vetos (CLAIMS.md vs motor) --"
+$claimsPath = Join-Path $root "docs\CLAIMS.md"
+if (Test-Path $claimsPath) {
+  $guards = @()
+  foreach ($line in (Get-Content -LiteralPath $claimsPath -Encoding UTF8)) {
+    if ($line -match '^\s*GUARD:\s*(.+?)\s*$') { $guards += $Matches[1] }
+  }
+  Check "Guard: CLAIMS.md declara termos proibidos (GUARD:)" ($guards.Count -gt 0) "nenhum GUARD: no CLAIMS.md"
+  $engineFilesAll = Get-ChildItem -LiteralPath $engine -Recurse -File -Include *.md,*.yaml -ErrorAction SilentlyContinue
+  foreach ($g in $guards) {
+    $hits = @()
+    foreach ($f in $engineFilesAll) {
+      $txt = [System.IO.File]::ReadAllText($f.FullName)
+      if ($txt -cmatch $g) { $hits += $f.FullName.Substring($engine.Length + 1) }
+    }
+    Check ("Guard: veto ausente do motor -> /" + $g + "/") ($hits.Count -eq 0) ("vazou em: " + ($hits -join ", "))
+  }
+} else {
+  Check "Guard: docs/CLAIMS.md presente (registro de vetos)" $false "CLAIMS.md nao encontrado"
+}
 
 # --- Resultado ---
 Write-Host ""

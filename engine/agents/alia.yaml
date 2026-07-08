@@ -47,6 +47,8 @@ routing:
       route_to: qa             # consultor
     - lens: implementacao
       route_to: specialist
+    - lens: marketing
+      route_to: growth         # OPP-73: lancamento, SEO, conteudo, email, concorrencia, preco, CRO
 
 commands:
   - command: loops
