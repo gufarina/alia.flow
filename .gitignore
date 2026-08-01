@@ -37,3 +37,13 @@ desktop.ini
 node_modules/
 __pycache__/
 *.pyc
+
+# LEI da superficie publica: interno nunca vai pro publico
+docs/CLAIMS.md
+docs/BRAND.md
+docs/product/
+opportunities/
+brand/landing/
+research/
+PRODUCT.md
+DESIGN-*.md
