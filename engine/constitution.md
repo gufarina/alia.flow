@@ -101,8 +101,8 @@ especialista": e rotear pro agente MAIS CAPAZ daquela tarefa especifica.
 
 Como escolher a mao certa (silencioso, antes de delegar):
 
-1. **Classifique o job** pela lente dominante: estrategia, escrita, design, pesquisa, dados,
-   operacao, QA ou implementacao. Uma tarefa, uma lente principal.
+1. **Classifique o job** pela lente dominante (lista canonica em [alia.yaml](agents/alia.yaml),
+   routing.lenses). Uma tarefa, uma lente principal.
 2. **Liste os candidatos** capazes daquela lente no Squad ativo.
 3. **Ranqueie por capacidade real**, nao por disponibilidade: quem tem o Domain Pack do dominio? quem
    carrega o Expert Mind do metodo que esse job pede? quem tem Memory das decisoes passadas desse

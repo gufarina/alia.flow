@@ -8,6 +8,8 @@ O modelo virou commodity. O valor nao esta na capacidade crua, e no arnes em vol
 
 > **Pre-requisito: um coding agent.** A Alia mora dentro de um agente de codigo - escolha um e instale antes:
 > [Claude Code](https://claude.com/claude-code) - [Codex](https://github.com/openai/codex) - [OpenCode](https://opencode.ai).
+> A experiencia varia por agente - Claude Code e o caminho mais completo hoje; veja o que muda em
+> [docs/COMPATIBILIDADE.md](docs/COMPATIBILIDADE.md) (o que funciona, o que degrada e como compensar).
 > Depois, uma linha instala a Alia:
 > `iwr -useb https://raw.githubusercontent.com/gufarina/alia.flow/main/scripts/install.ps1 | iex`
 
@@ -17,7 +19,7 @@ O modelo virou commodity. O valor nao esta na capacidade crua, e no arnes em vol
 
 Voce viu todo mundo usando e ficou com a impressao de que era pra quem entende de tecnologia. Voce ate tentou, e parou na mesma parede: parecia que primeiro era preciso aprender a operar uma engrenagem, achar as palavras certas, virar meio tecnico. Entao desistia e voltava a fazer na mao.
 
-Aqui e diferente em dois pontos. Voce diz o resultado que precisa, em palavras comuns - como pediria a uma pessoa de confianca. E o que volta nao e o primeiro rascunho: e a versao que ja passou por uma conferencia e foi ajustada ate ficar boa. Nada para aprender, nada para configurar. A forca da IA, sem o manual.
+A Alia e a operadora do seu studio de IA. Voce diz o resultado que precisa, em palavras comuns - como pediria a uma pessoa de confianca. Ela escolhe a melhor mao para cada trabalho, conduz do comeco ao fim e so te entrega o que ja passou pela conferencia - nunca o primeiro rascunho. Nada para aprender, nada para configurar: voce so alimenta o seu fluxo (quem voce atende, o que esta tocando, o que precisa ficar pronto) e a cada volta ela sabe mais do seu contexto.
 
 > Esse e o produto que se monta sobre este arnes. O que vem abaixo e o motor, para quem vai ler o codigo.
 
@@ -50,7 +52,7 @@ A afirmacao mais barata do mercado de IA e "memoria melhora o output". Quase nin
 - **Braco informado** (com o segundo cerebro carregado): cobertura **5 de 5 (100%)**.
 - **Ganho: 5**, num limiar de aprovacao de **3**.
 
-A pontuacao sai de um scorer Python deterministico (`tests/knowledge-ablation/score.py`), nao de um juiz LLM. E uma prova **causal**, nao uma narrativa: voce roda na sua maquina e ve o numero.
+A pontuacao sai de um scorer Python deterministico (`studio.example/clients/acme-saas/tests/knowledge-ablation/score.py`), nao de um juiz LLM. E uma prova **causal**, nao uma narrativa: voce roda na sua maquina e ve o numero.
 
 ### Como provar voce mesmo
 
@@ -69,6 +71,13 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1
 ```
 
 O smoke test roda em PowerShell, sem agente nenhum: confere a engine, a instancia de exemplo, os squads, o grafo, os artefatos, os gates, a memoria, a consistencia de estado e a ablacao - de uma vez. Verde quer dizer que o ciclo inteiro fecha com evidencia em disco, nao que "deveria funcionar".
+
+Para um diagnostico rapido da instalacao (estrutura do motor, versao coerente com o changelog, config valida e o proprio trilho), rode o doctor - read-only, com saida legivel ou `-Json` para automacao:
+
+```sh
+powershell -ExecutionPolicy Bypass -File scripts/doctor.ps1
+#   -> "=== Alia Flow Doctor ===", uma linha por check, "SAUDAVEL", exit 0.
+```
 
 Para ver o arnes operando, abra a pasta no seu agente (ele le o `AGENTS.md`) e delegue um trabalho contra o cliente de exemplo `acme-saas`.
 
@@ -105,7 +114,7 @@ A parte que costuma estar escondida nos READMEs. Aqui esta explicita, de proposi
 - **Delegacao portavel entre CLIs ainda em andamento.** O boot via `AGENTS.md` e vendor-neutral por construcao, e o fluxo esta validado no Claude Code. Rodar a delegacao plenamente no Codex / opencode e outros agentes esta no roadmap (OPP-42), nao garantido hoje.
 - **Allow-list de tools so declarada.** A lista de ferramentas por persona esta declarada nos manifestos, mas o enforcement em runtime ainda nao existe - hoje e contrato, nao trava.
 - **Descoberta-vira-task adiada.** A Alia ainda nao transforma uma descoberta sua em tarefa por conta propria; isso fica para depois.
-- **Sem instalador de um clique pleno.** Existe `install.ps1`, mas o `alia init` que pergunta o nome do studio e configura tudo sozinho ainda nao esta completo.
+- **Instalador ainda sem setup interativo.** O `install.ps1` ja e transacional (faz backup do que existe e reverte sozinho se a copia falhar - nao te deixa num estado parcial), mas o `alia init` que pergunta o nome do studio e configura tudo sozinho ainda nao esta completo.
 - **Prova so com o demo.** O ciclo E2E e provado apenas com o cliente de exemplo `acme-saas`, como vitrine do fluxo. Escala multi-cliente nao e parte do que esta aberto.
 - **Benchmark de loop-quality a construir.** A ablacao mede o lift do contexto (0/5 -> 5/5). O ganho do proprio loop - 1a volta vs pos-refino - ainda nao tem benchmark; e projecao a medir, nao numero anunciado.
 

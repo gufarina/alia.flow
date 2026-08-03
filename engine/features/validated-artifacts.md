@@ -31,7 +31,7 @@ evita pagar um modelo pra reprovar uma virgula.
 - **Foco do Specialist**: o LLM gasta julgamento na qualidade do conteudo, nao em checar estrutura.
 - **Robustez**: nada quebrado por formato passa do Gate - o Fail e automatico e aponta o desvio.
 
-## Relacao com os 4 criterios do Gate
+## Relacao com os 6 criterios do Gate
 
 Validated Artifacts e a porta deterministica do criterio Funciona ([quality-gate](../governance/quality-gate.md)):
 se a estrutura nao bate o contrato, o entregavel nao funciona como aquele tipo, e o Gate reprova antes

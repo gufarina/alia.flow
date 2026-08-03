@@ -1,0 +1,26 @@
+# Alia Flow - Response Guard (M1: o freio, contrato estruturado)
+# Configuracao lida por scripts/response-guard.ps1 (hook de Stop). Prosa/doutrina completa em
+# response-guard.md. Sem acentos, sem emojis. UTF-8 sem BOM.
+
+# mode controla o que o guard FAZ quando acha violacao numa das 2 regras (DELEGA, GROUNDING):
+#   aviso    - NUNCA bloqueia. Sempre exit 0. So registra no log (studio/response-guard-log.jsonl)
+#              e imprime um resumo de uma linha no stdout do hook. Este e o modo de nascimento
+#              (rampa): mede aderencia sem travar a instancia viva.
+#   bloqueio - havendo violacao, devolve {"decision":"block","reason":"..."} no stdout do hook,
+#              pedindo o conserto antes de fechar o turno. Sem violacao, exit 0 silencioso.
+#              So migrar para este modo DEPOIS de olhar uma semana de log em modo aviso
+#              (ver a rampa em response-guard.md).
+# Default se o arquivo faltar, nao existir a chave, ou vier ilegivel: aviso.
+mode: aviso
+
+# REGRA 2 (GROUNDING) - quantidade minima de "afirmacoes de peso" (referencia a arquivo por
+# extensao conhecida, ou padrao arquivo:linha) no texto da ULTIMA mensagem do assistente para a
+# regra comecar a exigir um rotulo de proveniencia ([MEDIDO], [INFERIDO] ou [LIDO]) em algum
+# ponto do texto. Abaixo deste teto, a regra nao se aplica (texto curto nao precisa rotular).
+min_claims: 3
+
+# REGRA 1 (DELEGA) - limiar so INFORMATIVO, nunca reprova por si so. Quando a resposta final do
+# turno passa deste tamanho (em caracteres) e o turno NAO chamou Agent/Task nenhuma vez, o guard
+# registra isso no resumo do stdout (modo aviso) como sinal de possivel resposta grande demais
+# sem delegacao - so para medir tendencia, nunca vira violacao sozinho.
+min_chars_informativo: 1500

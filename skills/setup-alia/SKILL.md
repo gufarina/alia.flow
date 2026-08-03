@@ -25,7 +25,9 @@ provenance: nucleo
    um "ok": _"Pra eu lembrar melhor das conexoes do seu estudio, instalo um pacotinho (graphify) e
    leio os arquivos do estudio AQUI na sua maquina pra montar um mapa - nada sai do seu computador, e
    o mapa fica numa pasta sua (`squad/knowledge/graphify-out/`). Posso ligar?"_ So com o "ok" ela
-   checa Python e instala (`pip install graphifyy`) e gera o grafo. Se o usuario nao quiser, ou nao
+   checa Python e instala (`pip install graphifyy`) e gera o grafo - invocando SEMPRE via
+   `python -m graphify` (no Windows o `pip` pode nao por o comando `graphify` no PATH; o modulo
+   funciona em qualquer caso). Se o usuario nao quiser, ou nao
    houver Python, ela CONTINUA na memoria de notas - sem atrito. Graphify e MELHORIA, nunca requisito
    - jamais bloqueia o comeco. **Privacidade (verificado no codigo do pacote):** o Graphify processa
    TUDO LOCAL (parsing estrutural por tree-sitter, na maquina), NAO manda seu codigo/conteudo pra
@@ -43,7 +45,8 @@ provenance: nucleo
    lembrar do seu contexto - voce nao precisa fazer nada." A Alia passa a gravar/ler as notas. Instantaneo.
 2. **Graphify so quando ajudar, e com OK do usuario:** se o estudio crescer e o grafo valer a pena, a
    Alia EXPLICA em uma frase (instalo um pacotinho, leio os arquivos AQUI na sua maquina, nada sai do
-   PC) e PEDE permissao. Com o "ok": checa Python -> `pip install graphifyy` -> gera o grafo. Sem
+   PC) e PEDE permissao. Com o "ok": checa Python -> `pip install graphifyy` -> gera o grafo com
+   `python -m graphify` (PATH-safe no Windows). Sem
    "ok" ou sem Python, segue nas notas. Transparente - nunca escondido.
 3. **Pesquisa fica como convite, nao barreira:** "Quando quiser, eu tambem pesquiso na web e estudo
    fontes - e so me pedir pra ligar a Perplexity e o NotebookLM." Nao bloqueia.

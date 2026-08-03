@@ -85,7 +85,7 @@ Delegar nao e despachar para quem esta livre - e casar a **competencia que a Tas
 | Etapa | Pergunta | Resolve para |
 |-------|----------|--------------|
 | 1. Client -> Squad | De quem e este trabalho? | O Squad do Client (squads-first). Client sem Squad -> **Squad Creator** primeiro. |
-| 2. Task -> Dominio | Que lente o job pede? (estrategia, copy, design, dev, dados, QA, ops) | O dominio dominante da Task. |
+| 2. Task -> Dominio | Que lente o job pede? (lista canonica: [alia.yaml](agents/alia.yaml), routing.lenses) | O dominio dominante da Task. |
 | 3. Dominio -> Specialist mais capaz | Quem domina este dominio com mais profundidade? | O Specialist cujo Domain Pack + Expert Mind cobrem a Task com folga, nao por tabela. |
 | 4. Empate -> desempate | Dois cabem? | Vence quem tem Expert Mind do dominio, depois quem tem memoria do Client, depois menor custo. |
 

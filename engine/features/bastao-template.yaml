@@ -1,0 +1,40 @@
+# Bastao - molde estruturado do handoff <=500 tokens
+# Doutrina completa: engine/features/bastao.md
+# Preencher todos os campos antes de considerar a Task fechada nesta estacao.
+# Sem acentos, sem emojis. UTF-8 sem BOM.
+
+bastao:
+  # Quem passa a bola. Estacao/agente/papel de origem. 1 linha.
+  de: ""
+
+  # Quem recebe. Estacao/agente/papel de destino. 1 linha.
+  # Declarar isso e o que forma a CADEIA (ver bastao.md, secao "A cadeia e a sugestao").
+  para: ""
+
+  # Id da Task no studio/state.json. Sem Task registrada, sem bastao valido.
+  task_id: ""
+
+  # Decisoes ja tomadas que o proximo NAO deve reabrir sem escalar.
+  # Teto duro: 5 itens. Cada item, 1 linha curta.
+  decisoes:
+    - ""
+
+  # Paths dos arquivos criados/editados nesta estacao.
+  # Teto duro: 10 itens.
+  arquivos_tocados:
+    - ""
+
+  # Impedimentos ainda abertos que o proximo precisa saber para nao tropecar.
+  # Teto duro: 3 itens. Vazio e resposta valida (registrar lista vazia, nao omitir o campo).
+  bloqueios: []
+
+  # O que o proximo deve fazer, direto ao ponto. Teto duro: 2 frases.
+  proximo_passo: ""
+
+  # Sugestao de comando concreto para quem entra (ex.: "*implementa TASK-123").
+  # Opcional mas recomendado - e o que MONITORA/FECHA usam para nao deixar a bola cair.
+  comando_sugerido: ""
+
+  # Vira true assim que o destino LE e AGE sobre este bastao.
+  # Um bastao com consumed=true nao e reaberto; se a Task volta a esta estacao, nasce bastao novo.
+  consumed: false

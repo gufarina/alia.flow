@@ -168,7 +168,7 @@ foreach ($rel in $rootFiles) {
 
 # Raiz limpa: SO a allowlist canonica (nada vaza). Layout: skills/file-organization/SKILL.md.
 # Pastas livres; dotfiles (.git*) ignorados; state.json/studio.yaml so contam se studio_dir=".".
-$rootAllow = @("README.md","PRIMEIROS-PASSOS.md","AGENTS.md","CHANGELOG.md","CATALOG.md","LICENSE","CREDITS.md","VERSION","alia.config.json","iniciar-alia.bat","atualizar-alia.bat","mission-control.html","CLAUDE.md")
+$rootAllow = @("README.md","PRIMEIROS-PASSOS.md","AGENTS.md","CONTRIBUTING.md","CHANGELOG.md","CATALOG.md","LICENSE","CREDITS.md","VERSION","alia.config.json","iniciar-alia.bat","atualizar-alia.bat","mission-control.html","CLAUDE.md","PRODUCT.md","DESIGN.md")
 $sdir = ""
 $cfgP = Join-Path $root "alia.config.json"
 if (Test-Path $cfgP) { try { $sdir = "$((Get-Content $cfgP -Raw | ConvertFrom-Json).studio_dir)".Trim() } catch {} }
@@ -220,6 +220,10 @@ if (-not $encOk) {
 #   - studio/memory/_proposals/ : digests de memoria a curar (dado vivo, podem citar o termo legado).
 #   - studio/state.json : dado vivo (descricoes de tarefa), nao codigo.
 #   - _drafts/ : rascunhos do operador (LP antigas etc.), nao fazem ship.
+#   - clients/*/artifacts/ : paineis/relatorios internos do cliente (ex.: auditoria executiva
+#     que narra a absorcao do aiox, assunto que o proprio CREDITS.md credita abertamente); por
+#     LEI (raiz CLAUDE.md, "git e vitrine, nao gaveta") material de cliente NUNCA e versionado -
+#     mesma classe de opportunities/ e research/, que ja sao isentos.
 #   - o proprio script (self) : contem "aiox" como padrao de busca.
 # Encoding (secao f) segue cobrindo tudo; so o scan de termo legado e que filtra.
 # ---------------------------------------------------------------------------
@@ -231,6 +235,8 @@ $researchMarker = $sep + "research" + $sep
 $proposalsMarker = $sep + "_proposals" + $sep
 $draftsMarker = $sep + "_drafts" + $sep
 $backupsMarker = $sep + "_backups" + $sep   # backups automaticos do updater copiam dado vivo (state.json) - mesma isencao do vivo
+$clientsMarker = $sep + "clients" + $sep
+$artifactsMarker = $sep + "artifacts" + $sep
 $statePathFull = (Join-Path $studioRoot "state.json")
 $aioxHits = New-Object System.Collections.Generic.List[string]
 foreach ($f in $allFiles) {
@@ -239,8 +245,10 @@ foreach ($f in $allFiles) {
     if ($f.FullName.IndexOf($proposalsMarker, [StringComparison]::OrdinalIgnoreCase) -ge 0) { continue }
     if ($f.FullName.IndexOf($draftsMarker, [StringComparison]::OrdinalIgnoreCase) -ge 0) { continue }
     if ($f.FullName.IndexOf($backupsMarker, [StringComparison]::OrdinalIgnoreCase) -ge 0) { continue }
+    if (($f.FullName.IndexOf($clientsMarker, [StringComparison]::OrdinalIgnoreCase) -ge 0) -and ($f.FullName.IndexOf($artifactsMarker, [StringComparison]::OrdinalIgnoreCase) -ge 0)) { continue }
     if ($f.FullName -eq $statePathFull) { continue }
-    if (@("CREDITS.md","README.md","CHANGELOG.md","PRD.md") -contains $f.Name) { continue }   # docs creditam aiox/BMAD de proposito (PRD cita o molde do descritor); o check guarda o CODIGO, nao a atribuicao
+    if ($f.Name -eq "smoke-test-studio.ps1") { continue }   # qualquer copia do proprio script contem "aiox" como padrao de busca (a oficina deixou de ser repo git, entao as copias dela agora sao varridas)
+    if (@("CREDITS.md","README.md","CHANGELOG.md","PRD.md","ARQUITETURA.md") -contains $f.Name) { continue }   # docs de produto creditam a origem de proposito (PRD cita o molde do descritor; ARQUITETURA descreve a absorcao); ambos sao internos (docs/product nao vai pro pacote publico). O check guarda o CODIGO, nao a atribuicao
     $content = [System.IO.File]::ReadAllText($f.FullName)
     if ($content -match "(?i)aiox") {
         $aioxHits.Add($f.FullName.Substring($root.Length + 1))

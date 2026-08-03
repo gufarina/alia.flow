@@ -24,6 +24,16 @@ function Check([string]$name, [bool]$cond, [string]$detail = "") {
   }
 }
 
+# Warn: aviso que NUNCA reprova o smoke (nao mexe em pass/fail). Uso: drift que so o CEO resolve
+# (ex.: versao entre oficina/release/produto), nunca um defeito que o proprio motor devia corrigir.
+function Warn([string]$name, [bool]$cond, [string]$detail = "") {
+  if ($cond) {
+    Write-Host ("[OK] " + $name)
+  } else {
+    Write-Host ("[AVISO] " + $name + $(if ($detail) { " -> " + $detail } else { "" }))
+  }
+}
+
 function ReadText([string]$path) {
   $utf8 = New-Object System.Text.UTF8Encoding($false)
   return [System.IO.File]::ReadAllText($path, $utf8)
@@ -40,9 +50,9 @@ $engineFiles = @(
   "agents\alia.md","agents\persona.md","agents\squad-creator.md","agents\architect.md",
   "agents\data-engineer.md","agents\qa.md","agents\dev.md","agents\devops.md",
   "workflows\story-cycle.md","workflows\qa-loop.md",
-  "governance\loops.md","governance\quality-gate.md",
+  "governance\loops.md","governance\quality-gate.md","governance\memory-audit.md","governance\evolution-pipeline.md",
   "features\expert-minds.md","features\squad-templates.md","features\frugal-skills.md",
-  "features\validated-artifacts.md",
+  "features\validated-artifacts.md","features\forja.md","features\bastao.md","features\bastao-template.yaml",
   "features\expert-minds\design\brad-frost.md","features\expert-minds\dev\kent-beck.md",
   "features\expert-minds\copy\ogilvy.md"
 )
@@ -458,7 +468,7 @@ Write-Host "-- Guardrails (separacao de instancias) --"
 
 # (a) Raiz limpa: SO a allowlist canonica (nenhum arquivo vaza, nao so .md).
 # Layout canonico em skills/file-organization/SKILL.md. Pastas livres; dotfiles (.git*) ignorados.
-$rootAllow = @("README.md","PRIMEIROS-PASSOS.md","AGENTS.md","CHANGELOG.md","CATALOG.md","LICENSE","CREDITS.md","VERSION","alia.config.json","iniciar-alia.bat","atualizar-alia.bat","mission-control.html")
+$rootAllow = @("README.md","PRIMEIROS-PASSOS.md","AGENTS.md","CONTRIBUTING.md","CHANGELOG.md","CATALOG.md","LICENSE","CREDITS.md","VERSION","alia.config.json","iniciar-alia.bat","atualizar-alia.bat","mission-control.html","MANIFEST.sha256")
 $sdir = ""
 $cfgP = Join-Path $root "alia.config.json"
 if (Test-Path $cfgP) { try { $sdir = "$((Get-Content $cfgP -Raw | ConvertFrom-Json).studio_dir)".Trim() } catch {} }
@@ -624,6 +634,19 @@ foreach ($y in $allYaml) {
   }
 }
 Check ("Manifestos: " + $pairs + " pares prosa<->yaml intactos (nenhum orfao/vazio)") ($brokenPairs.Count -eq 0) ("quebrado(s): " + ($brokenPairs -join ", "))
+
+# --- Enforcement de delegacao no ponto de decisao (OPP-74) ---
+# A lei DELEGA (orchestration.md) morava so em prosa de boot e reincidiu (02/ago, mOS): em sessao
+# longa a Alia voltou a executar dominio com a propria mao. Mesma licao do veto COO: regra que nao
+# vira guard de maquina reincide. O guard aqui e duplo: (a) o hook delegation-guard.ps1 existe;
+# (b) esta LIGADO em .claude/settings.json como UserPromptSubmit. Projetado-mas-desligado reprova.
+Write-Host ""
+Write-Host "-- Enforcement de delegacao (hook ligado no ponto de decisao) --"
+$dgScript = Join-Path $root "scripts\delegation-guard.ps1"
+Check "Delegacao: scripts/delegation-guard.ps1 existe e cita a lei (DELEGA + fonte antes de varrer)" ((Test-Path $dgScript) -and ((ReadText $dgScript) -match 'DELEGA') -and ((ReadText $dgScript) -match 'graphify-out'))
+$settingsPath = Join-Path $root ".claude\settings.json"
+$settingsTxt = if (Test-Path $settingsPath) { ReadText $settingsPath } else { "" }
+Check "Delegacao: hook delegation-guard LIGADO em .claude/settings.json (UserPromptSubmit)" (($settingsTxt -match 'UserPromptSubmit') -and ($settingsTxt -match 'delegation-guard\.ps1'))
 
 # --- Allow-list de tools por persona (declaracao existe e nao e vazia) ---
 # orchestration.md:100-107 declara que cada papel tem uma allow-list no campo "tools:" do seu .yaml,
@@ -857,6 +880,29 @@ if (Test-Path $gsScript) {
 $instTxt = ReadText (Join-Path $root "scripts\install.ps1")
 Check "Git-sync: install.ps1 aponta pro repo publico real (nao placeholder)" (($instTxt -match 'gufarina/alia\.flow') -and ($instTxt -notmatch '\$repo\s*=\s*"ORG/alia-flow"'))
 
+# --- Updater diff-only + contrato de task tipado (1.39.0) ---
+# Auditoria de fluxo da 1.39: (a) update-engine.ps1 deixou o espelho cego (/MIR) e virou diff-only
+# com -Check (relatorio previo por SHA256) e backup por arquivo dentro do backup datado;
+# (b) register-task.ps1 ganhou o contrato tipado (pesquisa|construcao|revisao) com regra dura por
+# tipo NO ATO do registro, default open e -Project obrigatorio. O smoke prova executando.
+Write-Host ""
+Write-Host "-- Updater diff-only + task tipada (1.39.0) --"
+$updTxt = ReadText (Join-Path $root "scripts\update-engine.ps1")
+Check "Updater: diff-only com -Check (Get-MirrorDiff presente, robocopy /MIR banido)" (($updTxt -match 'Get-MirrorDiff') -and ($updTxt -match '\$Check') -and ($updTxt -notmatch 'robocopy[^\r\n]*/MIR'))
+Check "Updater: backup por arquivo antes de sobrescrever/remover (Backup-InstanceFile)" ($updTxt -match 'Backup-InstanceFile')
+Check "Updater: -DryRun continua valido (sinonimo de -Check)" ($updTxt -match '\$Check\s*=\s*\$true')
+$rtScript = Join-Path $root "scripts\register-task.ps1"
+$rtTxt = ReadText $rtScript
+Check "Task tipada: -Type com ValidateSet(pesquisa,construcao,revisao)" ($rtTxt -match 'ValidateSet\("pesquisa","construcao","revisao"\)')
+Check "Task tipada: Status default open (registrar ANTES de executar)" ($rtTxt -match '\$Status\s*=\s*"open"')
+$rtState = Join-Path $studio "state.json"   # demo do studio.example: existe no lab E no pacote
+$rtNoProj = (& $rtScript -Client "smoke" -Title "t" -StateFile $rtState -DryRun 6>&1) -join "`n"; $rtNoProjExit = $LASTEXITCODE
+Check "Task tipada: sem -Project -> ERRO (exit 1)" (($rtNoProjExit -eq 1) -and ($rtNoProj -match 'sem -Project'))
+$rtRev = (& $rtScript -Client "smoke" -Title "t" -Project "p" -Type revisao -Status done -StateFile $rtState -DryRun 6>&1) -join "`n"; $rtRevExit = $LASTEXITCODE
+Check "Task tipada: revisao done sem -GateVerdict -> ERRO (exit 1)" (($rtRevExit -eq 1) -and ($rtRev -match 'verdito'))
+$rtPesq = (& $rtScript -Client "acme-saas" -Title "t" -Project "p" -Type pesquisa -Artifact "a.md" -Specialist "quinn" -StateFile $rtState -DryRun 6>&1) -join "`n"; $rtPesqExit = $LASTEXITCODE
+Check "Task tipada: pesquisa dispensa base_artifact (sem aviso falso, exit 0)" (($rtPesqExit -eq 0) -and ($rtPesq -notmatch 'AVISO'))
+
 # --- Growth: especialista + skills de marketing (OPP-73) ---
 # 1 especialista novo (growth) + 16 skills adaptadas do OpenClaudia (MIT) em 3 ondas. Guardrails:
 # (a) presenca do par growth.md/.yaml; (b) presenca das 16 skills; (c) toda skill do pack declara
@@ -894,7 +940,35 @@ Write-Host "-- Release (open source) --"
 Check "Release: LICENSE presente (MIT)" (Test-Path (Join-Path $root "LICENSE"))
 Check "Release: empacotador package-release.ps1 presente" (Test-Path (Join-Path $root "scripts\package-release.ps1"))
 Check "Release: instalador install.ps1 presente" (Test-Path (Join-Path $root "scripts\install.ps1"))
+Check "Release: instalador e transacional (backup + rollback)" ((ReadText (Join-Path $root "scripts\install.ps1")) -match 'Backup-Dest' -and (ReadText (Join-Path $root "scripts\install.ps1")) -match 'Restore-Dest' -and (ReadText (Join-Path $root "scripts\install.ps1")) -match 'ROLLBACK')
+Check "Release: updater online presente (update-online.ps1)" (Test-Path (Join-Path $root "scripts\update-online.ps1"))
+Check "Release: updater online e transacional e protege dados do operador" ((ReadText (Join-Path $root "scripts\update-online.ps1")) -match 'Restore-Engine' -and (ReadText (Join-Path $root "scripts\update-online.ps1")) -match 'Assert-SafeCopySet' -and (ReadText (Join-Path $root "scripts\update-online.ps1")) -match 'state\.json')
+Check "Release: atualizar-alia.bat escolhe o updater certo (lab local vs online)" ((ReadText (Join-Path $root "atualizar-alia.bat")) -match 'update-engine\.ps1' -and (ReadText (Join-Path $root "atualizar-alia.bat")) -match 'update-online\.ps1')
+Check "Release: doctor.ps1 presente (diagnostico read-only)" (Test-Path (Join-Path $root "scripts\doctor.ps1"))
+Check "Release: doctor.ps1 suporta saida -Json" ((ReadText (Join-Path $root "scripts\doctor.ps1")) -match '\[switch\]\$Json')
+Check "Release: semantic-lint.ps1 presente (linter de linguagem ubiqua)" (Test-Path (Join-Path $root "scripts\semantic-lint.ps1"))
+Check "Release: guard-core.ps1 presente (sentinela de fronteira do nucleo)" (Test-Path (Join-Path $root "scripts\guard-core.ps1"))
+& (Join-Path $root "scripts\guard-core.ps1") *> $null
+Check "Nucleo: integro vs baseline (sentinela; mudanca de nucleo exige -AllowCore)" ($LASTEXITCODE -eq 0)
+Check "Release: semantic-lint reusa a fonte de verdade (le CLAIMS.md, nao duplica lista)" ((ReadText (Join-Path $root "scripts\semantic-lint.ps1")) -match 'CLAIMS\.md' -and (ReadText (Join-Path $root "scripts\semantic-lint.ps1")) -match 'GUARD')
+Check "Release: workflow de CI presente (.github/workflows/smoke.yml)" (Test-Path (Join-Path $root ".github\workflows\smoke.yml"))
+Check "Release: CI roda o trilho e o doctor" ((ReadText (Join-Path $root ".github\workflows\smoke.yml")) -match 'smoke-test\.ps1' -and (ReadText (Join-Path $root ".github\workflows\smoke.yml")) -match 'doctor\.ps1')
 Check "Release: README ensina a instalar (cita install.ps1)" ((ReadText (Join-Path $root "README.md")) -match 'install\.ps1')
+Check "Release: CONTRIBUTING.md presente" (Test-Path (Join-Path $root "CONTRIBUTING.md"))
+Check "Release: docs/COMPATIBILIDADE.md presente (degradacao honesta por IDE)" (Test-Path (Join-Path $root "docs\COMPATIBILIDADE.md"))
+Check "Release: manifesto de integridade (make/verify-manifest.ps1) presente" ((Test-Path (Join-Path $root "scripts\make-manifest.ps1")) -and (Test-Path (Join-Path $root "scripts\verify-manifest.ps1")))
+Check "Release: package-release gera o MANIFEST.sha256" ((ReadText (Join-Path $root "scripts\package-release.ps1")) -match 'make-manifest\.ps1')
+Check "Release: docs/INTEGRIDADE.md explica a verificacao" (Test-Path (Join-Path $root "docs\INTEGRIDADE.md"))
+Check "Release: README aponta pra COMPATIBILIDADE.md" ((ReadText (Join-Path $root "README.md")) -match 'COMPATIBILIDADE\.md')
+Check "Release: templates .github presentes (issue + PR)" ((Test-Path (Join-Path $root ".github\ISSUE_TEMPLATE\bug_report.md")) -and (Test-Path (Join-Path $root ".github\PULL_REQUEST_TEMPLATE.md")))
+Check "Release: README cita o caminho real do scorer de ablacao" ((ReadText (Join-Path $root "README.md")) -match 'studio\.example/clients/acme-saas/tests/knowledge-ablation/score\.py')
+Check "Release: o scorer de ablacao citado existe em disco" (Test-Path (Join-Path $root "studio.example\clients\acme-saas\tests\knowledge-ablation\score.py"))
+Check "Release: CONTRIBUTING e .github no ship list do package-release" ((ReadText (Join-Path $root "scripts\package-release.ps1")) -match 'CONTRIBUTING\.md' -and (ReadText (Join-Path $root "scripts\package-release.ps1")) -match '\.github')
+# Benchmarks entregues (TASK-015): a promessa "rode os benchmarks na sua maquina" so e verdade se
+# a pasta viajar no pacote. O 1o check olha o ship list; o 2o roda no proprio pacote (o smoke do
+# pacote usa $root = raiz do pacote) e prova que o runner chegou de verdade no destino.
+Check "Release: benchmarks/ no ship list do package-release" ((ReadText (Join-Path $root "scripts\package-release.ps1")) -match '"benchmarks"')
+Check "Release: benchmarks/run-all.py presente (runner dos 5 benchmarks)" ((Test-Path (Join-Path $root "benchmarks\run-all.py")) -and (Test-Path (Join-Path $root "benchmarks\README.md")))
 
 # --- Guard de vetos: termo derrubado pelo CEO nunca vive no motor (07/jul) ---
 # Le os GUARD: do docs/CLAIMS.md e reprova se qualquer regex aparecer em engine/.
@@ -918,8 +992,298 @@ if (Test-Path $claimsPath) {
     Check ("Guard: veto ausente do motor -> /" + $g + "/") ($hits.Count -eq 0) ("vazou em: " + ($hits -join ", "))
   }
 } else {
-  Check "Guard: docs/CLAIMS.md presente (registro de vetos)" $false "CLAIMS.md nao encontrado"
+  # docs/CLAIMS.md e doc interno (engine/governance/public-surface.md): NUNCA viaja no pacote
+  # publico nem no repo publico (esta no .gitignore de la de proposito). Um clone/instalacao
+  # publica legitimamente nao tem este arquivo - isso NAO e defeito. Degrada com honestidade:
+  # nunca FAIL silencioso (era o que quebrava o smoke em clone limpo) nem PASS falso (fingir que
+  # o guard rodou quando na verdade nao ha nada pra checar). $guards fica vazio de proposito, o
+  # que faz os dois blocos de guard seguintes (superficie publica + scripts) pularem tambem.
+  $guards = @()
+  Warn "Guard: docs/CLAIMS.md ausente - guard de vetos pulado (doc interno, so existe na oficina)" $false "CLAIMS.md nao viaja no pacote/repo publico por LEI; nada a checar aqui"
 }
+
+# --- Guard de vetos: SUPERFICIE PUBLICA (o que o usuario final le) ---
+# Mesma fonte unica (as linhas GUARD: do docs/CLAIMS.md - a lista NAO e duplicada aqui), agora
+# tambem sobre os arquivos que chegam no cliente. Nasceu do incidente de 07/jul: o guard so
+# olhava engine/, entao o lema APOSENTADO sobreviveu no fim do README (que vai no pacote
+# publico), o cargo vetado "COO" continuou sendo ensinado no BRAND.md e o pack usava os dois.
+#
+# USO VIVO vs REGISTRO: doc de marca CITA o termo derrubado de proposito, para ensinar a nao
+# usar. O guard so acusa USO VIVO. Uma linha e REGISTRO (ignorada) quando:
+#   (a) traz um marcador de registro na propria linha: veto/vetado/derrubado/proibido/
+#       aposentado/reprovado; ou
+#   (b) esta sob um titulo de secao de registro (ex.: "## Guarda de vetos").
+# Qualquer outra ocorrencia conta como uso vivo e REPROVA.
+#
+# FORA DO ESCOPO de proposito (historico, planejamento e build regerado - ninguem le como peca):
+#   CHANGELOG.md, opportunities/, _retired/, _drafts/, _dev/, _backups/, release/ e o proprio
+#   docs/CLAIMS.md (que E a lista de vetos).
+# DIVIDA DECLARADA: brand/landing/ fica FORA por enquanto - a LP canonica tem vetos vivos
+#   conhecidos e sera reescrita na TASK-016. Quando a reescrita entrar, basta acrescentar
+#   "brand\landing" em $psDirs abaixo e a LP passa a ser protegida. Divida declarada, nunca
+#   silenciosa.
+
+function VetoScan([string[]]$files, [string[]]$guards) {
+  $regLine    = '(?i)(vetad|veto|derrubad|proibid|aposentad|reprovad)'
+  $regHeading = '(?i)(vetos?|proibid|banid|nunca usamos)'
+  $hits = @()
+  foreach ($file in $files) {
+    if (-not (Test-Path -LiteralPath $file)) { continue }
+    $inRegistrySection = $false
+    $n = 0
+    foreach ($line in (Get-Content -LiteralPath $file -Encoding UTF8)) {
+      $n++
+      if ($line -match '^\s{0,3}#{1,6}\s+(.+)$') { $inRegistrySection = ($Matches[1] -match $regHeading) }
+      if ($inRegistrySection) { continue }
+      if ($line -match $regLine) { continue }
+      foreach ($g in $guards) {
+        if ($line -cmatch $g) {
+          $hits += [PSCustomObject]@{ file = $file; line = $n; term = $g; text = $line }
+        }
+      }
+    }
+  }
+  return ,$hits
+}
+
+Write-Host ""
+Write-Host "-- Guard de vetos (CLAIMS.md vs superficie publica) --"
+if ($guards -and $guards.Count -gt 0) {
+  # Escopo: arquivos de topo que entram no pacote + onboarding/ + docs/ + brand/marketing-pack-*.md
+  $psFiles = @()
+  foreach ($t in @("README.md","PRIMEIROS-PASSOS.md","CONTRIBUTING.md","CREDITS.md")) {
+    $tp = Join-Path $root $t
+    if (Test-Path -LiteralPath $tp) { $psFiles += $tp }
+  }
+  $psDirs = @("onboarding","docs")   # brand\landing entra aqui depois da TASK-016
+  foreach ($d in $psDirs) {
+    $dp = Join-Path $root $d
+    if (-not (Test-Path -LiteralPath $dp)) { continue }
+    # Exclusao avaliada no caminho RELATIVO a $root: o pacote gerado mora em release\alia-flow\,
+    # entao filtrar por caminho absoluto zerava o escopo dentro do proprio pacote (falso verde).
+    $psFiles += @(Get-ChildItem -LiteralPath $dp -Recurse -File -Include *.md,*.html -ErrorAction SilentlyContinue |
+      Where-Object { ($_.FullName.Substring($root.Length + 1) -notmatch '\\(_retired|_drafts|_dev|_backups|release)\\') -and ($_.Name -ne "CLAIMS.md") -and ($_.Name -ne "CHANGELOG.md") } |
+      ForEach-Object { $_.FullName })
+  }
+  $brandDir = Join-Path $root "brand"
+  if (Test-Path -LiteralPath $brandDir) {
+    $psFiles += @(Get-ChildItem -LiteralPath $brandDir -File -Filter "marketing-pack-*.md" -ErrorAction SilentlyContinue |
+      ForEach-Object { $_.FullName })
+  }
+  Check ("Guard publico: escopo montado (" + $psFiles.Count + " arquivos de superficie)") ($psFiles.Count -gt 0) "nenhum arquivo de superficie encontrado"
+
+  # Prova 1 (pega): a fixture suja tem um USO VIVO e uma linha de REGISTRO do mesmo termo.
+  # O guard tem que acusar a primeira e ignorar a segunda - senao vira alarme falso e o time
+  # aprende a ignorar o smoke.
+  $fxDirty = Join-Path $root "scripts\fixtures\superficie-publica-suja.md"
+  Check "Guard publico: fixture de prova presente" (Test-Path -LiteralPath $fxDirty)
+  if (Test-Path -LiteralPath $fxDirty) {
+    $fxHits = @(VetoScan @($fxDirty) $guards)
+    $fxLive = @($fxHits | Where-Object { $_.text -match 'USO VIVO' })
+    $fxReg  = @($fxHits | Where-Object { $_.text -match 'REGISTRO' })
+    Check "Guard publico: REPROVA uso vivo de termo derrubado (fixture suja)" ($fxLive.Count -gt 0) "o guard nao pegou o uso vivo da fixture"
+    Check "Guard publico: nao acusa linha que apenas REGISTRA o veto (sem falso positivo)" ($fxReg.Count -eq 0) ("acusou registro: " + (($fxReg | ForEach-Object { $_.term }) -join ", "))
+  }
+
+  # Prova 2 (nao da falso positivo): a superficie publica de hoje esta limpa, termo a termo.
+  $psHits = @(VetoScan $psFiles $guards)
+  foreach ($g in $guards) {
+    $gh = @($psHits | Where-Object { $_.term -eq $g } |
+      ForEach-Object { $_.file.Substring($root.Length + 1) + ":" + $_.line })
+    Check ("Guard publico: veto ausente da superficie -> /" + $g + "/") ($gh.Count -eq 0) ("uso vivo em: " + ($gh -join ", "))
+  }
+}
+
+# --- Guard de vetos: SCRIPTS QUE GERAM DADO NOVO (achado H5) ---
+# Mesma fonte unica ($guards, ja lido do docs/CLAIMS.md - a lista NAO e duplicada aqui), agora
+# sobre o CODIGO. O furo: um .ps1 que ESCREVE texto de marca/papel dentro de um arquivo que ele
+# gera (state.json, studio.json, client.json) injeta o termo derrubado em dado FRESCO a cada
+# execucao, e nenhum guard de doc enxerga - eles varrem texto de doc, nao a saida de script.
+# Foi assim que o cargo derrubado sobreviveu no migrate-to-studio.ps1 ate 02/ago.
+#
+# USO VIVO vs REGISTRO: uma linha e REGISTRO (ignorada) quando traz um marcador de veto na
+# propria linha (veto/vetado/derrubado/proibido/aposentado/reprovado) ou quando cita a fonte do
+# guard (docs/CLAIMS.md, GUARD:) - e o caso do bloco que le a lista. Qualquer outra ocorrencia
+# conta como uso vivo e REPROVA.
+# Escopo: scripts/*.ps1 sem recursao; scripts/fixtures/ fica de fora de proposito (e a prova).
+
+function ScriptVetoScan([string[]]$files, [string[]]$guards) {
+  $regRegistro = '(?i)(vetad|veto|derrubad|proibid|aposentad|reprovad|CLAIMS\.md|GUARD:)'
+  $hits = @()
+  foreach ($file in $files) {
+    if (-not (Test-Path -LiteralPath $file)) { continue }
+    $n = 0
+    foreach ($line in (Get-Content -LiteralPath $file -Encoding UTF8)) {
+      $n++
+      if ($line -match $regRegistro) { continue }
+      foreach ($g in $guards) {
+        if ($line -cmatch $g) {
+          $hits += [PSCustomObject]@{ file = $file; line = $n; term = $g; text = $line }
+        }
+      }
+    }
+  }
+  return ,$hits
+}
+
+Write-Host ""
+Write-Host "-- Guard de vetos (CLAIMS.md vs scripts que geram dado) --"
+if ($guards -and $guards.Count -gt 0) {
+  $scFiles = @(Get-ChildItem -LiteralPath (Join-Path $root "scripts") -File -Filter *.ps1 -ErrorAction SilentlyContinue |
+    ForEach-Object { $_.FullName })
+  Check ("Guard scripts: escopo montado (" + $scFiles.Count + " scripts)") ($scFiles.Count -gt 0) "nenhum .ps1 em scripts/"
+
+  # Prova 1 (pega): fixture de um script que GERA dado gravando o cargo derrubado, mais uma
+  # linha que so registra a decisao. Tem que acusar a primeira e ignorar a segunda.
+  $fxScript = Join-Path $root "scripts\fixtures\script-gera-dado-sujo.ps1"
+  Check "Guard scripts: fixture de prova presente" (Test-Path -LiteralPath $fxScript)
+  if (Test-Path -LiteralPath $fxScript) {
+    $sfHits = @(ScriptVetoScan @($fxScript) $guards)
+    $sfLive = @($sfHits | Where-Object { $_.text -match 'USO VIVO' })
+    $sfReg  = @($sfHits | Where-Object { $_.text -match 'REGISTRO' })
+    Check "Guard scripts: REPROVA script que grava termo derrubado (fixture suja)" ($sfLive.Count -gt 0) "o guard nao pegou o uso vivo da fixture"
+    Check "Guard scripts: nao acusa linha que apenas REGISTRA o veto (sem falso positivo)" ($sfReg.Count -eq 0) ("acusou registro: " + (($sfReg | ForEach-Object { $_.term }) -join ", "))
+  }
+
+  # Prova 2 (nao da falso positivo): os scripts da casa estao limpos, termo a termo.
+  $scHits = @(ScriptVetoScan $scFiles $guards)
+  foreach ($g in $guards) {
+    $sh = @($scHits | Where-Object { $_.term -eq $g } |
+      ForEach-Object { $_.file.Substring($root.Length + 1) + ":" + $_.line })
+    Check ("Guard scripts: veto ausente de scripts/*.ps1 -> /" + $g + "/") ($sh.Count -eq 0) ("uso vivo em: " + ($sh -join ", "))
+  }
+}
+
+# --- Response Guard: o freio na porta de saida (M1, OPP-74 continuacao 03/ago) ---
+# A lei DELEGA so tinha guarda na ENTRADA (delegation-guard.ps1, so lembra) e no FIM da sessao
+# (session-reflection.ps1, tarde demais). response-guard.ps1 e hook de Stop: roda a CADA turno
+# sobre o transcript real. Regra de ouro (o motor ja aprendeu isso do proprio OPP-74): um check
+# que so ve o arquivo no disco reprova "projetado-mas-desligado" como se fosse "ligado" - por
+# isso o 2o check abaixo tem que provar que o hook Stop esta LIGADO em .claude/settings.json.
+Write-Host ""
+Write-Host "-- Response Guard: o freio na porta de saida (M1) --"
+$rgScript = Join-Path $root "scripts\response-guard.ps1"
+$rgTxt = if (Test-Path -LiteralPath $rgScript) { ReadText $rgScript } else { "" }
+Check "Response Guard: script existe e cita as 2 regras (DELEGA/GROUNDING)" ((Test-Path -LiteralPath $rgScript) -and ($rgTxt -match 'DELEGA') -and ($rgTxt -match 'GROUNDING'))
+
+$settingsPath = Join-Path $root ".claude\settings.json"
+$stopWired = $false
+if (Test-Path -LiteralPath $settingsPath) {
+  try {
+    $settingsJson = (ReadText $settingsPath) | ConvertFrom-Json
+    foreach ($stopEntry in @($settingsJson.hooks.Stop)) {
+      foreach ($h in @($stopEntry.hooks)) {
+        if ("$($h.command)" -match 'response-guard\.ps1') { $stopWired = $true }
+      }
+    }
+  } catch { }
+}
+Check "Response Guard: hook Stop LIGADO em .claude/settings.json (nao so projetado)" $stopWired "projetado-mas-desligado reprova - o check tem que provar que esta LIGADO no settings, nao so que o arquivo existe"
+
+$rgYamlPath = Join-Path $engine "governance\response-guard.yaml"
+$rgYamlTxt = if (Test-Path -LiteralPath $rgYamlPath) { ReadText $rgYamlPath } else { "" }
+Check "Response Guard: response-guard.yaml existe com mode valido (aviso|bloqueio)" ((Test-Path -LiteralPath $rgYamlPath) -and ($rgYamlTxt -match '(?m)^\s*mode\s*:\s*(aviso|bloqueio)\s*$'))
+
+# --- Lentes: lista canonica + arquetipo agent-engineer (M2) --
+# alia.yaml (routing.lenses) virou a UNICA lista de lentes; orchestration.md/constitution.md/
+# constitution.yaml/alia.md pararam de duplicar e passaram a apontar pra ca. A lente nova
+# "engenharia-de-agente" resolve pro arquetipo "agent-engineer" (par .md+.yaml em engine/agents/).
+Write-Host ""
+Write-Host "-- Lentes: lista canonica + arquetipo agent-engineer (M2) --"
+$aliaYamlTxt = ReadText (Join-Path $agentsDir "alia.yaml")
+$constMdTxt = ReadText (Join-Path $engine "constitution.md")
+$constYamlTxt = ReadText (Join-Path $engine "constitution.yaml")
+$orchTxt = ReadText (Join-Path $engine "orchestration.md")
+$aliaMdTxt = ReadText (Join-Path $agentsDir "alia.md")
+$lentesPointerOk = ($aliaYamlTxt -match 'lenses:') -and ($constMdTxt -match 'alia\.yaml') -and ($constYamlTxt -match 'alia\.yaml') -and ($orchTxt -match 'alia\.yaml') -and ($aliaMdTxt -match 'alia\.yaml')
+Check "Lentes: lista canonica unica em alia.yaml (routing.lenses); constitution.md/.yaml + orchestration.md + alia.md apontam pra ca, nao duplicam" $lentesPointerOk
+
+$aeMd = Join-Path $agentsDir "agent-engineer.md"
+$aeYaml = Join-Path $agentsDir "agent-engineer.yaml"
+$lentePronta = ($aliaYamlTxt -match 'lens:\s*engenharia-de-agente') -and ($aliaYamlTxt -match 'route_to:\s*agent-engineer') -and (Test-Path -LiteralPath $aeMd) -and (Test-Path -LiteralPath $aeYaml)
+Check "Lentes: engenharia-de-agente resolve pro arquetipo agent-engineer (par .md + .yaml presente)" $lentePronta
+
+# --- Ledger: contrato -Specialist obrigatorio, validado no ato (M3) ---
+# register-task.ps1 perdeu o default "alia" pra -Specialist. 5 cenarios provam o contrato inteiro:
+# sem -Specialist reprova; especialista fora do squad reprova citando os ids validos; especialista
+# valido passa; "alia" (a coordenadora) so registra com -OperatorOrder (excecao auditavel a LEI DELEGA).
+Write-Host ""
+Write-Host "-- Ledger: contrato -Specialist obrigatorio (M3) --"
+$ldNoSpec = (& $rtScript -Client "alia-flow-lab" -Title "t" -Project "p" -StateFile $rtState -DryRun 6>&1) -join "`n"; $ldNoSpecExit = $LASTEXITCODE
+Check "Ledger: sem -Specialist -> exit 1" ($ldNoSpecExit -eq 1) ("exit: " + $ldNoSpecExit)
+$ldBadSpec = (& $rtScript -Client "acme-saas" -Title "t" -Project "p" -Specialist "nao-existe" -StateFile $rtState -DryRun 6>&1) -join "`n"; $ldBadSpecExit = $LASTEXITCODE
+Check "Ledger: -Specialist fora do squad -> exit 1 citando ids validos" (($ldBadSpecExit -eq 1) -and ($ldBadSpec -match 'quinn')) ("exit: " + $ldBadSpecExit)
+$ldOkSpec = (& $rtScript -Client "alia-flow-lab" -Title "t" -Project "p" -Specialist "quality-runner" -StateFile $rtState -DryRun 6>&1) -join "`n"; $ldOkSpecExit = $LASTEXITCODE
+Check "Ledger: -Specialist valido -> exit 0" ($ldOkSpecExit -eq 0) ("exit: " + $ldOkSpecExit)
+$ldAliaNoOrder = (& $rtScript -Client "alia-flow-lab" -Title "t" -Project "p" -Specialist "alia" -StateFile $rtState -DryRun 6>&1) -join "`n"; $ldAliaNoOrderExit = $LASTEXITCODE
+Check "Ledger: -Specialist alia sem -OperatorOrder -> exit 1" ($ldAliaNoOrderExit -eq 1) ("exit: " + $ldAliaNoOrderExit)
+$ldAliaOrder = (& $rtScript -Client "alia-flow-lab" -Title "t" -Project "p" -Specialist "alia" -OperatorOrder -StateFile $rtState -DryRun 6>&1) -join "`n"; $ldAliaOrderExit = $LASTEXITCODE
+Check "Ledger: -Specialist alia com -OperatorOrder -> exit 0" ($ldAliaOrderExit -eq 0) ("exit: " + $ldAliaOrderExit)
+
+# --- Law Ledger: toda LEI declarada tem entrada arquivo:linha (M4) ---
+# Varre engine/**.md atras dos 3 marcadores de declaracao de LEI e reprova se algum arquivo com
+# marcador nao tiver NENHUMA entrada "arquivo:linha" pra ele em law-ledger.md. Checagem por
+# ARQUIVO (nao pela linha exata do marcador): o proprio ledger cita, de proposito, a linha da
+# frase normativa (ex.: public-surface.md:8), nao a linha do titulo "# LEI ..." (linha 1) - exigir
+# a mesma linha do marcador daria falso-positivo numa cobertura legitima. O que importa e que o
+# ARQUIVO nunca fique de fora do ledger. Barra: o ledger escreve com "/", Get-ChildItem devolve
+# "\" no Windows - testa as duas formas.
+Write-Host ""
+Write-Host "-- Law Ledger: toda LEI com entrada no ledger (M4) --"
+$lawLedgerPath = Join-Path $engine "governance\law-ledger.md"
+$lawLedgerTxt = ReadText $lawLedgerPath
+$leiMdFiles = @(Get-ChildItem -LiteralPath $engine -Filter *.md -Recurse -File -ErrorAction SilentlyContinue)
+$leiMarker = '^(>\s*LEI|##\s*LEI|#\s*LEI)\b'
+$leiMissing = New-Object System.Collections.Generic.List[string]
+foreach ($f in $leiMdFiles) {
+  $lines = Get-Content -LiteralPath $f.FullName -Encoding UTF8
+  $hasLei = $false
+  foreach ($ln in $lines) { if ($ln -cmatch $leiMarker) { $hasLei = $true; break } }
+  if (-not $hasLei) { continue }
+  $relFwd = $f.FullName.Substring($root.Length + 1).Replace('\', '/')
+  $relBack = $relFwd.Replace('/', '\')
+  $covered = ($lawLedgerTxt -match [regex]::Escape($relFwd) + ':\d+') -or ($lawLedgerTxt -match [regex]::Escape($relBack) + ':\d+')
+  if (-not $covered) { $leiMissing.Add($relFwd) }
+}
+Check "Law Ledger: toda declaracao de LEI em engine/**.md tem entrada arquivo:linha em law-ledger.md" ($leiMissing.Count -eq 0) ("sem entrada no ledger: " + ($leiMissing -join ", "))
+
+# --- Numero publico: GUARD-NUM bate com a contagem real de Check (M5) ---
+# CLAIMS.md anuncia "verificacoes deterministicas" com um numero. GUARD-NUM e o marcador que
+# amarra esse numero a contagem REAL de chamadas Check deste proprio smoke (PASS + FAIL), pra
+# parar de envelhecer em silencio (era 135 e ficou 161 sem ninguem atualizar o texto).
+Write-Host ""
+Write-Host "-- Numero publico: GUARD-NUM vs contagem real (M5) --"
+$claimsPath = Join-Path $root "docs\CLAIMS.md"
+if (Test-Path -LiteralPath $claimsPath) {
+  $claimsTxt = ReadText $claimsPath
+  $guardNumM = [regex]::Match($claimsTxt, 'GUARD-NUM:\s*VERIFICACOES_DETERMINISTICAS=(\d+)')
+  $guardNumVal = -1
+  if ($guardNumM.Success) { $guardNumVal = [int]$guardNumM.Groups[1].Value }
+  $checkCallCount = @(Select-String -Path (Join-Path $root "scripts\smoke-test.ps1") -Pattern '^\s*Check\s+' -ErrorAction SilentlyContinue).Count
+  Check "Numero publico: GUARD-NUM=VERIFICACOES_DETERMINISTICAS bate com a contagem real de Check no smoke" (($guardNumM.Success) -and ($guardNumVal -eq $checkCallCount)) ("CLAIMS.md diz " + $guardNumVal + "; contagem real de linhas 'Check' = " + $checkCallCount)
+} else {
+  # Mesmo motivo do guard de vetos acima: CLAIMS.md e interno, nao existe num clone/pacote
+  # publico por LEI. Sem o Test-Path aqui o ReadText lancava excecao nao tratada e DERRUBAVA o
+  # script inteiro (pior que um FAIL: nenhum check depois deste rodava). Pulado com honestidade.
+  Warn "Numero publico: GUARD-NUM vs contagem real - pulado (CLAIMS.md ausente, doc interno)" $false "CLAIMS.md nao viaja no pacote/repo publico por LEI; nada a checar aqui"
+}
+
+# --- Drift de versao: oficina vs release vs produto (M5, AVISO - nunca reprova) ---
+# So o CEO resolve drift entre as 3 versoes (publicar e decisao dele). Isto e AVISO, nao Check:
+# nunca pode reprovar o smoke, ou o proprio incentivo invertido deste cluster (tratar delegar/
+# publicar como caro) reaparece disfarcado de "corrigir o smoke pra ficar verde".
+Write-Host ""
+Write-Host "-- Drift de versao: oficina vs release vs produto (AVISO, M5) --"
+$verOficina = $verFile
+$verReleasePath = Join-Path $root "release\alia-flow\VERSION"
+$verRelease = if (Test-Path -LiteralPath $verReleasePath) { ((Get-Content -LiteralPath $verReleasePath -ErrorAction SilentlyContinue) -join "").Trim() } else { "(ausente)" }
+# Caminho do repo publico calculado em runtime (NUNCA hardcoded): "alia-flow" mora irmao de
+# "studio-farina" (3 niveis acima da oficina: clients -> studio-farina -> Projetos). Antes disto
+# o caminho vinha cravado literal com o usuario Windows do dono direto num script que SHIPA no
+# pacote publico - o proprio guard de path absoluto do package-release.ps1 pegou o vazamento.
+$verProdutoPath = Join-Path (Split-Path (Split-Path (Split-Path $root -Parent) -Parent) -Parent) "alia-flow\VERSION"
+$verProduto = if (Test-Path -LiteralPath $verProdutoPath) { ((Get-Content -LiteralPath $verProdutoPath -ErrorAction SilentlyContinue) -join "").Trim() } else { "(ausente)" }
+Warn ("Versao: oficina=" + $verOficina + " release/alia-flow=" + $verRelease + " Projetos/alia-flow=" + $verProduto) (($verOficina -eq $verRelease) -and ($verOficina -eq $verProduto)) "drift so o CEO resolve, publicando"
 
 # --- Resultado ---
 Write-Host ""

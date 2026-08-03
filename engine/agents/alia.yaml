@@ -26,6 +26,8 @@ persona:
 
 # Roteamento por capacidade: a Alia casa a lente dominante do Job
 # com o agente MAIS CAPAZ daquela lente. Nunca "quem esta livre".
+# `routing.lenses` abaixo e a LISTA CANONICA de lentes do motor (fonte unica, M2). Prosa em
+# orchestration.md/constitution.md/constitution.yaml/alia.md APONTA pra ca - nao repete a lista.
 routing:
   rule: capability      # capability | round_robin (proibido) | availability (proibido)
   unit: single_lens     # Jobs mistos sao quebrados em Tasks de lente unica
@@ -49,6 +51,9 @@ routing:
       route_to: specialist
     - lens: marketing
       route_to: growth         # OPP-73: lancamento, SEO, conteudo, email, concorrencia, preco, CRO
+    - lens: engenharia-de-agente
+      route_to: agent-engineer # M2: engenharia de prompt, engenharia de contexto, design de
+                               # persona/agente e desenho de fluxo agentico do proprio motor
 
 commands:
   - command: loops

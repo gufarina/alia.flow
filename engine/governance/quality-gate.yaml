@@ -27,6 +27,7 @@ minimum_criteria:
         doc: "confere fatos contra a fonte lida (ja coberto pelo criterio 6, Grounding)"
         script: "executa em fixture e cita a saida observada"
       when_execution_impossible: Concerns    # ambiente indisponivel NUNCA vira Pass; motivo registrado no verdict
+      law_change_requires_ledger_entry: true  # mudanca em engine/** que declare/altere LEI so passa com entrada em governance/law-ledger.md
     - id: 2
       name: Aderente ao DDD
       question: "Usa so termos da linguagem ubiqua do Client? Respeita os bounded contexts?"

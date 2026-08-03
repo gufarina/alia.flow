@@ -54,7 +54,7 @@ principles:
 capability_routing:
   invariant: O coordenador jamais executa a tarefa; coordenar e escolher a mao certa.
   steps:
-    - classify_job: lente dominante (estrategia, escrita, design, pesquisa, dados, operacao, qa, implementacao)
+    - classify_job: lente dominante (lista canonica em agents/alia.yaml, routing.lenses)
     - list_candidates: agentes capazes daquela lente no Squad ativo
     - rank_by_capability: Domain Pack do dominio, Expert Mind do metodo, Memory das decisoes do Client
     - escalate_if_none: novo papel via Squad Creator ou Specialist consultor - nunca uma mao fraca pra fechar a Task

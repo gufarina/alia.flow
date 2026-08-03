@@ -37,8 +37,8 @@ livre. Roteamento errado e falha de governanca, ainda que o Gate passe.
 
 Antes de delegar, a Alia classifica o Job e casa com a capacidade dominante:
 
-1. **Le a lente dominante do Job** - estrategia, escrita, design, pesquisa, dado, operacao, QA,
-   implementacao ou marketing. Um Job tem uma lente principal; sub-Jobs podem ter outras.
+1. **Le a lente dominante do Job** (lista canonica em [alia.yaml](alia.yaml), routing.lenses). Um
+   Job tem uma lente principal; sub-Jobs podem ter outras.
 2. **Casa com o agente cujo Domain Pack cobre essa lente** - o mais capaz e quem tem o conhecimento
    DDD do dominio mais o Expert Mind do metodo, nao quem responde mais rapido.
 3. **Quebra Jobs mistos** - se o pedido cruza dominios, a Alia o parte em Tasks de lente unica e

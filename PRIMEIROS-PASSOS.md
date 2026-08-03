@@ -44,6 +44,13 @@ pronto
 A Alia assume dali: ela se apresenta, liga a memoria dela sozinha e te pergunta o que
 voce precisa. Nao decore comando nenhum - e conversa.
 
+**Primeiro valor em 10 minutos.** Voce sabe que deu certo quando, em ate 10 minutos, as
+tres coisas aconteceram: (1) voce instalou e abriu no seu coding agent; (2) escreveu
+`pronto` e a Alia se apresentou e puxou a memoria dela; (3) voce pediu UM trabalho real e
+recebeu de volta algo util - nao a primeira resposta crua do modelo, mas uma que passou
+pela conferencia. Se travar antes disso, o mais provavel e nao ter um coding agent
+instalado (veja o pre-requisito no README) - o resto e so conversa.
+
 ### O melhor primeiro pedido (copie, preencha e cole)
 
 A Alia trabalha por cliente. O melhor comeco e apresentar VOCE e UM trabalho real:
@@ -79,10 +86,11 @@ Repare no padrao: quem e voce + pra quem e + o que precisa ficar pronto. E so is
 
 ## Atualizar (nesta fase beta)
 
-O botao `atualizar-alia.bat` avisa quando a atualizacao automatica nao esta disponivel.
-Na fase beta funciona assim: quando houver versao nova, voce recebe um novo pacote -
-descompacte POR CIMA da mesma pasta. Seus dados (a pasta `studio/`, seus clientes,
-sua memoria) nao sao tocados: a atualizacao troca so o motor.
+De dois cliques em `atualizar-alia.bat`. Ele baixa a versao nova sozinho, faz uma copia
+de seguranca do que existe e troca SO o motor. Seus dados (a pasta `studio/`, seus
+clientes, sua memoria) nunca sao tocados - e se algo der errado no meio, ele volta
+sozinho pro estado anterior. Quer so espiar o que mudaria antes de aplicar? Rode
+`scripts\update-online.ps1 -Check` (mostra a versao nova sem mexer em nada).
 
 ## Seguranca e privacidade (o que e honesto voce saber)
 

@@ -34,7 +34,7 @@ Seis perguntas, todas inegociaveis. Reprovar uma e reprovar o Artifact.
 > sempre-carregado.
 
 > Tipos de Artifact (imagem, texto, codigo, site) podem ter criterios extras - por exemplo, um
-> contrato de formato deterministico (Validated Artifacts). Mas os 4 minimos acima sao a base que
+> contrato de formato deterministico (Validated Artifacts). Mas os 6 minimos acima sao a base que
 > nenhum squad pode rebaixar.
 
 > Criterios extras OBRIGATORIOS para Artifact do tipo PECA PUBLICA (landing, site, social, deck,
@@ -66,6 +66,9 @@ Seis perguntas, todas inegociaveis. Reprovar uma e reprovar o Artifact.
 > contra a fonte (ja coberto pelo criterio 6, Grounding); script -> executa em fixture. Sem
 > execucao possivel (ambiente indisponivel)? O verdito NAO pode ser Pass - vira Concerns com o
 > motivo registrado. Indisponibilidade nao e aprovacao.
+
+> Criterio 1 (Funciona) tambem cobra o motor: mudanca em `engine/**` que declare ou altere LEI so
+> passa com entrada correspondente no [law-ledger.md](law-ledger.md) - sem entrada, Fail.
 
 > Checks deterministicos dos criterios 1 (Funciona) e 4 (Rastreavel): alem do contrato de FORMATO
 > (Validated Artifacts), a Frugal Skill `verify-artifact-persisted`

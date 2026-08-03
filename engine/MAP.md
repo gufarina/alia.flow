@@ -32,15 +32,17 @@ risco de drift. Precisa do threshold/cerca exata: abra `rsi.yaml`. Para o resto,
 
 ## Governanca e qualidade (abrir ao fechar Task ou desenhar loops)
 
-- engine/governance/quality-gate.md - a regua unica (5 criterios + verdicts). Roda a cada Artifact.
+- engine/governance/quality-gate.md - a regua unica (6 criterios + verdicts). Roda a cada Artifact.
 - engine/governance/loops.md - catalogo da governanca: 2 tiers + taxonomia de loops.
 - engine/governance/memory-types.md - tipos de Memory e TTL (quando uma nota expira).
 - engine/governance/provenance.md - quem pode mudar cada artefato e como (diff, nunca deleta).
+- engine/governance/evolution-pipeline.md - o caminho de um achado (finding) ate a decisao do CEO (proposal -> aprovacao), via OPP-NN.
 - engine/governance/instance-separation.md - a LEI dos 2 contextos (produto CLEAN vs instancia aplicada) e os guardrails que a fazem cumprir.
 
 ## Entrega e workflows (abrir ao executar um ciclo de entrega)
 
 - engine/features/forja.md - linha de producao autonoma em 5 estacoes (FUNDIR, MOLDAR, TEMPERAR, PROVAR, GUARDAR) + bastao entre estacoes + notas AS/NB para evolucao de motor.
+- engine/features/bastao.md - doutrina do handoff <=500 tokens entre estacoes/agentes (contrato de campos, cadeia, sugestao de proximo comando) + engine/features/bastao-template.yaml (molde).
 - engine/workflows/story-cycle.md - o protocolo de 5 passos aplicado a dev (da intencao ao Artifact).
 - engine/workflows/qa-loop.md - ciclo de correcao quando o Gate da Fail.
 - engine/workflows/command-chaining.md - um comando orquestra N skills em sequencia.

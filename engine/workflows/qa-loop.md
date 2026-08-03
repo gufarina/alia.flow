@@ -24,12 +24,13 @@ Insistir na mesma tentativa nao conta como progresso e dispara escalonamento mai
 
 | Veredito | Significado | Acao | Registra na Memory |
 |----------|-------------|------|--------------------|
-| **Pass** | Atende os 4 criterios minimos do Gate | Story -> Done | verdict + evidencia |
+| **Pass** | Atende os 6 criterios minimos do Gate | Story -> Done | verdict + evidencia |
 | **Concerns** | Liberavel com ressalva | Libera; ressalva vira debito rastreado e input de RSI | verdict + ressalva |
 | **Fail** | Issues HIGH/CRITICAL abertas | Volta ao Dev com feedback acionavel | tentativa + motivo |
 | **Blocked** | Falta decisao ou recurso externo | Escala a Alia | bloqueio + causa |
 
-> Os 4 criterios minimos (Funciona, Aderente ao DDD, Frugal, Rastreavel) sao herdados do
+> Os 6 criterios minimos (Funciona, Aderente ao DDD, Frugal, Rastreavel, Simplicidade/Atrito,
+> Fundamentada) sao herdados do
 > [Quality Gate](../governance/quality-gate.md). O QA Loop e o motor; o Gate e a regua.
 
 ## Escalacao a Alia

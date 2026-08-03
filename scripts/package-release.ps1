@@ -30,17 +30,26 @@ Write-Host "2/3 Montando o pacote CLEAN..."
 if (Test-Path $out) { Remove-Item -Recurse -Force $out }
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 
-$shipDirs  = @("engine","scripts","skills","onboarding","optional-mcps","docs","studio.example")
-$shipFiles = @("AGENTS.md","README.md","PRIMEIROS-PASSOS.md","CHANGELOG.md","VERSION","LICENSE","CREDITS.md","alia.config.json","iniciar-alia.bat","atualizar-alia.bat",".gitattributes",".gitignore")
+# benchmarks/ entra no pacote (TASK-015): sao 5 scripts Python + README, deterministicos, sem
+# rede e sem dado de operador. Sem eles, "rode os benchmarks na sua maquina" seria promessa falsa
+# - o smoke ia, os benchmarks nao.
+# NOTA: "docs" NAO esta em $shipDirs de proposito - a pasta docs/ da oficina mistura doc de
+# usuario com doc interno (CLAIMS.md, BRAND.md, DESIGN.md, RELEASE-STATUS.md, product/, brand/).
+# Copiar a pasta inteira vaza "doc do arquivo de edicao" pro publico (mandato do CEO). docs/ e
+# tratada abaixo por ALLOWLIST explicita, nunca por denylist.
+# .claude/ ship de proposito (v1.42.2): settings.json liga os hooks de enforcement do proprio
+# produto (delegation-guard.ps1, response-guard.ps1 etc, todos ja em scripts/) - e mecanismo do
+# motor, nao doc de trabalho. Sem isso o produto instalado nunca ativa a propria governanca.
+$shipDirs  = @("engine","scripts","skills","onboarding","optional-mcps","studio.example","benchmarks",".github",".claude")
+$shipFiles = @("AGENTS.md","README.md","PRIMEIROS-PASSOS.md","CONTRIBUTING.md","CHANGELOG.md","VERSION","LICENSE","CREDITS.md","alia.config.json","iniciar-alia.bat","atualizar-alia.bat",".gitattributes",".gitignore")
 # Excluido de proposito (dado de operador/interno): studio, opportunities, rsi-backlog, memory, release, _retired, state.json, studio.yaml
 
 foreach ($d in $shipDirs) {
   $src = Join-Path $root $d
   if (Test-Path $src) {
-    # /XD cobre TODAS as pastas de trabalho interno: _retired/_dev/_drafts/release (.gitignore)
-    # e "product" (docs\product = PRDs internos do dono; a validacao 3/3 reprova se vazar).
-    robocopy $src (Join-Path $out $d) /E /XD _retired _dev _drafts release product /NFL /NDL /NP /NS /NC /NJH /NJS | Out-Null
-    Write-Host ("    [dir]  " + $d + "\ (sem _retired/_dev/_drafts/product)")
+    # /XD cobre as pastas de trabalho interno que podem aparecer dentro de qualquer shipDir.
+    robocopy $src (Join-Path $out $d) /E /XD _retired _dev _drafts release /NFL /NDL /NP /NS /NC /NJH /NJS | Out-Null
+    Write-Host ("    [dir]  " + $d + "\ (sem _retired/_dev/_drafts)")
   }
 }
 foreach ($f in $shipFiles) {
@@ -48,13 +57,35 @@ foreach ($f in $shipFiles) {
   if (Test-Path $src) { Copy-Item -LiteralPath $src -Destination (Join-Path $out $f) -Force; Write-Host ("    [file] " + $f) }
 }
 
-# Material interno do dono do produto que NAO sobe (mesmo morando em pasta de produto):
-# - docs/BRAND.md / docs/DESIGN.md : material de marca e sistema visual - IP do dono (o produto
-#   funciona sem eles; o CSS da pagina de onboarding e inline).
+# docs/ e ALLOWLIST, nao denylist: allowlist falha fechado (doc novo de amanha nasce de FORA do
+# pacote ate alguem decidir explicitamente publica-lo); denylist esquece o arquivo novo. Criterio
+# de inclusao, arquivo por arquivo: "isto serve a quem INSTALA o produto?". Hoje SO 3 servem:
+#   - README.md         : indice/porta de entrada da documentacao do produto.
+#   - COMPATIBILIDADE.md: degradacao honesta por IDE (o usuario precisa saber o que funciona onde).
+#   - INTEGRIDADE.md    : como verificar o MANIFEST.sha256 (o usuario que baixou precisa disto).
+# Fora de proposito (doc do arquivo de edicao, nunca vai pro publico - engine/governance/public-surface.md):
+#   - CLAIMS.md         : registro de claims/vetos, uso interno do motor.
+#   - RELEASE-STATUS.md : relatorio de drift oficina/staging/publico, cita caminho da maquina do dono.
+#   - BRAND.md / DESIGN.md: IP de marca/sistema visual do dono (produto funciona sem eles).
+#   - product/          : PRD, ARQUITETURA, alia-launcher-plan (planejamento interno).
+#   - brand/            : BrandScript, LP-copy, direcao de arte, PRFAQ (material de marca em desenvolvimento).
+$docsAllow = @("README.md","COMPATIBILIDADE.md","INTEGRIDADE.md")
+$docsSrc = Join-Path $root "docs"
+if (Test-Path $docsSrc) {
+  New-Item -ItemType Directory -Force -Path (Join-Path $out "docs") | Out-Null
+  foreach ($df in $docsAllow) {
+    $dsrc = Join-Path $docsSrc $df
+    if (Test-Path -LiteralPath $dsrc) {
+      Copy-Item -LiteralPath $dsrc -Destination (Join-Path $out ("docs\" + $df)) -Force
+      Write-Host ("    [file] docs\" + $df)
+    }
+  }
+}
+
+# Material interno do dono do produto que NAO sobe (mesmo morando em pasta que ship parcialmente):
 # - scripts/migrate-to-studio.ps1 / scripts/extract-secrets.ps1 : migracao UNICA do sistema legado
 #   do dono (caminhos da maquina dele); inutil numa instalacao limpa.
-# Tudo isso fica no lab, nunca no pacote publico.
-$internalFiles = @("docs\BRAND.md","docs\DESIGN.md","scripts\migrate-to-studio.ps1","scripts\extract-secrets.ps1")
+$internalFiles = @("scripts\migrate-to-studio.ps1","scripts\extract-secrets.ps1")
 foreach ($rel in $internalFiles) {
   $p = Join-Path $out $rel
   if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Force; Write-Host ("    [interno-removido] " + $rel) }
@@ -67,12 +98,15 @@ $leak = @()
 foreach ($bad in @("studio","opportunities","rsi-backlog","memory","state.json","studio.yaml")) {
   if (Test-Path (Join-Path $out $bad)) { $leak += $bad }
 }
-# Material interno do dono (marca/design) tambem nao pode estar no pacote.
+# Material interno do dono (scripts de migracao unica) tambem nao pode estar no pacote.
 foreach ($rel in $internalFiles) {
   if (Test-Path -LiteralPath (Join-Path $out $rel)) { $leak += $rel }
 }
-# docs/product (PRDs e docs de manutencao) NUNCA vao pro pacote publico.
-if (Test-Path -LiteralPath (Join-Path $out "docs\product")) { $leak += "docs\product" }
+# Defesa em profundidade da allowlist de docs/: nenhum destes pode existir no pacote, mesmo que
+# um shipDir futuro volte a copiar docs/ por inteiro por engano.
+foreach ($bad in @("docs\product","docs\brand","docs\CLAIMS.md","docs\BRAND.md","docs\DESIGN.md","docs\RELEASE-STATUS.md")) {
+  if (Test-Path -LiteralPath (Join-Path $out $bad)) { $leak += $bad }
+}
 if ($leak.Count -gt 0) { Write-Host ("[ERRO] vazou dado de operador/interno no pacote: " + ($leak -join ", ")); exit 1 }
 
 # Nenhum caminho absoluto de maquina pode sobrar (path de usuario Windows). Guard generico: nao
@@ -86,6 +120,13 @@ if ($pathLeaks.Count -gt 0) {
 
 & (Join-Path $out "scripts\smoke-test.ps1") | Out-Null
 if ($LASTEXITCODE -ne 0) { Write-Host "[ERRO] o pacote nao passou no proprio smoke."; exit 1 }
+
+# Manifesto de integridade (supply-chain leve): SHA256 de todo arquivo do pacote, para o
+# usuario poder verificar depois que baixou que o conteudo nao foi alterado. Isto prova
+# integridade (hash), nao autenticidade de origem por PKI. Ver docs/INTEGRIDADE.md.
+& (Join-Path $PSScriptRoot "make-manifest.ps1") -Dir $out | Out-Null
+if ($LASTEXITCODE -ne 0) { Write-Host "[ERRO] falha ao gerar o manifesto de integridade."; exit 1 }
+Write-Host "manifesto de integridade gerado (MANIFEST.sha256)."
 
 Write-Host ""
 Write-Host ("=== PACOTE PRONTO: " + $out + " (v" + $ver + ", CLEAN, smoke verde). ===")

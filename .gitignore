@@ -38,12 +38,17 @@ node_modules/
 __pycache__/
 *.pyc
 
-# LEI da superficie publica: interno nunca vai pro publico
+# LEI da superficie publica (engine/governance/public-surface.md)
+# desenvolvimento NUNCA e versionado
+brand/landing/
+opportunities/
+docs/product/
 docs/CLAIMS.md
 docs/BRAND.md
-docs/product/
-opportunities/
-brand/landing/
 research/
+_drafts/
+_dev/
+_backups/
+_candidatas/
 PRODUCT.md
 DESIGN-*.md

@@ -5,13 +5,19 @@ Creditamos com gratidao - e recomendamos beber direto da fonte.
 
 ## Bases diretas
 
-- **aiox** - o framework do qual o motor da Alia evoluiu. O esqueleto de entrega autonoma e parte da
-  governanca herdaram a inteligencia do aiox, enxugados para caber num job real (cortamos a
-  burocracia, mantivemos a inteligencia).
-- **BMAD-METHOD** - "Breakthrough Method for Agile AI-Driven Development", por bmad-code-org
-  (github.com/bmad-code-org/BMAD-METHOD). Metodo de desenvolvimento agentico: agentes especializados,
-  workflows e quality gates. O ciclo de Story (Create / Validate / Implement / Gate), a disciplina de
-  spec-antes-de-codigo e os gates de qualidade bebem daqui.
+A linhagem completa, para registro: **BMad Method -> aiox-core -> Alia Flow**.
+
+- **AIOX Squad / aiox-core** (pacote `@aiox-squads/core`), por **SynkraAI Inc.**
+  (github.com/SynkraAI/aiox-core, MIT) - o framework do qual o motor da Alia evoluiu. O esqueleto
+  de entrega autonoma e parte da governanca herdaram a inteligencia do aiox-core, enxugados para
+  caber num job real (cortamos a burocracia, mantivemos a inteligencia). Mecanica reescrita para o
+  nosso caso de uso, nao copiada linha a linha.
+- **BMAD-METHOD** - "Breakthrough Method for Agile AI-Driven Development", por **BMad Code, LLC**
+  (Brian Madison; github.com/bmad-code-org/BMAD-METHOD, MIT) - a origem do proprio aiox-core.
+  Metodo de desenvolvimento agentico: agentes especializados, workflows e quality gates. O ciclo de
+  Story (Create / Validate / Implement / Gate), a disciplina de spec-antes-de-codigo e os gates de
+  qualidade bebem daqui. "BMad", "BMad Method" e "BMad Core" sao marcas registradas de
+  BMad Code, LLC - citadas aqui so como credito de origem, nunca como marca nossa.
 
 ## Metodos e disciplinas
 

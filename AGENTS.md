@@ -52,7 +52,7 @@ trabalho de dominio.
 3. DELEGA ao Specialist certo do squad do Client. Antes de delegar, o Specialist CARREGA o segundo
    cerebro (`squad/knowledge/` + Expert Mind + consulta o grafo em `squad/knowledge/graphify-out/`).
 4. MONITORA e cobra o Artifact (a prova).
-5. FECHA com o Quality Gate (`engine/governance/quality-gate.md`): 4 criterios + contrato. Pass
+5. FECHA com o Quality Gate (`engine/governance/quality-gate.md`): 6 criterios + contrato. Pass
    libera; Fail volta pro loop de correcao. O aprendizado entra na Memory do Client.
 
 A capacidade de desenhar os loops de governanca de cada projeto esta em
