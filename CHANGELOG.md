@@ -20,6 +20,53 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.43.0] - 2026-08-04
+
+MINOR - Auditoria de capacidade real: o produto media o que anunciava contra o que de fato
+executa, e reescreveu registro de promessas, PRD, marca e copy publica para bater com o
+mecanismo, nao com a prosa. Motivacao: nenhuma peca publica tinha sido conferida capacidade a
+capacidade contra o codigo desde a fundacao - claims se acumulavam por decisao de CEO, nao por
+medicao. Entregue: novo `docs/CAPACIDADE-REAL.md`, a auditoria em si - 23 capacidades julgadas
+uma a uma pelo MECANISMO (script/hook/check que fica vermelho no smoke), nunca por prosa,
+regra de ouro "na duvida entre dois selos, o menos generoso vence". Placar dos 4 selos:
+6 REAL-VERIFICADO, 0 REAL-NAO-VERIFICADO, 12 PARCIAL, 5 NAO EXISTE - achado central: metade das
+capacidades e "fatia real + fatia so-prosa" na mesma capacidade nomeada, nao tudo-ou-nada.
+`docs/CLAIMS.md` foi reescrito inteiro a partir desse placar: 6 claims entram sem ressalva
+(selo REAL-VERIFICADO), 14 so entram com a frase de ressalva inteira, nunca resumida (12 PARCIAL
+mais 2 fatias estreitas e reais dentro de capacidades NAO EXISTE - Fundamentada no Gate e Expert
+Minds em runtime), e 3 capacidades (Frugalidade medida, Simplicidade/Atrito medida, Cap de
+profundidade da delegacao) deixaram de ter qualquer claim - sao prosa pura sem nenhum script que
+as meca. `docs/RELEASE-STATUS.md` estava obsoleto (registrava o repo publico parado em v0.6.0 ha
+quase um mes) e foi regerado por leitura direta de git log/git ls-remote/VERSION nos 3 locais -
+confirma repo publico sincronizado com a oficina. `docs/product/PRD.md` (v1.7): tabela de
+maturidade refeita pelos 4 selos da auditoria, diferenciais que nao sobreviviam a auditoria
+removidos, roadmap repriorizado, e o angulo do "fundador que virou o gargalo do proprio negocio"
+(ja derrubado pelo CEO em 01/08 no BRAND.md) removido tambem do PRD, que ainda carregava ecos
+dele. `docs/BRAND.md`: BrandScript (heroi/dor/guia) alinhado a correcao de publico do CEO
+(quem NAO e tecnico e quer ENTRAR, nao quem ja construiu e virou gargalo), e nova secao "O que a
+marca NAO pode dizer hoje" com a lista de frames proibidos traduzida direto da auditoria.
+`README.md`: a secao de memoria deixou de vender "prova de ablacao" e passou a se descrever como
+"demonstracao ilustrativa, nao prova" (as respostas 0/5 e 5/5 sao escritas a mao, nao geradas por
+agente real rodando duas vezes); badge do topo e as 3 mencoes ao numero de verificacoes corrigidas
+para o numero do PRODUTO (161), nunca o da oficina. `brand/landing/lp-alia-flow.html` e o
+standalone regenerados: saiu a headline vetada ("Voce contrata um funcionario. Ganha uma
+empresa."), o numero morto "144 verificacoes", a metafora nunca-existiu-nas-fontes
+restaurante/chef/brigada, qualquer mencao a "O Conselheiro" (feature interna, nao lancada
+publicamente) e a demonstracao de ablacao vendida como prova em vez de ilustracao; e a headline
+"Volte a liderar o que voce criou" (que pressupunha o publico ja derrubado) deu lugar a headline
+vigente do CEO, "Voce nao e tecnico. E nao precisa ser." Coerencia conferida entre CLAIMS.md,
+PRD.md, BRAND.md, README.md e a LP: os dois numeros de verificacao (oficina 179, produto 161)
+seguem separados por contexto e nunca somados, confirmados ao vivo rodando os dois smokes.
+`scripts/semantic-lint.ps1` (engine/+scripts/*.ps1) acusa 3 ocorrencias de `\bCOO\b` em
+`delegation-guard.ps1` e `smoke-test.ps1` - conferidas uma a uma, sao REGISTRO (comentario
+explicando a licao do veto COO como exemplo de "regra sem guard de maquina reincide"), nunca uso
+vivo do cargo; o guard que de fato importa (`smoke-test.ps1`, secoes "Guard de vetos", que tem a
+distincao REGISTRO-vs-USO-VIVO que o semantic-lint nao tem) confirma 0 ocorrencias vivas nos
+tres escopos (motor, superficie publica, scripts). Divida registrada, nao corrigida agora (fora
+do escopo deste cluster de documentacao/marca): `semantic-lint.ps1` nao tem a distincao
+REGISTRO-vs-USO-VIVO que o smoke ja tem, e vai continuar acusando falso-positivo toda vez que um
+comentario explicar a licao do veto COO. Smoke da oficina ALL GREEN (179 PASS, 0 FAIL).
+
 ## [1.42.5] - 2026-08-03
 
 PATCH - Numero publico falso no arquivo mais visivel do produto: `README.md` dizia "180 na versao

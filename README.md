@@ -4,7 +4,7 @@
 
 O modelo virou commodity. O valor nao esta na capacidade crua, e no arnes em volta dela: a memoria que carrega contexto entre tarefas, a mao certa escolhida por trabalho, a conducao do pedido a entrega, e o loop de qualidade que confere e refina antes de o resultado sair. Todo engenheiro acaba montando o seu, ad hoc. O Alia Flow e esse arnes ja pronto - e auditado por teste.
 
-`MIT` - `vendor-neutral por construcao (boot via AGENTS.md)` - `verificacoes deterministicas (veja o smoke: ALL GREEN)` - `prova de ablacao de conhecimento` - versao atual em `VERSION`
+`MIT` - `vendor-neutral por construcao (boot via AGENTS.md)` - `verificacoes deterministicas (veja o smoke: ALL GREEN)` - `demonstracao ilustrativa de memoria` - versao atual em `VERSION`
 
 > **Pre-requisito: um coding agent.** A Alia mora dentro de um agente de codigo - escolha um e instale antes:
 > [Claude Code](https://claude.com/claude-code) - [Codex](https://github.com/openai/codex) - [OpenCode](https://opencode.ai).
@@ -44,17 +44,27 @@ A tese central do produto e essa: qualidade nao e prometida, e loopada ate exist
 
 A identidade e o protocolo vivem em `AGENTS.md` - sobre arquivos abertos (`.md`, `.ps1`, `.yaml`), sem config travada de fornecedor, sem lock-in. No Claude Code, a porta de entrada e um `CLAUDE.md` que importa esse `AGENTS.md` (a documentacao oficial confirma: Claude Code le `CLAUDE.md`, nao `AGENTS.md` direto) - abriu a pasta, virou a Alia; se ela nao se apresentar sozinha, o comando `/alia` liga na hora. Nos demais agentes (Codex, OpenCode, Aider e outros que leem `AGENTS.md`), o boot continua sendo o proprio `AGENTS.md`, lido direto - veja o que muda por agente em [docs/COMPATIBILIDADE.md](docs/COMPATIBILIDADE.md). Vendor-neutral por **construcao**: o motor sao arquivos abertos lidos no boot, nao um plugin amarrado a um unico fornecedor.
 
-## A prova: a memoria muda o resultado, e da pra medir
+## Por que a memoria importa (demonstracao ilustrativa, nao prova)
 
-A afirmacao mais barata do mercado de IA e "memoria melhora o output". Quase ninguem prova. O Alia Flow prova por ablacao - mesmo briefing, mesma cadeia, a unica variavel e o acesso ao segundo cerebro:
+A afirmacao mais barata do mercado de IA e "memoria melhora o output". Quase ninguem mostra o
+raciocinio por tras. Aqui vai uma demonstracao do que muda quando o especialista tem o segundo
+cerebro do cliente carregado, contra quando nao tem:
 
-- **Braco cego** (sem o segundo cerebro): cobertura dos termos do cliente **0 de 5 (0%)**.
-- **Braco informado** (com o segundo cerebro carregado): cobertura **5 de 5 (100%)**.
-- **Ganho: 5**, num limiar de aprovacao de **3**.
+- **Sem o segundo cerebro:** cobertura dos termos do cliente **0 de 5 (0%)**.
+- **Com o segundo cerebro carregado:** cobertura **5 de 5 (100%)**.
+- **Ganho: 5**, contra um limiar de aprovacao de **3**.
 
-A pontuacao sai de um scorer Python deterministico (`studio.example/clients/acme-saas/tests/knowledge-ablation/score.py`), nao de um juiz LLM. E uma prova **causal**, nao uma narrativa: voce roda na sua maquina e ve o numero.
+Honestidade sobre o que isto e: as duas respostas (`out-blind.md` e `out-informed.md`) foram
+escritas a mao em 14/jun/2026 para ilustrar o padrao esperado - nao geradas por um agente
+respondendo de verdade duas vezes. O scorer
+(`studio.example/clients/acme-saas/tests/knowledge-ablation/score.py`) conta, de forma
+deterministica, se as 5 palavras-chave do cliente aparecem no texto; isso prova que o scorer
+funciona, nao que a memoria muda a saida de um agente real. E uma demonstracao **ilustrativa** do
+raciocinio, ainda nao um experimento causal - a explicacao completa esta no
+`README.md` da mesma pasta. Preferimos te mostrar exatamente o que da pra confiar hoje a vender
+uma prova que ainda nao existe.
 
-### Como provar voce mesmo
+### Como conferir voce mesmo
 
 Sem instalador. Voce clona, roda o trilho e olha o verde.
 
@@ -62,15 +72,16 @@ Sem instalador. Voce clona, roda o trilho e olha o verde.
 git clone <repo> alia-flow
 cd alia-flow
 
-# O trilho: todas as verificacoes deterministicas, sem agente - inclui a ablacao.
+# O trilho: todas as verificacoes deterministicas, sem agente - inclui a demonstracao de memoria.
 powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1
 #   -> todos [PASS], "ALL GREEN", exit 0.
-#   A ablacao (T14) roda o scorer Python contra o cliente demo; o material esta em
+#   A demonstracao de memoria (T14) roda o scorer Python contra o cliente demo; o material esta em
 #   studio.example/clients/acme-saas/tests/knowledge-ablation/ (test.yaml, score.py,
-#   out-blind.md vs out-informed.md, RESULT.md).
+#   out-blind.md vs out-informed.md, RESULT.md, e o README da propria pasta explicando o que o
+#   teste E e o que ele NAO E).
 ```
 
-O smoke test roda em PowerShell, sem agente nenhum: confere a engine, a instancia de exemplo, os squads, o grafo, os artefatos, os gates, a memoria, a consistencia de estado e a ablacao - de uma vez. Verde quer dizer que o ciclo inteiro fecha com evidencia em disco, nao que "deveria funcionar".
+O smoke test roda em PowerShell, sem agente nenhum: confere a engine, a instancia de exemplo, os squads, o grafo, os artefatos, os gates, a memoria, a consistencia de estado e a demonstracao de memoria - de uma vez. Verde quer dizer que o ciclo inteiro fecha com evidencia em disco, nao que "deveria funcionar".
 
 Para um diagnostico rapido da instalacao (estrutura do motor, versao coerente com o changelog, config valida e o proprio trilho), rode o doctor - read-only, com saida legivel ou `-Json` para automacao:
 
@@ -87,7 +98,7 @@ Para ver o arnes operando, abra a pasta no seu agente (ele le o `AGENTS.md`) e d
 |------|-------------------|
 | **O loop de qualidade** | O motor. A Alia gira produz -> avalia -> refina -> aprende e so deixa sair o que passou. Os principios abaixo sao papeis dentro dessa volta. |
 | **Roteamento por capacidade (produz)** | A Alia quebra o trabalho em unidades delegaveis e roteia cada uma pro especialista mais capaz - nao faz com as proprias maos. Contrato que ela segue no boot, nao regra travada em runtime. |
-| **Segundo cerebro em camadas + grafo** | O knowledge de cada cliente, mais o Graphify: um grafo de conhecimento real que alimenta o recall. E o conhecimento que move a cobertura de 0/5 para 5/5 na ablacao. |
+| **Segundo cerebro em camadas + grafo** | O knowledge de cada cliente, mais o Graphify: um grafo de conhecimento real que alimenta o recall. E o material por tras da demonstracao ilustrativa de 0/5 para 5/5 (ver secao acima). |
 | **Quality Gate (avalia)** | Toda entrega passa por um juiz: Funciona, DDD, Frugal, Rastreavel e Atrito, mais o contrato de formato. Verdict Pass / Concerns / Fail com evidencia. Pass libera; Fail volta pro refino. |
 | **Expert Minds** | Mestres reais carregados por dominio - Ogilvy, Kent Beck, Brad Frost, Eugene Schwartz, Sean Ellis. Cada especialista herda a metodologia do mestre do seu campo antes de produzir. Usados em entregas reais no demo. |
 | **Ciclo E2E com evidencia** | Task -> Artifact -> verdict -> memory, completo e rastreavel em disco no cliente demo `acme-saas`. |
@@ -105,7 +116,7 @@ Essas, somadas aos guardrails de qualidade e aos checks de integridade, formam a
 
 ### Nota de honestidade para quem le o codigo
 
-Roteamento por capacidade, o Quality Gate e a memoria tipada com validade sao **contrato que a Alia segue**, descrito em arquivos abertos que ela carrega no boot - nao regra travada em runtime. O sistema nao *impede* fisicamente um desvio (com a excecao da porta de escrita acima, que e mecanica). A prova de que o contrato vale esta na ablacao e nos gates versionados: resultado observavel, nao promessa.
+Roteamento por capacidade, o Quality Gate e a memoria tipada com validade sao **contrato que a Alia segue**, descrito em arquivos abertos que ela carrega no boot - nao regra travada em runtime. O sistema nao *impede* fisicamente um desvio (com a excecao da porta de escrita acima, que e mecanica). O que sustenta o contrato hoje sao os gates versionados e a demonstracao ilustrativa de memoria (ver secao acima) - resultado observavel dentro do que cada um E, nao promessa.
 
 ## O que ainda NAO faz
 
@@ -116,7 +127,8 @@ A parte que costuma estar escondida nos READMEs. Aqui esta explicita, de proposi
 - **Descoberta-vira-task adiada.** A Alia ainda nao transforma uma descoberta sua em tarefa por conta propria; isso fica para depois.
 - **Instalador ainda sem setup interativo.** O `install.ps1` ja e transacional (faz backup do que existe e reverte sozinho se a copia falhar - nao te deixa num estado parcial), mas o `alia init` que pergunta o nome do studio e configura tudo sozinho ainda nao esta completo.
 - **Prova so com o demo.** O ciclo E2E e provado apenas com o cliente de exemplo `acme-saas`, como vitrine do fluxo. Escala multi-cliente nao e parte do que esta aberto.
-- **Benchmark de loop-quality a construir.** A ablacao mede o lift do contexto (0/5 -> 5/5). O ganho do proprio loop - 1a volta vs pos-refino - ainda nao tem benchmark; e projecao a medir, nao numero anunciado.
+- **Demonstracao de memoria ainda ilustrativa, nao experimental.** As respostas 0/5 e 5/5 foram escritas a mao para ilustrar o raciocinio - falta rodar um agente real duas vezes (com e sem segundo cerebro) e medir a diferenca de verdade. Fica pro proximo passo virar prova.
+- **Benchmark de loop-quality a construir.** A demonstracao ilustrativa mostra o lift esperado do contexto (0/5 -> 5/5). O ganho do proprio loop - 1a volta vs pos-refino - ainda nao tem benchmark; e projecao a medir, nao numero anunciado.
 
 Se algo acima virar verde, vira um teste no trilho antes de virar uma frase aqui.
 
