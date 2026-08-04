@@ -437,7 +437,7 @@ $docsDir = Join-Path $root "docs"
 if (Test-Path $docsDir) {
   $asciiScan += Get-ChildItem -Path $docsDir -Recurse -Include *.md -File -ErrorAction SilentlyContinue
 }
-$rootFiles = @("README.md","AGENTS.md","CHANGELOG.md","VERSION","alia.config.json")
+$rootFiles = @("README.md","AGENTS.md","CLAUDE.md","CHANGELOG.md","VERSION","alia.config.json")
 foreach ($rf in $rootFiles) {
   $rp = Join-Path $root $rf
   if (Test-Path $rp) { $asciiScan += Get-Item -LiteralPath $rp -ErrorAction SilentlyContinue }
@@ -468,7 +468,7 @@ Write-Host "-- Guardrails (separacao de instancias) --"
 
 # (a) Raiz limpa: SO a allowlist canonica (nenhum arquivo vaza, nao so .md).
 # Layout canonico em skills/file-organization/SKILL.md. Pastas livres; dotfiles (.git*) ignorados.
-$rootAllow = @("README.md","PRIMEIROS-PASSOS.md","AGENTS.md","CONTRIBUTING.md","CHANGELOG.md","CATALOG.md","LICENSE","CREDITS.md","VERSION","alia.config.json","iniciar-alia.bat","atualizar-alia.bat","mission-control.html","MANIFEST.sha256")
+$rootAllow = @("README.md","PRIMEIROS-PASSOS.md","AGENTS.md","CLAUDE.md","CONTRIBUTING.md","CHANGELOG.md","CATALOG.md","LICENSE","CREDITS.md","VERSION","alia.config.json","iniciar-alia.bat","atualizar-alia.bat","mission-control.html","MANIFEST.sha256")
 $sdir = ""
 $cfgP = Join-Path $root "alia.config.json"
 if (Test-Path $cfgP) { try { $sdir = "$((Get-Content $cfgP -Raw | ConvertFrom-Json).studio_dir)".Trim() } catch {} }
@@ -970,6 +970,23 @@ Check "Release: CONTRIBUTING e .github no ship list do package-release" ((ReadTe
 Check "Release: benchmarks/ no ship list do package-release" ((ReadText (Join-Path $root "scripts\package-release.ps1")) -match '"benchmarks"')
 Check "Release: benchmarks/run-all.py presente (runner dos 5 benchmarks)" ((Test-Path (Join-Path $root "benchmarks\run-all.py")) -and (Test-Path (Join-Path $root "benchmarks\README.md")))
 
+# --- Ativacao: o produto tem que LIGAR sozinho quando o operador abre a pasta no Claude Code ---
+# Bloqueador de release medido 03/ago: Claude Code le CLAUDE.md, NAO AGENTS.md (confirmado na doc
+# oficial, code.claude.com/docs/en/memory, secao "AGENTS.md"). AGENTS.md sozinho era
+# projetado-mas-desligado pra quem abre a pasta no Claude Code - a Alia nunca aparecia; virava
+# agente generico. $root aqui e dinamico (definido na linha 8 deste script): quando este MESMO
+# smoke roda dentro do pacote (package-release.ps1 chama scripts\smoke-test.ps1 do OUTPUT, nao da
+# oficina), estes checks provam que os arquivos de ativacao chegaram no pacote de verdade - nao
+# so que o ship-list os cita. Mesmo padrao de defesa em profundidade usado acima pros benchmarks.
+Write-Host ""
+Write-Host "-- Ativacao (CLAUDE.md/AGENTS.md/comando /alia) --"
+Check "Ativacao: CLAUDE.md do produto presente na raiz (o que o Claude Code de fato le)" (Test-Path (Join-Path $root "CLAUDE.md"))
+Check "Ativacao: CLAUDE.md importa o AGENTS.md (@AGENTS.md, fonte unica da identidade)" ((ReadText (Join-Path $root "CLAUDE.md")) -match '@AGENTS\.md')
+Check "Ativacao: comando /alia presente (.claude/commands/alia.md, rede de seguranca)" (Test-Path (Join-Path $root ".claude\commands\alia.md"))
+Check "Ativacao: .claude/settings.json presente (liga os hooks de governanca do proprio produto)" (Test-Path (Join-Path $root ".claude\settings.json"))
+Check "Release: CLAUDE.md do produto no ship list do package-release.ps1" ((ReadText (Join-Path $root "scripts\package-release.ps1")) -match '"CLAUDE\.md"')
+Check "Release: .claude (settings.json + comando /alia) no ship list do package-release.ps1" ((ReadText (Join-Path $root "scripts\package-release.ps1")) -match '"\.claude"')
+
 # --- Guard de vetos: termo derrubado pelo CEO nunca vive no motor (07/jul) ---
 # Le os GUARD: do docs/CLAIMS.md e reprova se qualquer regex aparecer em engine/.
 # Transforma "confie que o veto foi cumprido" em "o teste prova". Molde do check de termo legado.
@@ -1247,31 +1264,12 @@ foreach ($f in $leiMdFiles) {
 }
 Check "Law Ledger: toda declaracao de LEI em engine/**.md tem entrada arquivo:linha em law-ledger.md" ($leiMissing.Count -eq 0) ("sem entrada no ledger: " + ($leiMissing -join ", "))
 
-# --- Numero publico: GUARD-NUM bate com a contagem real de Check (M5) ---
-# CLAIMS.md anuncia "verificacoes deterministicas" com um numero. GUARD-NUM e o marcador que
-# amarra esse numero a contagem REAL de chamadas Check deste proprio smoke (PASS + FAIL), pra
-# parar de envelhecer em silencio (era 135 e ficou 161 sem ninguem atualizar o texto).
-Write-Host ""
-Write-Host "-- Numero publico: GUARD-NUM vs contagem real (M5) --"
-$claimsPath = Join-Path $root "docs\CLAIMS.md"
-if (Test-Path -LiteralPath $claimsPath) {
-  $claimsTxt = ReadText $claimsPath
-  $guardNumM = [regex]::Match($claimsTxt, 'GUARD-NUM:\s*VERIFICACOES_DETERMINISTICAS=(\d+)')
-  $guardNumVal = -1
-  if ($guardNumM.Success) { $guardNumVal = [int]$guardNumM.Groups[1].Value }
-  $checkCallCount = @(Select-String -Path (Join-Path $root "scripts\smoke-test.ps1") -Pattern '^\s*Check\s+' -ErrorAction SilentlyContinue).Count
-  Check "Numero publico: GUARD-NUM=VERIFICACOES_DETERMINISTICAS bate com a contagem real de Check no smoke" (($guardNumM.Success) -and ($guardNumVal -eq $checkCallCount)) ("CLAIMS.md diz " + $guardNumVal + "; contagem real de linhas 'Check' = " + $checkCallCount)
-} else {
-  # Mesmo motivo do guard de vetos acima: CLAIMS.md e interno, nao existe num clone/pacote
-  # publico por LEI. Sem o Test-Path aqui o ReadText lancava excecao nao tratada e DERRUBAVA o
-  # script inteiro (pior que um FAIL: nenhum check depois deste rodava). Pulado com honestidade.
-  Warn "Numero publico: GUARD-NUM vs contagem real - pulado (CLAIMS.md ausente, doc interno)" $false "CLAIMS.md nao viaja no pacote/repo publico por LEI; nada a checar aqui"
-}
-
 # --- Drift de versao: oficina vs release vs produto (M5, AVISO - nunca reprova) ---
 # So o CEO resolve drift entre as 3 versoes (publicar e decisao dele). Isto e AVISO, nao Check:
 # nunca pode reprovar o smoke, ou o proprio incentivo invertido deste cluster (tratar delegar/
 # publicar como caro) reaparece disfarcado de "corrigir o smoke pra ficar verde".
+# Fica ANTES do bloco GUARD-NUM de proposito (ver comentario abaixo): so usa Warn, nao Check,
+# entao nao mexe na contagem que o GUARD-NUM mede.
 Write-Host ""
 Write-Host "-- Drift de versao: oficina vs release vs produto (AVISO, M5) --"
 $verOficina = $verFile
@@ -1284,6 +1282,33 @@ $verRelease = if (Test-Path -LiteralPath $verReleasePath) { ((Get-Content -Liter
 $verProdutoPath = Join-Path (Split-Path (Split-Path (Split-Path $root -Parent) -Parent) -Parent) "alia-flow\VERSION"
 $verProduto = if (Test-Path -LiteralPath $verProdutoPath) { ((Get-Content -LiteralPath $verProdutoPath -ErrorAction SilentlyContinue) -join "").Trim() } else { "(ausente)" }
 Warn ("Versao: oficina=" + $verOficina + " release/alia-flow=" + $verRelease + " Projetos/alia-flow=" + $verProduto) (($verOficina -eq $verRelease) -and ($verOficina -eq $verProduto)) "drift so o CEO resolve, publicando"
+
+# --- Numero publico: GUARD-NUM bate com o total REAL executado pelo smoke (M5) ---
+# CLAIMS.md anuncia "verificacoes deterministicas" com um numero. Ate a v1.42.3 o GUARD-NUM
+# comparava esse numero contra uma contagem de LINHAS "Check" no codigo-fonte - aproximacao que
+# divergia do total real porque 3 blocos chamam Check() dentro de um foreach (1 linha de codigo
+# vira N execucoes). CORRIGIDO aqui: este bloco e, de proposito, o ULTIMO Check() do arquivo -
+# nada depois dele chama Check (so o "Resultado" final, que so imprime). Por isso o total que o
+# smoke VAI reportar em "Checks: X PASS, Y FAIL" e exatamente ($script:pass + $script:fail) ATE
+# aqui, mais este proprio check (+1). GUARD-NUM agora mede o que o smoke REALMENTE executa, nao
+# uma aproximacao de codigo-fonte. Se algum dia um novo Check() for adicionado depois deste
+# bloco, este comentario e a garantia quebram juntos - mova este bloco de volta pro fim.
+Write-Host ""
+Write-Host "-- Numero publico: GUARD-NUM vs total real executado (M5) --"
+$claimsPath = Join-Path $root "docs\CLAIMS.md"
+if (Test-Path -LiteralPath $claimsPath) {
+  $claimsTxt = ReadText $claimsPath
+  $guardNumM = [regex]::Match($claimsTxt, 'GUARD-NUM:\s*VERIFICACOES_DETERMINISTICAS=(\d+)')
+  $guardNumVal = -1
+  if ($guardNumM.Success) { $guardNumVal = [int]$guardNumM.Groups[1].Value }
+  $expectedFinalCount = $script:pass + $script:fail + 1  # +1 = este proprio Check, que roda a seguir
+  Check "Numero publico: GUARD-NUM=VERIFICACOES_DETERMINISTICAS bate com o total real executado pelo smoke" (($guardNumM.Success) -and ($guardNumVal -eq $expectedFinalCount)) ("CLAIMS.md diz " + $guardNumVal + "; total real que o smoke vai reportar = " + $expectedFinalCount)
+} else {
+  # Mesmo motivo do guard de vetos acima: CLAIMS.md e interno, nao existe num clone/pacote
+  # publico por LEI. Sem o Test-Path aqui o ReadText lancava excecao nao tratada e DERRUBAVA o
+  # script inteiro (pior que um FAIL: nenhum check depois deste rodava). Pulado com honestidade.
+  Warn "Numero publico: GUARD-NUM vs total real - pulado (CLAIMS.md ausente, doc interno)" $false "CLAIMS.md nao viaja no pacote/repo publico por LEI; nada a checar aqui"
+}
 
 # --- Resultado ---
 Write-Host ""

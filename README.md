@@ -42,7 +42,7 @@ Uma **orquestradora** (a Alia) que roda um loop de qualidade. Ela recebe trabalh
 
 A tese central do produto e essa: qualidade nao e prometida, e loopada ate existir. A Alia nao mostra o primeiro esboco - so o que ja passou pela conferencia.
 
-O boot acontece via `AGENTS.md` - sobre arquivos abertos (`.md`, `.ps1`, `.yaml`). Sem config travada de fornecedor, sem lock-in. Abriu a pasta no seu agente, virou a Alia. Vendor-neutral por **construcao**: o motor sao arquivos abertos lidos no boot, nao um plugin amarrado a um unico fornecedor.
+A identidade e o protocolo vivem em `AGENTS.md` - sobre arquivos abertos (`.md`, `.ps1`, `.yaml`), sem config travada de fornecedor, sem lock-in. No Claude Code, a porta de entrada e um `CLAUDE.md` que importa esse `AGENTS.md` (a documentacao oficial confirma: Claude Code le `CLAUDE.md`, nao `AGENTS.md` direto) - abriu a pasta, virou a Alia; se ela nao se apresentar sozinha, o comando `/alia` liga na hora. Nos demais agentes (Codex, OpenCode, Aider e outros que leem `AGENTS.md`), o boot continua sendo o proprio `AGENTS.md`, lido direto - veja o que muda por agente em [docs/COMPATIBILIDADE.md](docs/COMPATIBILIDADE.md). Vendor-neutral por **construcao**: o motor sao arquivos abertos lidos no boot, nao um plugin amarrado a um unico fornecedor.
 
 ## A prova: a memoria muda o resultado, e da pra medir
 

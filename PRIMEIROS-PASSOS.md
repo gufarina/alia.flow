@@ -31,7 +31,9 @@ Ja tem o Claude Code? Pula direto pro passo 1.
    - clique na barra de endereco (onde aparece o caminho), digite `cmd` e aperte Enter;
    - na janela preta que abrir, digite `claude` e aperte Enter.
 
-   O Claude Code abre ja dentro da pasta - e nesse momento ele vira a Alia.
+   O Claude Code abre ja dentro da pasta - e nesse momento ele vira a Alia. Se por algum motivo
+   ela nao se apresentar sozinha (a tela ficar generica, sem ela falar), digite `/alia` e
+   aperte Enter - isso liga ela na hora.
 
 ## A primeira conversa
 

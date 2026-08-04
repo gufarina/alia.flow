@@ -1,18 +1,23 @@
 # Compatibilidade por coding agent
 
-O Alia Flow e vendor-neutral por construcao: o boot acontece via `AGENTS.md`,
-um arquivo de prosa aberta que qualquer CLI de agente pode ler (nao ha plugin
-nem config travada a um unico fornecedor). Mas vendor-neutral na construcao
-nao quer dizer identico na experiencia. Cada coding agent le o mesmo
-`AGENTS.md`, mas o que ele FAZ com o que le varia. Esta pagina existe pra
-dizer a verdade sobre essa variacao - sem prometer paridade que ainda nao
-existe.
+O Alia Flow e vendor-neutral por construcao: a identidade e o protocolo
+vivem em `AGENTS.md`, um arquivo de prosa aberta que qualquer CLI de agente
+pode ler (nao ha plugin nem config travada a um unico fornecedor). Mas
+vendor-neutral na construcao nao quer dizer identico na experiencia nem no
+MECANISMO de boot. No Claude Code, a porta de entrada e um `CLAUDE.md` que
+importa (`@AGENTS.md`) esse arquivo - a documentacao oficial confirma que o
+Claude Code le `CLAUDE.md`, nao `AGENTS.md` direto; existe tambem o comando
+`/alia` como rede de seguranca, caso o boot automatico nao pegue. Nos
+demais agentes (Codex, OpenCode, Aider, outros que leem `AGENTS.md`), o
+boot continua sendo o proprio `AGENTS.md`, lido direto - sem `CLAUDE.md` e
+sem `/alia`. Esta pagina existe pra dizer a verdade sobre essa variacao -
+sem prometer paridade que ainda nao existe.
 
 ## Tabela de compatibilidade
 
 | Coding agent | Status | O que funciona | O que degrada |
 |---|---|---|---|
-| **Claude Code** | Pleno | Boot via `AGENTS.md`, os 5 passos de orquestracao, delegacao a Specialists, Quality Gate, memoria nativa, scripts PowerShell chamados pelo agente, smoke/doctor. E o unico onde o fluxo completo esta validado ponta a ponta. | Nada declarado como faltante especificamente aqui - e a referencia. |
+| **Claude Code** | Pleno | Boot via `CLAUDE.md` (que importa `AGENTS.md`) + comando `/alia` como rede de seguranca, os 5 passos de orquestracao, delegacao a Specialists, Quality Gate, memoria nativa, scripts PowerShell chamados pelo agente, smoke/doctor. E o unico onde o fluxo completo esta validado ponta a ponta. | Nada declarado como faltante especificamente aqui - e a referencia. |
 | **Codex** | Parcial | Le o `AGENTS.md` e assume a persona da Alia; entende o protocolo de 5 passos como prosa. | Delegacao portavel (isolamento de contexto entre coordenador e Specialist) ainda nao esta validada neste agente - esta no roadmap (OPP-42), nao garantido hoje. Execucao de scripts PowerShell pode exigir confirmacao manual dependendo da configuracao do agente. |
 | **OpenCode** | Parcial | Mesma base: le `AGENTS.md`, assume a persona, entende o protocolo como prosa. | Mesma ressalva do Codex - delegacao portavel nao validada; comportamento de sub-agentes/isolamento de contexto pode diferir do testado no Claude Code. |
 | **Outros agentes que leem AGENTS.md** | Basico | Se o agente le arquivos de prosa aberta (`.md`) no boot, ele consegue assumir a persona da Alia e seguir o protocolo como texto - o arquivo nao exige nenhuma extensao proprietaria pra ser lido. | Tudo que depende de o agente saber rodar comando (`.ps1`), gerenciar sub-agentes com contexto isolado, ou observar hooks de lifecycle nao tem garantia nenhuma - depende inteiramente das capacidades desse agente especifico, nao testadas pelo Alia Flow. |

@@ -40,8 +40,13 @@ New-Item -ItemType Directory -Force -Path $out | Out-Null
 # .claude/ ship de proposito (v1.42.2): settings.json liga os hooks de enforcement do proprio
 # produto (delegation-guard.ps1, response-guard.ps1 etc, todos ja em scripts/) - e mecanismo do
 # motor, nao doc de trabalho. Sem isso o produto instalado nunca ativa a propria governanca.
+# Traz junto .claude/commands/alia.md (comando /alia), copiado pelo mesmo robocopy /E abaixo.
+# CLAUDE.md ship de proposito (v1.42.3): Claude Code le CLAUDE.md, NAO AGENTS.md (confirmado na
+# doc oficial code.claude.com/docs/en/memory). Sem este arquivo no pacote, quem abre a pasta no
+# Claude Code recebe um agente generico - a Alia nunca aparece (bloqueador de release medido
+# 03/ago). CLAUDE.md so importa AGENTS.md (@AGENTS.md); a fonte da identidade continua unica.
 $shipDirs  = @("engine","scripts","skills","onboarding","optional-mcps","studio.example","benchmarks",".github",".claude")
-$shipFiles = @("AGENTS.md","README.md","PRIMEIROS-PASSOS.md","CONTRIBUTING.md","CHANGELOG.md","VERSION","LICENSE","CREDITS.md","alia.config.json","iniciar-alia.bat","atualizar-alia.bat",".gitattributes",".gitignore")
+$shipFiles = @("AGENTS.md","CLAUDE.md","README.md","PRIMEIROS-PASSOS.md","CONTRIBUTING.md","CHANGELOG.md","VERSION","LICENSE","CREDITS.md","alia.config.json","iniciar-alia.bat","atualizar-alia.bat",".gitattributes",".gitignore")
 # Excluido de proposito (dado de operador/interno): studio, opportunities, rsi-backlog, memory, release, _retired, state.json, studio.yaml
 
 foreach ($d in $shipDirs) {

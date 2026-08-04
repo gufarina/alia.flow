@@ -20,6 +20,49 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.42.4] - 2026-08-03
+
+PATCH - Ultima ponta do conserto de ativacao da v1.42.3: os GUIAS ainda ensinavam o caminho
+antigo. `README.md` (a frase "abriu a pasta no seu agente, virou a Alia" nao dizia COMO isso
+acontece no Claude Code hoje) e `docs/COMPATIBILIDADE.md` (intro + linha da tabela do Claude Code
+ainda diziam "boot via AGENTS.md" sem citar o `CLAUDE.md`) foram corrigidos para nomear o
+mecanismo real: no Claude Code a porta e `CLAUDE.md` (que importa `@AGENTS.md`) + o comando
+`/alia` como rede de seguranca; nos demais agentes (Codex, OpenCode, Aider) o boot continua sendo
+o proprio `AGENTS.md`, lido direto. `PRIMEIROS-PASSOS.md` foi conferido e ja tinha a rede de
+seguranca do `/alia` no passo 3 desde a v1.42.3 - nenhuma mudanca necessaria la. Nenhum claim
+anunciavel novo entrou (mesma feature, descrita com precisao); `docs/CLAIMS.md` nao ganhou linha
+nova de feature. Divida do GUARD-NUM fechada: o check comparava o numero do CLAIMS.md contra uma
+CONTAGEM DE LINHAS `Check` no codigo-fonte (178), que divergia do total real de execucoes (179)
+porque 3 blocos de guard de veto chamam `Check` dentro de um `foreach`. Corrigido para medir o
+que o smoke REALMENTE executa: o bloco GUARD-NUM em `scripts/smoke-test.ps1` foi movido pra ser,
+de proposito, o ULTIMO `Check` do arquivo (trocou de lugar com o bloco de drift de versao, que so
+usa `Warn`), entao `$script:pass + $script:fail + 1` no momento em que ele roda e exatamente o
+total que a linha final "Checks: X PASS, Y FAIL" vai reportar - medicao, nao aproximacao.
+`docs/CLAIMS.md` atualizado para GUARD-NUM=179 com a fonte remedida. Smoke ALL GREEN (179 PASS,
+0 FAIL).
+
+## [1.42.3] - 2026-08-03
+
+PATCH - Bloqueador de release consertado: o produto nao ligava. Medido nesta sessao rodando
+Claude Code na raiz do studio-farina (que TEM AGENTS.md): o AGENTS.md nao apareceu no contexto.
+Confirmado contra a doc oficial (code.claude.com/docs/en/memory, secao "AGENTS.md", checado
+03/ago): Claude Code le CLAUDE.md, NAO AGENTS.md - quem instalasse o produto e abrisse a pasta
+no Claude Code recebia um agente generico, nunca a Alia. AGENTS.md continua sendo a fonte da
+identidade e o boot neutro de fornecedor (Codex, OpenCode, Aider leem ele direto); nasceu
+`CLAUDE.md` na raiz da oficina cuja unica funcao e ser a porta que o Claude Code de fato abre -
+ele so importa `@AGENTS.md` (a doc recomenda import por @ em vez de symlink no Windows, porque
+symlink exige Administrador ou Developer Mode). Nasceu tambem o comando `/alia`
+(`.claude/commands/alia.md`), rede de seguranca que recarrega AGENTS.md e o nucleo e se
+apresenta pelo Ritual de presenca ja definido em engine/agents/persona.md (reusado, nao
+inventado), para o caso do boot automatico nao pegar. `scripts/package-release.ps1` agora leva
+`CLAUDE.md` no ship list (a pasta `.claude/` ja ia inteira desde a v1.42.2, entao o comando
+`/alia` viaja junto sem mudanca extra). `PRIMEIROS-PASSOS.md` ganhou a mesma rede de seguranca em
+linguagem de nao-tecnico no passo 3. O guard que impede a reincidencia: `scripts/smoke-test.ps1`
+ganhou a secao "Ativacao" (6 checks nao acopla so no ship-list-como-string; como o `$root` do
+proprio smoke e dinamico, os mesmos checks rodam de novo DENTRO do pacote quando
+`package-release.ps1` chama o smoke do output, provando que os arquivos de ativacao chegaram no
+pacote de verdade). GUARD-NUM subiu de 172 para 178 (docs/CLAIMS.md atualizado, cadeado intacto).
+
 ## [1.42.2] - 2026-08-03
 
 PATCH - Engenharia de release: 3 defeitos medidos antes de publicar (auditoria pre-release do
