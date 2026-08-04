@@ -101,7 +101,7 @@ Cada uma e um script que executa um contrato que antes era so prosa lida - sem c
 - **apply-safe-output (porta de escrita segura)** - executa o `block_when` do manifesto: automacao nunca escreve direto no nucleo; muda o motor so o operador. Fail-closed na duvida.
 - **sanitize-input** - neutraliza texto perigoso na borda (tags, mentions, URIs nao-HTTPS, control chars, limite de tamanho) antes do payload virar comando. Roda sob demanda, nunca no boot.
 
-Essas, somadas aos guardrails de qualidade e aos checks de integridade, formam as **verificacoes deterministicas que rodam a custo zero de token de modelo** (99 na versao atual; o numero exato aparece no fim do smoke) - todas re-rodaveis pelo smoke test, nenhuma chama IA.
+Essas, somadas aos guardrails de qualidade e aos checks de integridade, formam as **verificacoes deterministicas que rodam a custo zero de token de modelo** (161 na versao atual; o numero exato aparece no fim do smoke) - todas re-rodaveis pelo smoke test, nenhuma chama IA.
 
 ### Nota de honestidade para quem le o codigo
 

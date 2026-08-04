@@ -20,6 +20,32 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.42.5] - 2026-08-03
+
+PATCH - Numero publico falso no arquivo mais visivel do produto: `README.md` dizia "180 na versao
+atual" e `docs/CLAIMS.md` (GUARD-NUM) tambem dizia 180 - os dois copiando o total da OFICINA
+(motor completo, com os checks que so existem aqui: guard de vetos triplo vs CLAIMS.md, Law
+Ledger). Sintoma medido: `scripts/package-release.ps1` reprovava no proprio portao de smoke
+DENTRO do pacote (`release/alia-flow`), porque o produto empacotado tem MENOS checks que a
+oficina (161, sem CLAIMS.md e sem os checks que dependem dele) - o README shipava anunciando um
+numero que o produto nunca ia bater. Raiz do bug: o bloco "Numero publico" de
+`scripts/smoke-test.ps1` (nascido na v1.42.4) checava o README sempre contra o total da OFICINA,
+mesmo quando o README ia parar num contexto (pacote/repo publico) com outro total - dois numeros
+legitimos e DIFERENTES (client-truth.md LEI 2: nunca somar/confundir fontes) forcados a bater
+num so lugar. Corrigido separando por contexto: o Check real do README so roda quando `CLAIMS.md`
+esta ausente (contexto pacote/publico - o unico lugar onde o numero do README de fato precisa
+bater); na oficina vira Warn informativo (a trava que importa la e o GUARD-NUM). GUARD-NUM
+renomeado de `VERIFICACOES_DETERMINISTICAS` para `VERIFICACOES_DETERMINISTICAS_OFICINA` para
+declarar o escopo agora que existem dois numeros. `docs/CLAIMS.md` ganhou uma segunda linha na
+tabela "Numeros publicos": oficina (179, GUARD-NUM) e produto (161, travado por
+`package-release.ps1` rodando o smoke dentro do pacote), cada um com fonte propria, sem soma.
+`README.md` corrigido para 161 (o numero que quem instala o produto de fato ve rodando o proprio
+smoke). Bonus da varredura: `brand/landing/lp-alia-flow.html` + `-standalone.html` ainda tinham
+"144 VERIFICACOES" cravado (numero morto, ja identificado em `docs/brand/LP-DIRECAO-ARTE.md` como
+pendencia) - trocado pela redacao-piso ja aprovada em `docs/brand/README.md`/GATE-NARRATIVA,
+"mais de 150 verificacoes" (nao vaza pro git; LP nunca versiona por LEI). Smoke da oficina ALL
+GREEN (179 PASS, 0 FAIL); smoke dentro do pacote ALL GREEN (161 PASS, 0 FAIL).
+
 ## [1.42.4] - 2026-08-03
 
 PATCH - Ultima ponta do conserto de ativacao da v1.42.3: os GUIAS ainda ensinavam o caminho

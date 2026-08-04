@@ -1283,26 +1283,52 @@ $verProdutoPath = Join-Path (Split-Path (Split-Path (Split-Path $root -Parent) -
 $verProduto = if (Test-Path -LiteralPath $verProdutoPath) { ((Get-Content -LiteralPath $verProdutoPath -ErrorAction SilentlyContinue) -join "").Trim() } else { "(ausente)" }
 Warn ("Versao: oficina=" + $verOficina + " release/alia-flow=" + $verRelease + " Projetos/alia-flow=" + $verProduto) (($verOficina -eq $verRelease) -and ($verOficina -eq $verProduto)) "drift so o CEO resolve, publicando"
 
-# --- Numero publico: GUARD-NUM bate com o total REAL executado pelo smoke (M5) ---
-# CLAIMS.md anuncia "verificacoes deterministicas" com um numero. Ate a v1.42.3 o GUARD-NUM
-# comparava esse numero contra uma contagem de LINHAS "Check" no codigo-fonte - aproximacao que
-# divergia do total real porque 3 blocos chamam Check() dentro de um foreach (1 linha de codigo
-# vira N execucoes). CORRIGIDO aqui: este bloco e, de proposito, o ULTIMO Check() do arquivo -
-# nada depois dele chama Check (so o "Resultado" final, que so imprime). Por isso o total que o
+# --- Numero publico: README.md (produto) e GUARD-NUM (oficina) - cada um trava so contra o
+# total REAL do CONTEXTO onde faz sentido (M5) ---
+# Dois numeros diferentes e legitimos, nunca somar (engine/governance/client-truth.md, LEI 2):
+#   - README.md SHIPA no pacote/repo publico. O numero em prosa ("N na versao atual") tem que
+#     bater com o total que O PRODUTO reporta (smoke rodando sem CLAIMS.md - ~19 checks a menos
+#     que a oficina: sem os 3 guards de veto vs CLAIMS, sem Law Ledger etc). Por isso este Check
+#     so BLOQUEIA (vira Check de verdade) quando CLAIMS.md esta ausente (contexto pacote/publico);
+#     na oficina vira Warn informativo, porque a oficina tem MAIS checks que o produto e os dois
+#     totais NUNCA vao coincidir por design - nao e drift a corrigir, e escopo diferente. A trava
+#     que importa pro README acontece em package-release.ps1 (roda este mesmo smoke-test.ps1
+#     DENTRO do pacote e aborta se nao ALL GREEN).
+#   - GUARD-NUM em CLAIMS.md (doc interno, nunca shipa) anuncia o total da OFICINA - so existe e
+#     so e checavel onde CLAIMS.md existe: Check na oficina, Warn no pacote/publico (sem mudanca).
+# HISTORICO: ate a v1.42.4 o README era checado SEMPRE (mesmo na oficina) contra o total da
+# oficina - inflava o numero do README pro valor da oficina (180), o que reprovava o proprio
+# smoke DENTRO do pacote (o produto tem so 161 checks - CLAIMS.md e o que ele guarda nao viajam).
+# v1.42.5 separou: cada numero trava so contra o total do contexto onde e medido de verdade.
+# Fica perto do fim de proposito: nada depois deste bloco chama Check(), entao o total que o
 # smoke VAI reportar em "Checks: X PASS, Y FAIL" e exatamente ($script:pass + $script:fail) ATE
-# aqui, mais este proprio check (+1). GUARD-NUM agora mede o que o smoke REALMENTE executa, nao
-# uma aproximacao de codigo-fonte. Se algum dia um novo Check() for adicionado depois deste
-# bloco, este comentario e a garantia quebram juntos - mova este bloco de volta pro fim.
+# aqui, mais o UNICO Check() real deste bloco (README no pacote/publico OU GUARD-NUM na oficina -
+# nunca os dois ao mesmo tempo, $numChecksNesteBloco e sempre 1) - calculado UMA vez antes de
+# rodar, assim compara contra o MESMO total final previsto, nao contra o total parcial no meio.
 Write-Host ""
-Write-Host "-- Numero publico: GUARD-NUM vs total real executado (M5) --"
+Write-Host "-- Numero publico: README.md (produto) + GUARD-NUM (oficina) vs total real do contexto (M5) --"
 $claimsPath = Join-Path $root "docs\CLAIMS.md"
-if (Test-Path -LiteralPath $claimsPath) {
+$claimsExists = Test-Path -LiteralPath $claimsPath
+$numChecksNesteBloco = 1  # sempre 1 Check real: README no pacote/publico OU GUARD-NUM na oficina
+$expectedFinalCount = $script:pass + $script:fail + $numChecksNesteBloco
+
+$readmePath = Join-Path $root "README.md"
+$readmeTxt = ReadText $readmePath
+$readmeM = [regex]::Match($readmeTxt, '\((\d+) na versao atual')
+$readmeVal = -1
+if ($readmeM.Success) { $readmeVal = [int]$readmeM.Groups[1].Value }
+if ($claimsExists) {
+  Warn "Numero publico: README.md - contexto oficina tem mais checks que o produto, nunca vai bater; trava real e no pacote" $readmeM.Success ("README.md diz " + $readmeVal + "; verificado a serio por package-release.ps1 dentro do pacote/repo publico")
+} else {
+  Check "Numero publico: README.md ('N na versao atual') bate com o total real executado pelo smoke" (($readmeM.Success) -and ($readmeVal -eq $expectedFinalCount)) ("README.md diz " + $readmeVal + "; total real que o smoke vai reportar = " + $expectedFinalCount)
+}
+
+if ($claimsExists) {
   $claimsTxt = ReadText $claimsPath
-  $guardNumM = [regex]::Match($claimsTxt, 'GUARD-NUM:\s*VERIFICACOES_DETERMINISTICAS=(\d+)')
+  $guardNumM = [regex]::Match($claimsTxt, 'GUARD-NUM:\s*VERIFICACOES_DETERMINISTICAS_OFICINA=(\d+)')
   $guardNumVal = -1
   if ($guardNumM.Success) { $guardNumVal = [int]$guardNumM.Groups[1].Value }
-  $expectedFinalCount = $script:pass + $script:fail + 1  # +1 = este proprio Check, que roda a seguir
-  Check "Numero publico: GUARD-NUM=VERIFICACOES_DETERMINISTICAS bate com o total real executado pelo smoke" (($guardNumM.Success) -and ($guardNumVal -eq $expectedFinalCount)) ("CLAIMS.md diz " + $guardNumVal + "; total real que o smoke vai reportar = " + $expectedFinalCount)
+  Check "Numero publico: GUARD-NUM=VERIFICACOES_DETERMINISTICAS_OFICINA bate com o total real executado pelo smoke" (($guardNumM.Success) -and ($guardNumVal -eq $expectedFinalCount)) ("CLAIMS.md diz " + $guardNumVal + "; total real que o smoke vai reportar = " + $expectedFinalCount)
 } else {
   # Mesmo motivo do guard de vetos acima: CLAIMS.md e interno, nao existe num clone/pacote
   # publico por LEI. Sem o Test-Path aqui o ReadText lancava excecao nao tratada e DERRUBAVA o
