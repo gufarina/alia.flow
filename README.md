@@ -10,7 +10,10 @@ O modelo virou commodity. O valor nao esta na capacidade crua, e no arnes em vol
 > [Claude Code](https://claude.com/claude-code) - [Codex](https://github.com/openai/codex) - [OpenCode](https://opencode.ai).
 > A experiencia varia por agente - Claude Code e o caminho mais completo hoje; veja o que muda em
 > [docs/COMPATIBILIDADE.md](docs/COMPATIBILIDADE.md) (o que funciona, o que degrada e como compensar).
-> Depois, uma linha instala a Alia:
+> **Sistema operacional:** provado no Windows (PowerShell 5.1+). Mac/Linux ainda nao foram
+> validados - e evolucao declarada (OPP-22), sem data prometida.
+> Repositorio em beta fechado hoje - a linha de instalacao abaixo passa a responder quando a
+> visibilidade abrir:
 > `iwr -useb https://raw.githubusercontent.com/gufarina/alia.flow/main/scripts/install.ps1 | iex`
 
 ---
@@ -69,7 +72,7 @@ uma prova que ainda nao existe.
 Sem instalador. Voce clona, roda o trilho e olha o verde.
 
 ```sh
-git clone <repo> alia-flow
+git clone https://github.com/gufarina/alia.flow.git alia-flow
 cd alia-flow
 
 # O trilho: todas as verificacoes deterministicas, sem agente - inclui a demonstracao de memoria.
@@ -129,12 +132,13 @@ A parte que costuma estar escondida nos READMEs. Aqui esta explicita, de proposi
 - **Prova so com o demo.** O ciclo E2E e provado apenas com o cliente de exemplo `acme-saas`, como vitrine do fluxo. Escala multi-cliente nao e parte do que esta aberto.
 - **Demonstracao de memoria ainda ilustrativa, nao experimental.** As respostas 0/5 e 5/5 foram escritas a mao para ilustrar o raciocinio - falta rodar um agente real duas vezes (com e sem segundo cerebro) e medir a diferenca de verdade. Fica pro proximo passo virar prova.
 - **Benchmark de loop-quality a construir.** A demonstracao ilustrativa mostra o lift esperado do contexto (0/5 -> 5/5). O ganho do proprio loop - 1a volta vs pos-refino - ainda nao tem benchmark; e projecao a medir, nao numero anunciado.
+- **So provado no Windows.** O CI e todo o trilho de verificacao rodam so em `windows-latest` hoje. Suporte a Mac/Linux e evolucao declarada (OPP-22), nao esta validado.
 
 Se algo acima virar verde, vira um teste no trilho antes de virar uma frase aqui.
 
 ## Licenca e creditos
 
-[MIT](LICENSE) (c) Studio Farina.
+[MIT](LICENSE) (c) The Alia Flow Authors.
 
 O Alia Flow se apoia em frameworks, metodos e mestres que vieram antes - **aiox**, **BMAD-METHOD**, Domain-Driven Design, **ponytail** (Dietrich Gebert, MIT) e outros. Os Expert Minds carregam a metodologia publica de mestres reais de cada campo (Ogilvy, Kent Beck, Brad Frost, Eugene Schwartz, Sean Ellis) - credito a eles pelo metodo; a implementacao e nossa. Os creditos e fontes completos estao em [CREDITS.md](CREDITS.md).
 

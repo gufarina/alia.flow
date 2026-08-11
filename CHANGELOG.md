@@ -20,6 +20,46 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.50.8] - 2026-08-11
+
+PATCH - Os 4 consertos de REDACAO do veredito de lancamento do NEXUS (LIBERAR COM RESSALVAS,
+condicionado a estes 4 itens antes de qualquer revisao nova de publicacao). So texto, nada de
+engenharia.
+
+**B1 - Windows-only nao declarado.** README.md ganhou, nos pre-requisitos, a linha "provado no
+Windows (PowerShell 5.1+); Mac/Linux ainda nao foram validados - e evolucao declarada (OPP-22)" e
+um bullet novo em "O que ainda NAO faz" no mesmo tom dos outros 7 - o CI so roda `windows-latest`
+e isso nao aparecia em lugar nenhum do README.
+
+**B2 - URL placeholder no caminho do cetico.** README.md, secao "Como conferir voce mesmo":
+`git clone <repo> alia-flow` virou `git clone https://github.com/gufarina/alia.flow.git alia-flow`
+(URL real).
+
+**B3 - frase de instalacao vs repo fechado.** README.md trocou "Depois, uma linha instala a Alia"
+(que soava disponivel agora, com o repo em 404) pela frase final: "Repositorio em beta fechado
+hoje - a linha de instalacao abaixo passa a responder quando a visibilidade abrir:" - verdadeira
+nos dois estados (fechada agora, aberta depois so ganha). `docs/CLAIMS.md` ganhou a citacao
+palavra por palavra desta frase na secao do repositorio privado.
+
+**B4 - copyright inconsistente.** LICENSE dizia "The Alia Flow Authors"; README dizia "Studio
+Farina". README.md alinhado ao LICENSE (o arquivo legal): `[MIT](LICENSE) (c) The Alia Flow
+Authors.`
+
+**Conserto do proprio B3, ainda dentro da 1.50.8 (WARDEN reprovou antes do empacote - nenhum
+empacote aconteceu).** A primeira redacao do B3 incluia "enquanto isso, peca acesso ao Studio
+Farina" apos a frase de beta fechado. O WARDEN reprovou: (a) expunha o nome comercial privado do
+operador num README publico anonimo; (b) instrucao sem mecanismo (sem link/contato); (c) nao
+citada no CLAIMS.md, dessincronizando a fonte unica de claims; (d) fora do escopo dos 4 consertos
+do NEXUS. Clausula removida do README e do CLAIMS.md - a frase final do B3 (citada acima e la) fica
+so com o estado verificavel, sem convite e sem nome do studio. A versao nao mudou (1.50.8) - e
+conserto da propria entrada antes de qualquer publicacao.
+
+Prova: `scripts/smoke-test.ps1` ALL GREEN, 214 PASS, 0 FAIL (mesmo placar de antes - nenhum check
+tocou o texto novo de forma a quebrar).
+
+Nao mexeu: engine/, scripts/, .claude/agents/**, state.json, artifacts/** - so README.md e
+docs/CLAIMS.md.
+
 ## [1.50.7] - 2026-08-11
 
 PATCH - A revisao independente de release deixa de ser EVENTO e vira PORTA. Mandato do CEO:
