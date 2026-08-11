@@ -4,8 +4,9 @@
   engine, scripts, skills, onboarding, optional-mcps, docs, studio.example + os arquivos de topo
   (AGENTS, README, CHANGELOG, VERSION, LICENSE, alia.config.json, launchers, .git*).
   NUNCA inclui dado de operador/interno: studio/, opportunities/, rsi-backlog/, memory/, state.json,
-  studio.yaml, _retired/. Portao: so empacota se o smoke estiver verde. Valida o pacote no fim.
-  Sem acentos, sem emojis. UTF-8 sem BOM.
+  studio.yaml, _retired/. Portao: so empacota se o smoke estiver verde E se existir revisao de
+  release aprovada para a versao atual (release-reviews/<VERSION>.md, veredito PASS - ver
+  engine/governance/public-surface.md). Valida o pacote no fim. Sem acentos, sem emojis. UTF-8 sem BOM.
 #>
 param([switch]$Force)
 $ErrorActionPreference = "Stop"
@@ -16,6 +17,32 @@ $ver  = ((Get-Content (Join-Path $root "VERSION") -ErrorAction SilentlyContinue)
 Write-Host "=== Empacotar Alia Flow (release open source) ==="
 Write-Host ("  versao: " + $ver)
 Write-Host ("  saida:  " + $out)
+Write-Host ""
+
+# 0/3 Portao: nenhuma versao sai sem revisao de release aprovada (lei do law-ledger.md, mecanismo
+# = este passo). release-reviews/<VERSION>.md precisa existir, ter `veredito: PASS` e ter
+# `versao: <VERSION>` batendo com a versao atual - qualquer um dos 3 faltando ABORTA, nao so avisa.
+# Isto e a mesma logica da recusa de varredura cega do graphify: nao e lembrete, e porta estrutural.
+Write-Host "0/3 Conferindo revisao de release aprovada..."
+$reviewPath = Join-Path $root ("release-reviews\" + $ver + ".md")
+if (-not (Test-Path -LiteralPath $reviewPath)) {
+  Write-Host ("[ERRO] versao " + $ver + " sem revisao de release aprovada - acione o squad. Esperado: " + $reviewPath)
+  exit 1
+}
+$reviewTxt = [System.IO.File]::ReadAllText($reviewPath)
+$reviewVerMatch = [regex]::Match($reviewTxt, '(?m)^versao:\s*(\S+)\s*$')
+$reviewVerdMatch = [regex]::Match($reviewTxt, '(?m)^veredito:\s*(\S+)\s*$')
+$reviewVer = if ($reviewVerMatch.Success) { $reviewVerMatch.Groups[1].Value } else { "" }
+$reviewVerd = if ($reviewVerdMatch.Success) { $reviewVerdMatch.Groups[1].Value } else { "" }
+if ($reviewVerd -ne "PASS") {
+  Write-Host ("[ERRO] versao " + $ver + " sem revisao de release aprovada - acione o squad. " + $reviewPath + " tem veredito '" + $reviewVerd + "' (precisa ser PASS).")
+  exit 1
+}
+if ($reviewVer -ne $ver) {
+  Write-Host ("[ERRO] versao " + $ver + " sem revisao de release aprovada - acione o squad. " + $reviewPath + " declara versao '" + $reviewVer + "', divergente da versao atual (" + $ver + ").")
+  exit 1
+}
+Write-Host ("    revisao aprovada: " + $reviewPath + " (veredito PASS, versao confere).")
 Write-Host ""
 
 # 1/3 Portao: so empacota o que esta verde.

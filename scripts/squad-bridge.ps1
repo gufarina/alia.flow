@@ -349,7 +349,11 @@ foreach ($clientDir in $clientDirs) {
             $camada = $camada.ToUpper()
 
             if ($squadInfo.Camadas.ContainsKey($agentId)) {
-                $camada = $squadInfo.Camadas[$agentId]
+                $squadCamada = $squadInfo.Camadas[$agentId]
+                if ($camada -and $camada -ne $squadCamada) {
+                    [void]$camadaWarnings.Add("$clientId/$agentId : squad.yaml sobrescreve a camada '$camada' resolvida do yaml individual para '$squadCamada' - squad.yaml vence, DIVERGENCIA registrada")
+                }
+                $camada = $squadCamada
             }
 
             if ($squadInfo.GatewayId -and $squadInfo.GatewayId -eq $agentId) {

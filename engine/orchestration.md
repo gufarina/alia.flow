@@ -102,6 +102,25 @@ Regras duras do match:
 - **Capacidade declarada vence intuicao.** O match le o que cada agente declara
   (os `.yaml` dos Specialists), nao um palpite do momento.
 
+> LEI (especialista existe, usa-lo e obrigatorio - revisao adversarial 11/08/2026): quando existe
+> Specialist GERADO (`.claude/agents/{client}-{id}.md`, via `scripts/squad-bridge.ps1`) cobrindo o
+> dominio da Task, cham-lo e OBRIGATORIO. Usar agente generico nesse cenario e violacao equivalente
+> a nao delegar - a mesma falha que o passo DELEGA existe para impedir, so que disfarcada de
+> "delegou pra algum agente". Generico e fallback APENAS em duas situacoes: (a) nenhum Specialist
+> do Squad do Client cobre a lente que a Task exige (a lacuna sobe ao Squad Creator, nao vira
+> desculpa pra usar generico), ou (b) ordem explicita do Operator (a mesma valvula ja existente em
+> `engine/governance/client-truth.md` - excecao registrada na Task).
+>
+> CLAUSULA DE PRECEDENCIA (achado LATTICE, revisao adversarial): a etapa 1 da tabela acima
+> ("Client -> Squad", squads-first) VENCE SEMPRE a etapa 2 (`routing.lenses` em
+> [alia.yaml](agents/alia.yaml)). A tabela de lentes existe pra mapear DOMINIO -> arquetipo quando
+> nao ha Squad gerado cobrindo aquele dominio (ou o Client ainda nao tem Squad nenhum) - ela e
+> FALLBACK documentado, nunca uma rota paralela que compete com o Squad do Client. Antes da
+> revisao, `alia.yaml` mapeava lente -> arquetipo generico direto, sem citar essa precedencia -
+> contradizia o squads-first que este arquivo ja declarava acima; a clausula fecha essa
+> contradicao sem mudar o comportamento correto (que ja era squads-first na pratica dos Squad
+> Owners), so tornando o contrato explicito onde a maquina de roteamento le.
+
 ## Delegacao e governanca (dois tiers)
 
 - A Alia **orquestra**; os Specialists **executam**. A fronteira nunca se inverte.

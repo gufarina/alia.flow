@@ -20,6 +20,135 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.50.7] - 2026-08-11
+
+PATCH - A revisao independente de release deixa de ser EVENTO e vira PORTA. Mandato do CEO:
+"toda vez que peco revisao voce acha algo; ta vergonhoso; corrige tudo, garante que funciona."
+
+**1. O registro.** Nasce `release-reviews/<versao>.md` (um por versao) + `release-reviews/TEMPLATE.md`
+documentando o formato minimo: `versao`, `data`, `revisor` (id do Specialist que revisou, ex.
+warden ou nexus), `veredito` (PASS ou FAIL), e 1-N linhas de "o que foi conferido" com evidencia.
+
+**2. A maquina.** `scripts/package-release.ps1` ganha o passo "0/3 Conferindo revisao de release
+aprovada..." ANTES de montar o pacote: exige `release-reviews/<VERSION>.md` com `veredito: PASS`
+e `versao:` batendo o VERSION atual - qualquer um dos 3 faltando (arquivo ausente, veredito != PASS,
+versao divergente) ABORTA com `exit 1` e mensagem clara citando o arquivo esperado. Estruturalmente
+impossivel empacotar sem revisao aprovada - mesma logica da recusa de varredura cega do graphify:
+nao e lembrete, e porta.
+
+**3. A lei.** `engine/governance/law-ledger.md` ganha L34 (mecanismo = o passo 0/3 acima, teste que
+reprova de verdade). `engine/governance/public-surface.md` ganha a secao "Antes de empacotar, a
+revisao de release obrigatoria" com o marcador `> LEI:` e a doutrina (2 paragrafos).
+`law-ledger-check.ps1` -> FAIL 0.
+
+**4. Prova pelo negativo (3 casos, documentados na Task).** (a) sem `release-reviews/1.50.7.md` ->
+aborta citando o caminho esperado; (b) `release-reviews/1.50.7.md` com `veredito: FAIL` -> aborta;
+(c) `release-reviews/1.50.7.md` com `veredito: PASS` mas `versao: 1.50.6` (divergente) -> aborta.
+Nenhum PASS definitivo foi criado nesta Task de proposito: o empacotador fica honestamente
+vermelho, aguardando a revisao real do NEXUS - fabricar o PASS aqui seria o teatro que esta porta
+existe para matar.
+
+Nao mexeu: `engine/rsi/**`, `state.json`, `.claude/agents/**`, `clients/*/squad/**`,
+`clients/<estudio>/artifacts/**`, `Projetos/alia-flow` (publicacao e do COURIER, depois da revisao real).
+
+## [1.50.6] - 2026-08-11
+
+PATCH - Executa a parte GOVERNANCA da revisao adversarial (LATTICE + WEAVER + CANON). 4 decisoes.
+
+**1. A LEI que faltava: "especialista existe, usa-lo e obrigatorio" (L33 no law-ledger).**
+`engine/orchestration.md` ganha a LEI (apos "Regras duras do match"): quando existe Specialist
+GERADO (`.claude/agents/{client}-{id}.md`) cobrindo o dominio da Task, cham-lo e OBRIGATORIO -
+generico so por lacuna de Squad ou ordem explicita do Operator. Junto, a CLAUSULA DE PRECEDENCIA
+(achado LATTICE: `alia.yaml` mapeava `routing.lenses` lente->generico direto, contradizendo o
+squads-first que `orchestration.md:86-92` ja declarava): o Squad do Client vence sempre; a tabela
+de lentes e fallback documentado. `engine/agents/alia.yaml` ganha a mesma clausula onde a maquina
+de roteamento le. `scripts/response-guard.ps1` REGRA 1 fica ESTENDIDA (achado CANON: so conferia
+"houve Agent/Task", nunca "para quem"): quando o turno escreve em `clients/<id>/` e existe squad
+gerado pra `<id>`, delegar a generico sem `subagent_type` com prefixo `<id>-` agora bloqueia,
+citando os Specialists disponiveis; client sem squad gerado segue no comportamento antigo; a
+VALVULA do Operator desarma a extensao tambem. Provado pelo negativo (payload de teste via stdin,
+client real com squad gerado): turno com Write no Client + `Agent subagent_type:general-purpose`
+-> BLOQUEIA citando os Specialists do Client; mesmo turno com `subagent_type:<id>-<especialista>`
+-> passa; client sem squad gerado (`acme-saas-fixture-test`) -> comportamento antigo, passa.
+`law-ledger.md` registra
+L33 com os ponteiros reais (orchestration.md, alia.yaml, response-guard.ps1) - `law-ledger-check.ps1`
+FAIL 0.
+
+**2. O portao para de mentir.** `engine/governance/quality-gate.yaml` (criterio 6): o comentario
+"deterministico" no check `grounding-label-present` era falso (nenhum script varria DENTRO do
+Artifact). Trocado por descricao honesta: check PARCIAL, rotulo no texto do turno + agora tambem no
+Artifact html (REGRA 2 estendida). `scripts/response-guard.ps1` REGRA 2 ganha a extensao: todo
+`.html` escrito em `clients/*/artifacts/` no turno e varrido pela mesma heuristica (3+ referencia
+tecnica arquivo:linha/extensao sem rotulo `[MEDIDO`/`[INFERIDO`/`[LIDO`) - calibrado pra nao acusar
+pagina de marketing legitima (o gatilho e a PRESENCA do claim tecnico, nao a ausencia do rotulo em
+qualquer html). Provado pelo negativo com 2 fixtures reais num Client com artifacts/: html com 3
+referencias `scripts/*.ps1:linha` sem rotulo -> BLOQUEIA citando o arquivo e a contagem; html de
+marketing (headline + CTA, zero referencia tecnica) -> passa liso.
+
+**3. O placar se parte em duas.** `engine/governance/law-ledger.md`, secao Placar: `COBERTA`
+deixa de ser um bloco so - `COBERTA (comportamento real): 22` (a maquina confere o QUE ACONTECEU)
+separada de `COBERTA (so formato): 6` (a maquina confere so que um BLOCO DE TEXTO existe) -
+contadas na propria tabela, nao inventadas. As leis `[SEM MAQUINA NESTA INSTANCIA]` seguem
+marcadas visivelmente dentro do bucket "comportamento real". `law-ledger-check.ps1` nao valida o
+placar (so a coluna "onde vive" e os ponteiros script:linha) - nada a ajustar nele por esta
+decisao; `law-ledger-check.ps1` -> FAIL 0 (rodado da raiz da instancia aplicada, studio-farina).
+
+Nucleo (`orchestration.md`) TOCADO nesta sessao - `-AllowCore` aplicado nos dois lados (lab e
+instancia aplicada), baseline atualizado, "nucleo integro" confirmado.
+
+Nao mexeu: `engine/agents/*.yaml` alem de `alia.yaml`, `engine/squad-system.md`,
+`scripts/squad-bridge.ps1`, glossarios de squad (frente AGENTES - 1.50.5 - cuida dos arquetipos),
+`engine/rsi/**`, `state.json`, `clients/<estudio>/artifacts/**`.
+
+## [1.50.5] - 2026-08-11
+
+PATCH - Executa a parte AGENTES da revisao adversarial (WEAVER + LATTICE). A revisao derrubou a
+tese da "heranca" de arquetipo: zero codigo le `base_archetype`, o gerador (squad-bridge.ps1) nunca
+consultou o campo. Decisao: a heranca para de se chamar heranca - os 7 arquetipos do motor
+(architect, data-engineer, dev, devops, qa, agent-engineer, growth) viram BIBLIOTECA DE REFERENCIA
+declarada como tal; heranca mecanica de verdade fica como oportunidade futura, so se a demanda provar.
+
+**1. O termo.** `squad/knowledge/ubiquitous-language.md` (linha 18): definicao de `base_archetype`
+trocada de "Arquetipo do motor herdado por um Specialist" para "referencia de leitura usada pelo
+autor ao escrever a persona; NADA e herdado mecanicamente - o gerador nao le este campo".
+Comentarios `# herda engine/agents/X.yaml (reuse-first)` nos 4 Specialists que declaram
+`base_archetype` (courier, lattice, warden, weaver) e a prosa dos mesmos arquivos reescritos para
+"referencia de leitura" / "copiado a mao" - nao prometem mais heranca. `engine/glossary.md` e
+`engine/squad-system.md` conferidos: nenhuma promessa de heranca mecanica de `base_archetype` la
+(a frase "trocar um nao deveria forcar reescrever os outros" em squad-system.md e sobre a separacao
+Persona/Config/knowledge, tema distinto - nao mexida). `engine/agents/squad-creator.md/.yaml`
+conferidos: nao referenciam `base_archetype`. `engine/MAP.md` (onde os 7 arquetipos sao listados
+como biblioteca) ganhou nota curta: o que SAO (doutrina de leitura) e o que NAO SAO (invocaveis,
+herdados por mecanismo).
+
+**2. O fantasma.** Achado LATTICE de um arquetipo "analyst" que nao existe em disco: confirmado que
+so aparece em `opportunities/aiox-origin-dossie/MAGNUM-OPUS.md` (historico, fora da doutrina viva).
+Nada a corrigir - nao ha promessa viva de um arquetipo que nao existe.
+
+**3. O time fantasma.** `clients/alia-flow-lab/studio/clients/alia-flow-lab/` (manifesto de squad
+pre-rebuild de 14/06/2026, 9 membros, contradizia o squad vivo de 7) movido inteiro para
+`_backups/ARQUIVADO-2026-08-11-studio-clients-alia-flow-lab-fantasma/` com README de uma linha.
+Conferido por grep: nenhum script/teste ativo referenciava o caminho - o unico check que ja o
+varreu (a busca recursiva de "pesquisa segura" em `scripts/smoke-test-studio.ps1`) ja tinha sido
+restrito a `clients/<id>/squad/agents/` (1 nivel) antes desta sessao, excluindo a copia aninhada
+por construcao.
+
+**4. As redes.** `scripts/squad-bridge.ps1`: quando `squad.yaml` sobrescreve a camada de um
+Specialist COMUM (nao-gateway), agora gera aviso de DIVERGENCIA no resumo (mesmo fail-loud do caso
+Gateway) em vez de sobrescrever em silencio. Provado pelo negativo com um squad de teste
+(individual `camada: B`, override `camada: C` em squad.yaml): sem o fix, silencio; com o fix,
+`squad.yaml sobrescreve a camada 'B' resolvida do yaml individual para 'C' - squad.yaml vence,
+DIVERGENCIA registrada`. `engine/agents/model-matrix.yaml`: faltavam `growth` e `agent-engineer` na
+lista `papeis` (cabecalho promete "um lugar muda tudo" cobrindo so 5 dos 7 arquetipos) - completado
+com os tiers que os proprios yamls declaram (`growth: standard`, `agent-engineer: strong`).
+
+Nucleo (`constitution.md`, `glossary.md`, `agents/persona.md`, `orchestration.md`) NAO tocado -
+`-AllowCore` nao se aplica a este bloco.
+
+Nao mexeu: `engine/orchestration.md`, `engine/agents/alia.yaml`, `engine/governance/quality-gate.yaml`,
+`engine/governance/law-ledger.md`, `scripts/response-guard.ps1`, `engine/rsi/**`, `state.json`,
+`clients/<estudio>/artifacts/**` (outra frente da revisao adversarial - governanca - estava neles).
+
 ## [1.50.4] - 2026-08-11
 
 PATCH - Fecha 3 frentes que uma sessao anterior deixou pela metade (o processo caiu no meio).

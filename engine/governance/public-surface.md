@@ -49,6 +49,20 @@ oficina. O incidente de 24/jun (LP perdida num reorg) se resolve com backup, nao
 Rodar `scripts/check-public-surface.ps1` no repo publico. Ele reprova se qualquer arquivo
 das categorias proibidas estiver rastreado. Reprovou, nao publica.
 
+## Antes de empacotar, a revisao de release obrigatoria
+
+> LEI: nenhuma versao sai de `package-release.ps1` sem revisao de release aprovada (mandato do
+> CEO, 11/08/2026, apos incidente repetido de revisao independente achar problema toda vez que
+> pedida - a revisao vira PORTA, nao EVENTO).
+
+Antes de 11/08/2026 a revisao independente do motor era EVENTO: acontecia quando alguem pedia.
+Agora e PORTA: `scripts/package-release.ps1` exige um registro em `release-reviews/<VERSION>.md`
+(formato em `release-reviews/TEMPLATE.md`) com `veredito: PASS` e `versao:` batendo com o
+`VERSION` atual - sem o arquivo, com `veredito: FAIL`, ou com versao divergente, o empacotamento
+ABORTA (passo 0/3 do script) antes de montar qualquer coisa. Nenhum agente fabrica o proprio PASS
+para destravar o empacotador - isso seria o teatro que esta porta existe para matar; a revisao
+tem que ser real.
+
 ## A fronteira, em uma tabela (para o CEO conferir sozinho)
 
 Auditoria de superficie de 10/08/2026. Isto e o que existe de verdade hoje - reconfira com o

@@ -25,11 +25,11 @@ tiers:
   strong:
     id: claude-opus-4-8
     quando: "raciocinio de alta alavancagem: orquestracao, governanca, arquitetura, decisao de escopo, julgamento de risco"
-    papeis: [alia, architect]
+    papeis: [alia, architect, agent-engineer]
   standard:
     id: claude-sonnet-4-6
     quando: "execucao capaz: implementar contra contrato, modelar dados, verificar qualidade (gate). Bom custo/capacidade"
-    papeis: [dev, qa, data-engineer]
+    papeis: [dev, qa, data-engineer, growth]
   fast:
     id: claude-haiku-4-5-20251001
     quando: "trabalho mecanico e rapido: publicar/deploy/empacotar, tarefas curtas e bem definidas"

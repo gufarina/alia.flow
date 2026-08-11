@@ -43,7 +43,12 @@ minimum_criteria:
     - id: 6
       name: Fundamentada
       question: "Toda afirmacao de fato/diagnostico cita a fonte verificavel que foi LIDA, ou esta rotulada como inferencia?"
-      check: grounding-label-present       # deterministico: afirmacao de peso tem [MEDIDO arquivo:linha] ou [INFERIDO]?
+      check: grounding-label-present       # check PARCIAL (honesto, revisao 11/08/2026): rotulo no
+                                            # TEXTO DO TURNO (scripts/response-guard.ps1 REGRA 2,
+                                            # + REGRA 2 estendida pra Artifact html em
+                                            # clients/*/artifacts/*.html); nenhum script varre
+                                            # DENTRO do Artifact fora desse escopo (ex.: outros
+                                            # tipos de artifact, ou html fora de clients/*/artifacts/)
       fail_when: "afirmacao de peso sem rotulo de proveniencia"
 
 # Resultado possivel do gate. Todo verdict e registrado na Memory com evidencia.

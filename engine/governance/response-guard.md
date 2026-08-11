@@ -19,13 +19,22 @@ ja ligado. Lembrete no boot nao e enforcement - o freio precisa estar no pedal, 
    memoria/proposta/backup/scratchpad/state) sem nenhuma chamada de `Agent`/`Task` no mesmo turno,
    e violacao. A excecao legitima e a ORDEM EXPLICITA do Operator para a Alia executar ela mesma -
    ver "A VALVULA" abaixo: desde 09/08/2026 essa excecao tem maquina propria, nao e mais so
-   "aceitar o alerta" em modo aviso.
+   "aceitar o alerta" em modo aviso. ESTENDIDA (11/08/2026, decisao de governanca da revisao
+   adversarial LATTICE/WEAVER/CANON, law-ledger L33): a regra original so confere SE houve
+   `Agent`/`Task`, nunca PARA QUEM. Quando a escrita de dominio esta em `clients/<id>/` e existe
+   squad GERADO pra aquele `<id>` (`.claude/agents/<id>-*.md`), delegar a um agente generico deixa
+   de bastar - precisa ser um Specialist daquele Client (`subagent_type` com prefixo `<id>-`).
+   Client sem squad gerado segue no comportamento antigo. A VALVULA desarma esta extensao tambem.
 2. **GROUNDING** - se o texto da resposta final tem 3 ou mais afirmacoes de peso (referencia a
    arquivo por extensao, ou padrao `arquivo:linha`) e nenhum rotulo de proveniencia (`[MEDIDO`,
    `[INFERIDO`, `[LIDO`) aparece em algum ponto do texto, e violacao. Espelha o criterio 6
    (Fundamentada) do Quality Gate, na porta de saida em vez de so no Gate de Artifact. Esta regra
    e a maquina real da L14 do law-ledger ("Grounding: afirmar fato exige LEU ou rotulo INFERIDO") -
-   ver engine/governance/law-ledger.md.
+   ver engine/governance/law-ledger.md. ESTENDIDA (11/08/2026, achado CANON: "o portao para de
+   mentir" - a regra so olhava o TEXTO DO TURNO, nunca o CONTEUDO do Artifact publicado): a mesma
+   heuristica roda tambem sobre todo `.html` escrito em `clients/*/artifacts/` - claim tecnico sem
+   rotulo no proprio html e violacao. Calibrado pra nao acusar pagina de marketing legitima: o
+   gatilho e a PRESENCA do claim tecnico, nao a ausencia do rotulo em qualquer pagina.
 
 ## Os 2 modos e a rampa
 

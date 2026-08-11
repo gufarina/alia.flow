@@ -20,9 +20,18 @@
     REGRA 1 (DELEGA): Write/Edit/NotebookEdit em qualquer arquivo de dominio (clients/, engine/,
       docs/, skills/, scripts/, AGENTS.md, CLAUDE.md, raiz - fora de memory/, _proposals/,
       _backups/, scratchpad, state.json) sem nenhuma chamada de Agent/Task no turno.
+      ESTENDIDA (11/08/2026, law-ledger L33): quando a escrita de dominio esta dentro de
+      clients/<id>/ e existe squad GERADO pra aquele <id> (.claude/agents/<id>-*.md), delegar a um
+      agente generico NAO satisfaz a regra - precisa ser um Specialist daquele Client (subagent_type
+      com prefixo <id>-). Client sem squad gerado -> comportamento antigo (so confere "houve
+      Agent/Task").
     REGRA 2 (GROUNDING): 3+ "afirmacoes de peso" (referencia a arquivo por extensao, ou padrao
       arquivo:linha) no texto da ultima mensagem do assistente, sem nenhum rotulo [MEDIDO],
       [INFERIDO] ou [LIDO] em algum ponto do texto.
+      ESTENDIDA (11/08/2026): o mesmo criterio roda tambem sobre todo Artifact HTML escrito pelo
+      turno em clients/*/artifacts/*.html - claim tecnico (extensao de arquivo ou arquivo:linha) no
+      CONTEUDO do html sem rotulo de proveniencia e violacao. Pagina de marketing sem claim tecnico
+      da 0 na contagem e passa - o gatilho e a presenca do claim, nao a ausencia do rotulo.
 
   A VALVULA (excecao legitima da REGRA 1, 09/08/2026): a lei DELEGA sempre teve uma excecao
   doutrinaria - o Operator pode mandar a coordenadora executar dominio ela mesma (ver
@@ -334,7 +343,67 @@ try {
   $valvulaAberta = $ordemDetectada -and $ordemRegistrada
 
   $violacaoDelega = $sinalDominio -and (-not $houveDelegacao) -and (-not $valvulaAberta)
-  $delegaOk = -not $violacaoDelega
+
+  # (4c) REGRA 1 ESTENDIDA - ESPECIALISTA OBRIGATORIO (decisao de governanca 11/08/2026, revisao
+  # adversarial LATTICE/WEAVER/CANON; lei em engine/orchestration.md, law-ledger L33).
+  # A REGRA 1 original so confere SE houve Agent/Task no turno, nunca PARA QUEM. Isso deixava
+  # passar delegacao a agente generico mesmo com Specialist gerado do proprio Client disponivel -
+  # tecnicamente "delegou", na pratica violou "especialista existe, usa-lo e obrigatorio".
+  # Escopo: so entra em jogo quando o turno tem escrita de dominio DENTRO de clients/<id>/ (nao a
+  # escrita generica de qualquer arquivo de dominio que a REGRA 1 original cobre) E existe squad
+  # gerado pra aquele <id> (`.claude/agents/<id>-*.md`, fora do sufixo `.context-load.md` que e
+  # so o briefing portavel, nao um Specialist spawnavel). Client SEM squad gerado -> comportamento
+  # antigo (nada aqui dispara, so a REGRA 1 original continua valendo). A valvula do Operator
+  # (mesma da REGRA 1) desarma esta extensao tambem - execucao direta por ordem explicita nao
+  # exige Specialist nenhum.
+  $agentsDir = Join-Path $root ".claude\agents"
+  $clientesComEscritaDominio = New-Object System.Collections.Generic.List[string]
+  foreach ($tu in $allToolUses) {
+    $tname = $null
+    try { $tname = [string]$tu.name } catch { }
+    if ($tname -ne 'Write' -and $tname -ne 'Edit' -and $tname -ne 'NotebookEdit') { continue }
+    $fp = $null
+    try { $fp = [string]$tu.input.file_path } catch { }
+    if ([string]::IsNullOrWhiteSpace($fp)) { try { $fp = [string]$tu.input.notebook_path } catch { } }
+    if ([string]::IsNullOrWhiteSpace($fp)) { continue }
+    $norm = $fp.Replace('\', '/').ToLowerInvariant()
+    if ($norm -match '(^|/)clients/([a-z0-9_\-]+)/') {
+      $cid = $matches[2]
+      if (-not $clientesComEscritaDominio.Contains($cid)) { $clientesComEscritaDominio.Add($cid) }
+    }
+  }
+
+  $subagentTypesUsados = New-Object System.Collections.Generic.List[string]
+  foreach ($tu in $allToolUses) {
+    $tname = $null
+    try { $tname = [string]$tu.name } catch { }
+    if ($tname -ne 'Agent' -and $tname -ne 'Task') { continue }
+    $sat = $null
+    try { $sat = [string]$tu.input.subagent_type } catch { }
+    if (-not [string]::IsNullOrWhiteSpace($sat)) { $subagentTypesUsados.Add($sat.ToLowerInvariant()) }
+  }
+
+  $clientesSemEspecialista = New-Object System.Collections.Generic.List[string]
+  $especialistasDisponiveisMsg = New-Object System.Collections.Generic.List[string]
+  foreach ($cid in $clientesComEscritaDominio) {
+    $squadFiles = @()
+    if (Test-Path -LiteralPath $agentsDir) {
+      $squadFiles = @(Get-ChildItem -LiteralPath $agentsDir -Filter ($cid + "-*.md") -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -notmatch '\.context-load\.md$' })
+    }
+    if ($squadFiles.Count -eq 0) { continue }  # client sem squad gerado -> comportamento antigo
+    $prefixo = $cid + "-"
+    $usouEspecialistaDoClient = $false
+    foreach ($sat in $subagentTypesUsados) { if ($sat.StartsWith($prefixo)) { $usouEspecialistaDoClient = $true; break } }
+    if (-not $usouEspecialistaDoClient) {
+      $clientesSemEspecialista.Add($cid)
+      $nomes = ($squadFiles | ForEach-Object { $_.BaseName }) -join ", "
+      $especialistasDisponiveisMsg.Add($cid + ": " + $nomes)
+    }
+  }
+  $violacaoEspecialista = ($clientesSemEspecialista.Count -gt 0) -and (-not $valvulaAberta)
+
+  $delegaOk = (-not $violacaoDelega) -and (-not $violacaoEspecialista)
 
   # (5) REGRA 2 - GROUNDING.
   $extMatches = [regex]::Matches($lastAssistantText, '\.(ps1|md|ya?ml|json|html|js|ts|py)\b', 'IgnoreCase').Count
@@ -345,7 +414,39 @@ try {
     $hasLabel = $true
   }
   $violacaoGrounding = ($qtdAfirmacoes -ge $cfg.min_claims) -and (-not $hasLabel)
-  $groundingOk = -not $violacaoGrounding
+
+  # (5b) REGRA 2 ESTENDIDA - o Artifact HTML entregue tambem e varrido (decisao de governanca
+  # 11/08/2026, achado CANON: "o portao para de mentir" - antes desta extensao o guard so conferia
+  # o TEXTO DO TURNO, nunca o CONTEUDO do Artifact publicado que o operador de fato abre. Escopo:
+  # todo Write/Edit do turno em clients/*/artifacts/*.html (a pagina entregue ao operador).
+  # Calibrado para NAO acusar pagina de marketing legitima (que nao tem rotulo tecnico e nao
+  # precisa ter): o gatilho e a MESMA heuristica da REGRA 2 (3+ referencia a arquivo por extensao
+  # ou padrao arquivo:linha) aplicada ao CONTEUDO do html, nao a ausencia de rotulo em qualquer
+  # pagina - marketing sem claim tecnico da 0 nessa contagem e passa liso.
+  $htmlArtifactsViolando = New-Object System.Collections.Generic.List[string]
+  foreach ($tu in $allToolUses) {
+    $tname = $null
+    try { $tname = [string]$tu.name } catch { }
+    if ($tname -ne 'Write' -and $tname -ne 'Edit') { continue }
+    $fp = $null
+    try { $fp = [string]$tu.input.file_path } catch { }
+    if ([string]::IsNullOrWhiteSpace($fp)) { continue }
+    $norm = $fp.Replace('\', '/')
+    if ($norm -notmatch '(?i)(^|/)clients/[^/]+/artifacts/[^/]+\.html?$') { continue }
+    if (-not (Test-Path -LiteralPath $fp)) { continue }
+    $htmlTxt = ""
+    try { $htmlTxt = [System.IO.File]::ReadAllText($fp) } catch { continue }
+    $extM = [regex]::Matches($htmlTxt, '\.(ps1|md|ya?ml|json|js|ts|py)\b', 'IgnoreCase').Count
+    $lineM = [regex]::Matches($htmlTxt, '[\w\-./\\]+:\d+').Count
+    $qtdHtml = $extM + $lineM
+    $temLabelHtml = $htmlTxt.Contains('[MEDIDO') -or $htmlTxt.Contains('[INFERIDO') -or $htmlTxt.Contains('[LIDO')
+    if ($qtdHtml -ge $cfg.min_claims -and (-not $temLabelHtml)) {
+      $htmlArtifactsViolando.Add($norm + " (" + $qtdHtml + " referencia(s) tecnica(s) sem rotulo)")
+    }
+  }
+  $violacaoGroundingHtml = ($htmlArtifactsViolando.Count -gt 0)
+
+  $groundingOk = (-not $violacaoGrounding) -and (-not $violacaoGroundingHtml)
 
   $charsResposta = $lastAssistantText.Length
 
@@ -367,6 +468,10 @@ try {
     valvula_aberta   = $valvulaAberta
     qtd_afirmacoes   = $qtdAfirmacoes
     chars_resposta   = $charsResposta
+    especialista_ok        = (-not $violacaoEspecialista)
+    clientes_sem_especialista = ($clientesSemEspecialista -join ",")
+    grounding_html_ok      = (-not $violacaoGroundingHtml)
+    html_artifacts_violando = ($htmlArtifactsViolando -join " | ")
   }
   $logLine = ($logEntry | ConvertTo-Json -Compress)
   $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -378,11 +483,17 @@ try {
   if ($cfg.mode -eq 'bloqueio') {
     if ($anyViolation) {
       $reasons = New-Object System.Collections.Generic.List[string]
-      if (-not $delegaOk) {
+      if ($violacaoDelega) {
         $reasons.Add("Turno escreveu/editou arquivo de dominio sem chamar Agent/Task (falta delegacao) - delegue ao especialista mais capaz, ou - se foi ordem explicita do Operator pra executar direto - registre com 'scripts/register-task.ps1 ... -OperatorOrder' no mesmo turno pra abrir a valvula (ver response-guard.md).")
       }
-      if (-not $groundingOk) {
+      if ($violacaoEspecialista) {
+        $reasons.Add("Especialista existe, usa-lo e obrigatorio (law-ledger L33): " + ($especialistasDisponiveisMsg -join " | ") + " - chame o Specialist do Client (subagent_type com prefixo <id>-), generico so quando nenhum Specialist cobre a lente ou por ordem explicita do Operator (mesma valvula da REGRA 1).")
+      }
+      if ($violacaoGrounding) {
         $reasons.Add("Resposta tem " + $qtdAfirmacoes + " referencia(s) a arquivo sem rotulo [MEDIDO]/[INFERIDO]/[LIDO] - rotule a fonte de cada afirmacao de peso antes de fechar.")
+      }
+      if ($violacaoGroundingHtml) {
+        $reasons.Add("Artifact HTML entregue tem claim tecnico sem rotulo de proveniencia: " + ($htmlArtifactsViolando -join " | ") + " - rotule [MEDIDO]/[INFERIDO]/[LIDO] no proprio html antes de fechar (REGRA 2 estendida, quality-gate.yaml criterio 6).")
       }
       $blockObj = [ordered]@{ decision = "block"; reason = ($reasons -join " ") }
       Write-Output ($blockObj | ConvertTo-Json -Compress)
@@ -395,8 +506,9 @@ try {
   $informativo = ($charsResposta -gt $cfg.min_chars_informativo) -and (-not $houveDelegacao)
   Write-Host ("[RESPONSE-GUARD][aviso] delega_ok=" + $delegaOk + " grounding_ok=" + $groundingOk +
     " sinal_dominio=" + $sinalDominio + " houve_delegacao=" + $houveDelegacao +
-    " valvula_aberta=" + $valvulaAberta +
+    " valvula_aberta=" + $valvulaAberta + " especialista_ok=" + (-not $violacaoEspecialista) +
     " qtd_afirmacoes=" + $qtdAfirmacoes + " chars_resposta=" + $charsResposta +
+    " grounding_html_ok=" + (-not $violacaoGroundingHtml) +
     " informativo_sem_delegacao=" + $informativo)
   exit 0
 } catch {

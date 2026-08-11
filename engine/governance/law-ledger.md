@@ -54,6 +54,8 @@
 | L30 | LEI do formato de plano: todo PLANO/DIAGNOSTICO/DECISAO/RELATORIO DE STATUS e pagina HTML pronta, com TLDR no topo, e a Alia TERMINA e MOSTRA (nunca pergunta antes de entregar) (mandato do CEO, 09/08/2026) | engine/agents/persona.md:263-266 (identico em clients/alia-flow-lab/engine/agents/persona.md:263-266, hash conferido; ponteiro corrigido 09/08/2026 apos a LEI L31 ser inserida acima dela no arquivo) | scripts/smoke-test-studio.ps1 secao (n) `Check "Persona (formato): raiz engine/agents/persona.md declara a LEI do formato de plano"` + `Check "Persona (formato): copia da oficina ... declara a mesma LEI"` - CHECK DE FORMATO (confere que o bloco de texto existe nas 2 copias); nenhum mecanismo confere se a Alia de fato ENTREGA em HTML/TLDR/sem-pergunta em cada resposta real - isso e julgamento de conteudo | SEM TESTE (comportamento) - so o FORMATO do bloco tem maquina |
 | L31 | LEI da resposta por decisao: resposta padrao e DECISAO TOMADA + POR QUE, nunca relato da cadeia de especialistas; pergunta e excecao (so decisao que exige o dono), vem UMA, curta, com info pronta e a recomendacao da Alia (mandato do CEO, 09/08/2026) | engine/agents/persona.md:249-264 (identico em clients/alia-flow-lab/engine/agents/persona.md:249-264, hash conferido) | scripts/law-ledger-check.ps1 secao (C) `Check "L31 formato: persona.md (raiz) declara o marcador de LEI da resposta por decisao + o anti-padrao"` + `Check "L31 formato: persona.md (oficina) declara o mesmo marcador ..."` (roda direto nesta instancia) - CHECK DE FORMATO (marcador + o bloco anti-padrao presentes nas 2 copias), nao confere se a Alia de fato entrega resultado+porque em vez de narrar a cadeia de especialistas em cada resposta real - isso e julgamento de conteudo | COBERTA (formato, nasce com maquina 09/08/2026) - comportamento SEM TESTE, mesmo molde de L30 |
 | L32 | Raiz limpa cobre PASTA, nao so arquivo: pasta nova fora da allowlist canonica reprova pelo NOME dela, mesmo mecanismo que ja valia so pra arquivo (LEI da instancia aplicada, especifica de studio-farina - nao e o L23 do produto, que declara "Pastas sao livres" por desenho em `engine/governance/instance-separation.md:62`) | skills/file-organization/SKILL.md, secao "Pastas tematicas (na raiz)" + "Regras" item 7 ("Nada nasce na raiz") | scripts/smoke-test-studio.ps1:223 `Check "Raiz limpa (pasta): so a allowlist canonica (nenhuma pasta vaza)"` (roda contra a raiz REAL desta instancia; allowlist de 13 pastas + dotfolders ignorados) - PROVADO PELO NEGATIVO em 10/08/2026: pasta de teste criada na raiz reprovou citando o proprio nome, removida, voltou a passar | COBERTA (via smoke-test-studio.ps1 nesta instancia; nasce com maquina, causa raiz da poda de 10/08/2026 - `Get-ChildItem -File` nunca cobrava pasta, so arquivo) |
+| L33 | Especialista existe, usa-lo e obrigatorio: quando ha Specialist gerado (`.claude/agents/{client}-{id}.md`) cobrindo o dominio da Task, delegar a agente generico e violacao equivalente a nao delegar; generico so por lacuna de Squad ou ordem explicita do Operator. Inclui a CLAUSULA DE PRECEDENCIA: o Squad do Client vence sempre `routing.lenses`, que e fallback documentado (revisao adversarial 11/08/2026, achado LATTICE - `alia.yaml` mapeava lente->generico sem citar essa precedencia, contradizendo o squads-first que `orchestration.md` ja declarava) | engine/orchestration.md:105 (LEI + clausula de precedencia) + engine/agents/alia.yaml:32 (clausula espelhada onde a maquina de roteamento le) | scripts/response-guard.ps1:347 REGRA 1 ESTENDIDA (hook de Stop, roda a CADA turno de verdade nesta instancia, `mode: bloqueio`): quando o turno escreve em `clients/<id>/` e existe squad gerado pra `<id>` (`.claude/agents/<id>-*.md`, fora do sufixo `.context-load.md`), delegar a `Agent`/`Task` sem `subagent_type` com prefixo `<id>-` bloqueia o turno, citando os Specialists disponiveis; client sem squad gerado -> comportamento antigo (so confere "houve Agent/Task"); a VALVULA da REGRA 1 (ordem explicita + registro auditavel) desarma esta extensao tambem - doutrina em engine/governance/response-guard.md | COBERTA (comportamento real, nasce com maquina - decisao de governanca 11/08/2026, revisao adversarial LATTICE/WEAVER/CANON) |
+| L34 | Nenhuma versao sai sem revisao de release aprovada: a revisao independente do motor deixa de ser EVENTO (so quando alguem pede) e vira PORTA (bloqueio estrutural no empacotador) - mandato do CEO 11/08/2026, apos "toda vez que peco revisao voce acha algo" reincidir. Registro exigido: `release-reviews/<VERSION>.md` com `veredito: PASS` e `versao:` batendo o VERSION atual | engine/governance/public-surface.md:54 (LEI + doutrina, secao "Antes de empacotar, a revisao de release obrigatoria") | scripts/package-release.ps1 passo "0/3 Conferindo revisao de release aprovada..." (roda direto nesta instancia, ANTES de montar o pacote): sem `release-reviews/<VERSION>.md`, ou com `veredito` != PASS, ou com `versao:` divergente do VERSION real -> `exit 1` com mensagem citando o arquivo esperado. PROVADO PELO NEGATIVO em 11/08/2026 (3 casos: arquivo ausente, veredito FAIL, versao errada - os 3 abortam com a mensagem certa; ver relatorio da Task) | COBERTA (comportamento real, nasce com maquina - decisao de governanca 11/08/2026) |
 
 Nota sobre L29 (OPP-78): nasce `COBERTA` pela mesma regra de formacao - os 5 checks foram escritos na
 Task que declara a lei. O que os checks mordem e o FORMATO (os 4 fatores nomeados, o piso e os tetos
@@ -99,28 +101,38 @@ ponteiros linha-a-linha e que nenhuma LEI nova (marcador `> LEI:`/`## LEI`/`# LE
 
 ## Placar
 
-- Total de leis JA REGISTRADAS neste ledger, historico incluido: **32**. Apos a poda de 09/08/2026
-  (decisao do CEO, mandato de corte - ver "Poda executada" abaixo), **29 continuam sendo LEI hoje**:
+- Total de leis JA REGISTRADAS neste ledger, historico incluido: **33**. Apos a poda de 09/08/2026
+  (decisao do CEO, mandato de corte - ver "Poda executada" abaixo) e a lei nova L33 de 11/08/2026
+  (revisao adversarial de governanca), **30 continuam sendo LEI hoje**:
   L15 SAIU (era duplicata pura de L05+L06, apagada de orchestration.md); L16 e L22 VIRARAM
   ORIENTACAO (deixaram de carregar o marcador `> LEI`, o texto ficou como recomendacao no corpo).
   As linhas de L15/L16/L22 continuam nesta tabela como registro historico da poda, mas nao contam
   mais como LEI ativa nos totais abaixo.
-- **COBERTA: 27** (L01, L02, L03, L04, L05, L06-parcial, L07, L08, L09, L10, L11, L12, L13, L14, L17,
-  L18, L19, L20, L21, L23, L25, L26, L27, L28, L29, L31, L32) - destas, **8 so no produto**
-  (`[SEM MAQUINA NESTA INSTANCIA]`: L01, L11, L12, L17, L18, L19, L29 e a metade smoke-test.ps1 de
-  L06) e **19 rodam de verdade nesta instancia** (as 11 de antes - L04, L06-parcial, L09, L10, L13,
-  L20, L21, L23, L25, L26, L27, L28 - mais as **7 que ganharam maquina na poda de 09/08/2026 e no
-  mesmo mandato**: L02, L03, L05, L07, L08, L31 via `scripts/law-ledger-check.ps1` secao (C) - CHECK
-  DE FORMATO, rotulado como tal - e L14 via `scripts/response-guard.ps1` REGRA 2, que ja rodava e
-  enforcava de verdade a cada turno mas o ledger nao credita-la; achado na poda - mais **L32, nova
-  em 10/08/2026** via `scripts/smoke-test-studio.ps1` secao (e), a extensao da poda de raiz pra
-  pasta).
+- **Placar partido em duas linhas (decisao de governanca 11/08/2026, achado CANON): `COBERTA` nao
+  e um bloco so - "a maquina confere o QUE ACONTECEU" e "a maquina confere que um BLOCO DE TEXTO
+  existe" sao provas de peso diferente, e o placar antigo misturava as duas sob o mesmo rotulo
+  `COBERTA`. As duas linhas abaixo somam **28**, o mesmo total que a linha unica `COBERTA: 27`
+  somava antes + L33 (nova).**
+  - **COBERTA (comportamento real): 22** (L01, L04, L06-parcial, L09, L10, L11, L12, L13, L14, L17,
+    L18, L19, L20, L21, L23, L25, L26, L27, L28, L29, L32, L33) - a maquina citada confere o QUE
+    ACONTECEU num turno/dado real (execucao, hash, escrita real, dado do operador), nunca so a
+    presenca de um bloco de texto. Destas, **7 leis inteiras + a metade smoke-test.ps1 de L06 so
+    rodam no produto** (`[SEM MAQUINA NESTA INSTANCIA]`: L01, L11, L12, L17, L18, L19, L29) e **as
+    15 restantes rodam de verdade NESTA instancia** (L04, L06-parcial, L09, L10, L13, L14, L20,
+    L21, L23, L25, L26, L27, L28, L32, L33 - a ultima, L33, nasce ja rodando aqui via
+    `scripts/response-guard.ps1` REGRA 1 estendida, hook de Stop em producao).
+  - **COBERTA (so formato): 6** (L02, L03, L05, L07, L08, L31) - a maquina (`law-ledger-check.ps1`
+    secao C) confere que o BLOCO/marcador/estrutura EXISTE no arquivo (regex de presenca), nunca se
+    o comportamento descrito de fato aconteceu num turno real - isso continua sendo julgamento do
+    Gate/revisao humana. Nao promover estas 6 pra "comportamento real" e o proprio ponto da
+    Decisao 3: o placar antigo as somava junto com L14/L20/etc sob o mesmo `COBERTA`, escondendo
+    que a prova aqui e mais fraca.
 - **SEM TESTE (comportamento): 1** (L30) - o BLOCO da lei tem um check de FORMATO (presenca do
   texto nas 2 copias de persona.md, em `smoke-test-studio.ps1` secao n), mas nenhum mecanismo
   confere se a Alia de fato ENTREGA em HTML/TLDR/sem-pergunta em cada resposta - isso e julgamento
   de conteudo, sem maquina hoje. Fora da poda: mandato do CEO fresco (09/08/2026), sem reincidencia
   documentada ainda pra julgar. L31 (mesmo mandato) nasce diferente: o check de FORMATO ja existe
-  desde o dia 1 (ver secao C acima), entao entra `COBERTA (formato)` em vez de `SEM TESTE` - o
+  desde o dia 1 (ver secao C acima), entao entra `COBERTA (so formato)` em vez de `SEM TESTE` - o
   comportamento (a Alia de fato responder por decisao+porque) continua sem maquina, igual a L30.
 - **SEM MAQUINA NESTA INSTANCIA: 1** (L24 - `studio.example limpa` nao se aplica a uma instancia
   aplicada, que por definicao nao tem `studio.example`; rebaixada de `COBERTA` porque afirmar

@@ -27,7 +27,12 @@ risco de drift. Precisa do threshold/cerca exata: abra `rsi.yaml`. Para o resto,
 - engine/agents/squad-creator.md - como a Alia spawna o Squad Creator e gera o time.
 - engine/agents/persona-skeleton.md - ordem canonica das secoes de toda persona de Specialist.
 - engine/agents/alia.md - definicao publica/generica do agente central.
-- engine/agents/{architect,data-engineer,dev,devops,qa}.md - personas dos especialistas base.
+- engine/agents/{architect,data-engineer,dev,devops,qa,agent-engineer,growth}.md - biblioteca de
+  referencia dos 7 arquetipos do motor. SAO: doutrina de leitura para quem ESCREVE a persona de um
+  Specialist novo (o autor copia e adapta a mao o que serve). NAO SAO: invocaveis diretamente, nem
+  herdados por mecanismo algum - `base_archetype` em `agents/{id}.yaml` e so uma anotacao de qual
+  arquivo foi lido, o gerador (squad-bridge.ps1) nao le esse campo (decisao pos-revisao adversarial,
+  ver ubiquitous-language.md).
 - engine/features/squad-templates.md - moldes de squad por tipo de cliente (ponto de partida).
 - engine/features/squad-templates/README.md - regra do segundo cerebro em camadas + schema do manifesto.
 - engine/features/expert-minds.md - metodologia de um mestre por dominio (Domain Pack).

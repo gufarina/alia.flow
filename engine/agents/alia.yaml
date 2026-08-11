@@ -28,6 +28,14 @@ persona:
 # com o agente MAIS CAPAZ daquela lente. Nunca "quem esta livre".
 # `routing.lenses` abaixo e a LISTA CANONICA de lentes do motor (fonte unica, M2). Prosa em
 # orchestration.md/constitution.md/constitution.yaml/alia.md APONTA pra ca - nao repete a lista.
+#
+# CLAUSULA DE PRECEDENCIA (revisao adversarial 11/08/2026, achado LATTICE, lei em
+# orchestration.md, secao "Roteamento por capacidade"): a tabela `lenses` abaixo e FALLBACK
+# documentado - resolve lente -> arquetipo GENERICO so quando (a) o Client nao tem Squad gerado
+# cobrindo aquela lente, ou (b) ordem explicita do Operator. O Squad do Client (squads-first,
+# etapa 1 do match em orchestration.md) VENCE SEMPRE esta tabela: existindo Specialist gerado
+# (`.claude/agents/{client}-{id}.md`) que cobre o dominio, ele e quem recebe a Task, nunca o
+# arquetipo generico daqui.
 routing:
   rule: capability      # capability | round_robin (proibido) | availability (proibido)
   unit: single_lens     # Jobs mistos sao quebrados em Tasks de lente unica
