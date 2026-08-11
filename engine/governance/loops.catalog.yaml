@@ -2,8 +2,9 @@
 # Fonte de verdade da taxonomia de loops. Prosa e contexto em loops.md.
 # A Alia (Loop Designer) le ESTE catalogo, seleciona os loops do projeto e os instancia em
 # clients/{id}/loops.yaml. Este arquivo NAO e um runtime instance - e o molde.
-# Execucao padrao dos agendados: SOB DEMANDA via a skill (a Alia sugere proativamente quando devido,
-# opt-in, e roda via scripts/run-loops.ps1). Task Scheduler (install-loops.ps1) e opcional.
+# CORTE (10/08/2026, mandato do CEO): sem Task Scheduler, sem runner - estado escondido na
+# maquina e proibido. O unico agendado sobrevivente (memory-curator) roda quando a prova roda:
+# scripts/smoke-test-studio.ps1 ja o chama a cada execucao. Os demais viram comando manual.
 # Sem acentos, sem emojis. UTF-8 sem BOM.
 
 catalog: loops
@@ -22,7 +23,7 @@ instance_schema:
     state_file: "onde a volta registra onde parou (memoria em disco entre voltas)"
     evaluator: "quem diz NAO (instancia != executor; deterministico quando possivel)"
     isolation: "o que o loop pode tocar (escopo de escrita; 'none' explicito quando so le)"
-    token_cap: "teto de gasto { per_round: N, daily: N } - mecanismo scripts/budget-check.ps1 (OPP-58)"
+    token_cap: "teto de gasto { per_round: N, daily: N } - contador scripts/budget-check.ps1 (OPP-58; sem chamador ativo desde o corte do runner em 10/08/2026, mantido para o gatilho over-budget-path do rsi.yaml)"
     human_review_point: "passo que para e espera humano; 'none' PROIBIDO em loop que escreve fora de staging"
   enums:
     trigger: [event, scheduled]
@@ -69,50 +70,20 @@ dynamic_loops:
     produces: "tentativas de correcao (max N abordagens diferentes)"
     escalates_to: alia
 
-# Loops agendados - rodam em cadencia fixa via mecanismo real (scripts/*.ps1 + Task Scheduler).
+# Loops agendados - cadencia nominal fixa, mecanismo real (scripts/*.ps1), SEM agendador de SO.
+# CORTE (10/08/2026, mandato do CEO): health-check, ddd-drift-scan, evolution-scan, debt-scan,
+# squad-report e deep-research SAIRAM daqui - medido (grep) que nenhuma tem consumidor do proprio
+# relatorio (nem script nem doc le knowledge/loop-reports/{health-check,ddd-drift,evolution-scan,
+# debt-scan,squad-report}-*.md), e sao script puro (cost_class baixo): rotina agendada sem leitor e
+# peso morto. Os 5 scripts continuam em scripts/ como COMANDO MANUAL (rodar quando quiser, ver
+# engine/governance/loops.md "Comandos manuais"). deep-research e o unico agente-driven (custa
+# modelo) - fica so como capacidade sob demanda da skill Loop Designer.
+# SEGUNDO CORTE (mesmo dia): o Windows Task Scheduler e o runner (run-loops.ps1/install-loops.ps1)
+# tambem sairam - estado escondido na maquina, invisivel, nao viaja com o produto. memory-curator
+# sobrevive porque ja tem consumidor MEDIDO sem precisar de agendador nenhum: a mecanica
+# scripts/smoke-test-studio.ps1 -> memory-curator.ps1 -Validade roda toda vez que a prova roda, e
+# a prova roda em todo trabalho relevante. Zero agendamento, zero estado fora do repositorio.
 scheduled_loops:
-  - id: health-check
-    trigger: scheduled
-    cadence: daily
-    owner: squad-owner
-    cost_class: baixo
-    produces: "status: projeto vivo e consistente?"
-    mechanism: scripts/health-check.ps1
-  - id: ddd-drift-scan
-    trigger: scheduled
-    cadence: daily
-    owner: squad-owner
-    cost_class: baixo
-    produces: "drift acumulado vs linguagem ubiqua"
-    mechanism: scripts/ddd-drift.ps1
-  - id: deep-research
-    trigger: scheduled
-    cadence: daily
-    owner: alia
-    cost_class: medio
-    produces: "knowledge atualizado + proposta de RSI"
-    mechanism: agente-driven (RSI Researcher via MCP perplexity), sob demanda
-  - id: evolution-scan
-    trigger: scheduled
-    cadence: weekly
-    owner: alia
-    cost_class: baixo
-    produces: "sinal de estagnacao (projeto avancou?)"
-    mechanism: scripts/evolution-scan.ps1
-  - id: debt-scan
-    trigger: scheduled
-    cadence: weekly
-    owner: alia
-    cost_class: baixo
-    produces: "Concerns abertos sem resolucao"
-    mechanism: scripts/debt-scan.ps1
-  - id: squad-report
-    trigger: scheduled
-    cadence: weekly
-    owner: squad-owner
-    cost_class: baixo
-    produces: "status do squad para o Tier 2 (Alia)"
-    mechanism: scripts/squad-report.ps1
   - id: memory-curator
     trigger: scheduled
     cadence: weekly
@@ -121,14 +92,39 @@ scheduled_loops:
     produces: "memorias/regras consolidadas; stale arquivado (nunca deletado)"
     mechanism: scripts/memory-curator.ps1
 
-# Os tres sinais que a governanca caca.
+# Comandos manuais (cortados do agendamento em 10/08/2026; script continua em scripts/, sem cadencia
+# nem instalacao). Rodar sob demanda: powershell scripts/{mechanism} -Client {id}.
+manual_commands:
+  - id: health-check
+    produces: "status: projeto vivo e consistente?"
+    mechanism: scripts/health-check.ps1
+  - id: ddd-drift-scan
+    produces: "drift acumulado vs linguagem ubiqua"
+    mechanism: scripts/ddd-drift.ps1
+  - id: evolution-scan
+    produces: "sinal de estagnacao (projeto avancou?)"
+    mechanism: scripts/evolution-scan.ps1
+  - id: debt-scan
+    produces: "Concerns abertos sem resolucao"
+    mechanism: scripts/debt-scan.ps1
+  - id: squad-report
+    produces: "status do squad para o Tier 2 (Alia)"
+    mechanism: scripts/squad-report.ps1
+  - id: deep-research
+    produces: "knowledge atualizado + proposta de RSI"
+    mechanism: agente-driven (RSI Researcher via MCP perplexity), sob demanda via skill Loop Designer
+
+# Os tres sinais que a governanca caca. drift-ddd ainda tem o evento (drift-on-commit); estagnacao e
+# debito, apos o corte, so tem o comando manual (nao ha mais varredura agendada sozinha) - ver
+# manual_commands acima.
 detects:
   - signal: drift-ddd
-    by: [drift-on-commit, ddd-drift-scan]
+    by: [drift-on-commit]
+    manual: [ddd-drift-scan]
   - signal: estagnacao
-    by: [evolution-scan]
+    manual: [evolution-scan]
   - signal: debito
-    by: [debt-scan]
+    manual: [debt-scan]
 
 # Frugalidade - lei dura: loop caro e desligado.
 frugality:

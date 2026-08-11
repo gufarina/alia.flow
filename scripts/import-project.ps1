@@ -20,8 +20,12 @@ param(
   [Parameter(Mandatory = $true)][string]$Name,
   [Parameter(Mandatory = $true)][string]$Sector,
   [string]$SourcePath = "",
+  [ValidateSet("ativo", "pontual", "arquivado")][string]$State = "ativo",
   [switch]$DryRun
 )
+# -State (OPP-77): o Client ja nasce com ESTADO declarado no registro. "ativo" cobra tudo (squad,
+# mapa, Tasks com linhagem); "pontual" e a ideia tocada uma vez, que nao cobra squad nem mapa.
+# Mudar depois: scripts/client-state.ps1 -Client <id> -State <novo> (com quem/quando registrados).
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -82,6 +86,7 @@ $clientMdContent = @"
 - sector: $Sector
 - source: $srcLine
 - status: proposed
+- state: $State
 - imported: $today
 
 > Cliente importado para o Alia Flow. Scaffold criado pelo helper import-project.ps1.
@@ -91,18 +96,21 @@ $clientMdContent = @"
 
 # Novo registro no state.json (status proposed, sem squad ainda - o Squad Creator preenche).
 $newClient = [ordered]@{
-  id     = $Id
-  name   = $Name
-  domain = $Sector
-  status = "proposed"
-  source = $srcLine
+  id          = $Id
+  name        = $Name
+  domain      = $Sector
+  status      = "proposed"
+  source      = $srcLine
+  state       = $State
+  state_since = $today
+  state_by    = $(if ("$env:USERNAME" -ne "") { "$env:USERNAME" } else { "operador" })
 }
 
 Write-Host "--- Acoes ---"
 Write-Host ("[dir]   " + $agentsDir + " (vazia, para o Squad Creator)")
 Write-Host ("[dir]   " + $knowDir + " (vazia, para o Squad Creator)")
 Write-Host ("[file]  " + $clientMd + " (client.md minimo)")
-Write-Host ("[state] studio/state.json += cliente '" + $Id + "' status=proposed (preserva " + $existingIds.Count + " cliente(s) + tasks)")
+Write-Host ("[state] studio/state.json += cliente '" + $Id + "' status=proposed state=" + $State + " (preserva " + $existingIds.Count + " cliente(s) + tasks)")
 Write-Host ""
 
 if ($DryRun) {

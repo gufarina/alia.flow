@@ -62,8 +62,7 @@ governanca); os Specialists carregam o segundo cerebro antes de executar.
 | Script | O que faz |
 |--------|-----------|
 | `scripts/smoke-test.ps1` | Valida o motor (via studio.example) |
-| `scripts/smoke-test-studio.ps1` | Valida uma instancia real (clientes do state.json) |
-| `scripts/install-loops.ps1` | Mostra os Loops agendados (dry-run) por Client |
+| `scripts/smoke-test-studio.ps1` | Valida uma instancia real (clientes do state.json); tambem chama `memory-curator.ps1 -Validade` a cada execucao (o unico loop agendado, sem Task Scheduler) |
 
 ## Estado e fonte de verdade
 

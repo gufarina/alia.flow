@@ -48,3 +48,28 @@ oficina. O incidente de 24/jun (LP perdida num reorg) se resolve com backup, nao
 
 Rodar `scripts/check-public-surface.ps1` no repo publico. Ele reprova se qualquer arquivo
 das categorias proibidas estiver rastreado. Reprovou, nao publica.
+
+## A fronteira, em uma tabela (para o CEO conferir sozinho)
+
+Auditoria de superficie de 10/08/2026. Isto e o que existe de verdade hoje - reconfira com o
+comando abaixo antes de qualquer publicacao, esta tabela pode ficar desatualizada.
+
+| Categoria | Isto e PUBLICO (pode ir) | Isto e INTERNO (nunca vai) |
+|---|---|---|
+| Produto | engine/, scripts/ do motor (allowlist), skills/, onboarding/, optional-mcps/, studio.example/, benchmarks/, .claude/ (settings+comando), docs/README.md, docs/COMPATIBILIDADE.md, docs/INTEGRIDADE.md | scripts/smoke-test-studio.ps1 (smoke DA INSTANCIA), scripts/migrate-to-studio.ps1, scripts/extract-secrets.ps1 (migracao unica do dono), scripts/fixtures/ ship (sao fixture de teste do proprio smoke, sem segredo) |
+| Documentacao | README.md, PRIMEIROS-PASSOS.md, CONTRIBUTING.md, CHANGELOG.md, CREDITS.md, LICENSE | PRD, CAPACIDADE-REAL.md, CLAIMS.md, BRAND.md, RELEASE-STATUS.md, roadmap (qualquer arquivo/pasta), docs/product/, docs/business/, DESIGN-*.md |
+| Marca/design | nada (a marca do produto e a persona da Alia dentro do motor, nao arte solta) | brand/ (qualquer pasta), brand/landing/, landing/ (qualquer pasta), preview/ |
+| Trabalho em curso | nada | opportunities/, research/, _drafts/, _dev/, _candidatas/, _backups/ |
+| Estado/operacao | studio.example/ (cliente de EXEMPLO, dado falso) | state.json, mission-control.html, memory/ (fora de studio.example), .claude/agents/ (especialista de cliente gerado) |
+| Dado de cliente | nada | clients/ (qualquer coisa - Cliente-Projeto-Tarefa e do operador, nunca do repo publico) |
+
+Comando unico de conferencia, antes de qualquer publicacao:
+
+```
+powershell -ExecutionPolicy Bypass -File scripts/check-public-surface.ps1 -Repo <caminho do pacote ou do repo publico>
+```
+
+`REPROVADO` com a lista de arquivos + motivo = nao publica. `SUPERFICIE LIMPA` = pode seguir.
+O empacotador (`scripts/package-release.ps1`) ja chama este guarda sozinho no passo 3/3 e ABORTA
+o pacote se reprovar - mas isto nao dispensa rodar o comando de novo, na mao, no repo publico
+de destino antes do `git push` (o empacotador so confere o pacote local, nao o repo remoto).

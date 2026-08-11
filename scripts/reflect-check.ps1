@@ -17,19 +17,25 @@ try {
   if (-not (Test-Path -LiteralPath $ProposalsDir)) { exit 0 }
 
   $pending = @(Get-ChildItem -LiteralPath $ProposalsDir -Filter "reflection-inbox-*.md" -File -ErrorAction SilentlyContinue)
-  if ($pending.Count -eq 0) { exit 0 }
+  # PECA 2 (RSI, canal do dono): friction-*.md conta junto - atrito parado e tao pendencia quanto
+  # digest parado (os dois esperam o mesmo julgamento no inicio da sessao).
+  $frictionPending = @(Get-ChildItem -LiteralPath $ProposalsDir -Filter "friction-*.md" -File -ErrorAction SilentlyContinue)
+  if ($pending.Count -eq 0 -and $frictionPending.Count -eq 0) { exit 0 }
 
-  # Idade do digest mais ANTIGO parado (em dias). >2 dias = o loop apodreceu: vira BANDEIRA VERMELHA.
-  $oldest = ($pending | Sort-Object LastWriteTime | Select-Object -First 1)
+  # Idade do digest/atrito mais ANTIGO parado (em dias). >2 dias = o loop apodreceu: BANDEIRA VERMELHA.
+  $allPending = @($pending) + @($frictionPending)
+  $oldest = ($allPending | Sort-Object LastWriteTime | Select-Object -First 1)
   $ageDays = [math]::Floor(((Get-Date) - $oldest.LastWriteTime).TotalDays)
   $STALE = 2
+  $totalCount = $pending.Count + $frictionPending.Count
 
   if ($ageDays -gt $STALE) {
-    Write-Host ("[ALIA - bastidor - URGENTE] " + $pending.Count + " aprendizado(s) de sessoes anteriores PARADO(S) ha ate " + $ageDays + " dias em memory/_proposals/ (a prova da instancia FALHA com aprendizado parado > 3 dias). Nao adie nesta sessao.")
+    Write-Host ("[ALIA - bastidor - URGENTE] " + $totalCount + " item(ns) de sessoes anteriores PARADO(S) ha ate " + $ageDays + " dias em memory/_proposals/ (" + $pending.Count + " digest, " + $frictionPending.Count + " atrito) - a prova da instancia FALHA com aprendizado parado > 3 dias. Nao adie nesta sessao.")
   } else {
-    Write-Host ("[ALIA - bastidor] " + $pending.Count + " aprendizado(s) de sessoes anteriores aguardando processamento em memory/_proposals/:")
+    Write-Host ("[ALIA - bastidor] " + $totalCount + " item(ns) de sessoes anteriores aguardando processamento em memory/_proposals/ (" + $pending.Count + " digest, " + $frictionPending.Count + " atrito):")
   }
   foreach ($f in $pending) { Write-Host ("  - " + $f.Name) }
+  foreach ($f in $frictionPending) { Write-Host ("  - " + $f.Name + " [ATRITO]") }
   Write-Host ""
   Write-Host "PROTOCOLO DE BASTIDOR (persona.md, regra dura de linguagem - isto NUNCA vira assunto com o operador):"
   Write-Host "1. Atenda PRIMEIRO o que o operador pedir. A primeira fala da sessao e sobre o pedido DELE, nunca sobre manutencao interna. Nao anuncie que vai 'fechar loop' nem cite RSI/digest/inbox/julgamento - vocabulario proibido na conversa."

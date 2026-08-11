@@ -197,6 +197,13 @@ function Clean-Line {
 $userMsgs   = New-Object System.Collections.Generic.List[string]
 $decisions  = New-Object System.Collections.Generic.List[string]
 $discarded  = New-Object System.Collections.Generic.List[string]
+# PECA 2 (RSI, canal do dono): copia CRUA das mensagens de usuario, ANTES da lista anti-captura.
+# A lista anti-captura existe pra manter o DIGEST legivel (descarta ruido de ferramenta) - mas
+# frustracao real do operador costuma citar as MESMAS palavras ("nao funciona", "de novo") sobre
+# o PRODUTO, nao sobre a ferramenta. Se a deteccao de atrito rodasse depois do filtro, perderia
+# justamente as linhas que mais importam. Por isso a deteccao de atrito escaneia $userMsgsRaw,
+# independente do que vira ou nao digest.
+$userMsgsRaw = New-Object System.Collections.Generic.List[string]
 
 $lines = [System.IO.File]::ReadAllLines($latest.FullName)
 foreach ($raw in $lines) {
@@ -221,6 +228,7 @@ foreach ($raw in $lines) {
     if ($etype -eq 'user') {
       # Descartar o prompt-sistema gigante de boot e ruido obvio.
       if ($clean.Length -gt 1500) { continue }
+      $userMsgsRaw.Add($clean)
       if (Test-AntiCapture $clean) { $discarded.Add("[user] " + $clean); continue }
       $userMsgs.Add($clean)
     }
@@ -236,6 +244,109 @@ foreach ($raw in $lines) {
 # Enxugar: limitar volume para um digest legivel.
 $userOut = @($userMsgs | Select-Object -Unique)
 $decOut  = @($decisions | Select-Object -Last 20)
+
+# id8 da sessao: usado no sufixo do inbox (5) e do arquivo de atrito - computado uma vez so,
+# aqui em cima, pra nao duplicar a mesma logica em dois lugares do arquivo.
+$id8 = $latest.BaseName -replace '[^A-Za-z0-9]', ''
+if ($id8.Length -gt 8) { $id8 = $id8.Substring(0, 8) }
+
+# ---------------------------------------------------------------------------------------------
+# PECA 2 (RSI, canal do dono): deteccao de atrito - regex/heuristica DETERMINISTICA, sem chamada
+# de modelo (o hook roda no fim de toda sessao, com timeout). Roda ANTES do gate de dedup do
+# digest (4.5) de proposito: atrito e um canal PROPRIO, independente do digest ficar identico ao
+# de uma sessao anterior ou nao - nunca pode ser pulado por causa do early-exit do digest.
+# A lista de sinais foi calibrada lendo memory/_proposals/_archive/ (o historico REAL de
+# frustracao do dono nesta casa: "ja falei isso e nao corrijiu", "vergonhoso... que merda eh
+# essa", "pqp alia", "inaceitavel", "ta mto ruim", "amador" - jun-ago/2026), nao inventada. Cada
+# item vira um registro estruturado {texto, severidade, tipo} - NUNCA aplica nada, so relata
+# (mesma garantia do resto do arquivo: so propoe, nunca decide sozinho). Escaneia $userMsgsRaw
+# (ANTES da lista anti-captura da secao 3): frustracao real costuma citar as MESMAS palavras
+# ("nao funciona", "de novo") que a lista anti-captura usa pra descartar ruido de FERRAMENTA -
+# se a deteccao rodasse depois do filtro, perderia justamente as linhas que mais importam.
+# ---------------------------------------------------------------------------------------------
+# tipo -> [severidade, palavras/frases-gatilho]. Severidade: 3 = linguagem forte / parou tudo,
+# 2 = correcao repetida (o mesmo defeito voltou), 1 = qualidade reprovada em tom neutro.
+$frictionRules = @(
+  @{ Type = "linguagem-forte";     Sev = 3; Words = @("porra", "pqp", "que merda", "que bosta", "caralho") }
+  @{ Type = "qualidade-reprovada"; Sev = 3; Words = @("vergonhoso", "inaceitavel", "amador", "parece um ovni") }
+  @{ Type = "correcao-repetida";   Sev = 2; Words = @("ja falei", "ja disse", "ja pedi", "de novo", "outra vez", "novamente",
+                                                        "continua ruim", "continua igual", "continua horrivel", "nao corrigiu",
+                                                        "nao mudou nada", "nao era isso", "errado de novo") }
+  @{ Type = "processo-travado";    Sev = 2; Words = @("perdeu tempo", "que gargalo", "nao entendi, pq", "pq perdeu tempo") }
+  @{ Type = "qualidade-fraca";     Sev = 1; Words = @("horrivel", "pessimo", "porcaria", "tosco", "furada", "colcha de retalhos",
+                                                        "mto ruim", "ta ruim", "sem storytelling") }
+)
+
+function Get-FrictionHits {
+  param([string[]]$lines)
+  $hits = New-Object System.Collections.Generic.List[object]
+  foreach ($ln in $lines) {
+    $low = $ln.ToLowerInvariant()
+    $matchedTypes = New-Object System.Collections.Generic.List[string]
+    $maxSev = 0
+    foreach ($rule in $frictionRules) {
+      foreach ($w in $rule.Words) {
+        if ($low.Contains($w)) {
+          if (-not $matchedTypes.Contains($rule.Type)) { $matchedTypes.Add($rule.Type) }
+          if ($rule.Sev -gt $maxSev) { $maxSev = $rule.Sev }
+          break
+        }
+      }
+    }
+    # Enfase pura (3+ exclamacao) conta como sinal fraco isolado se nada mais bateu.
+    $bangs = ([regex]::Matches($ln, '!')).Count
+    if ($matchedTypes.Count -eq 0 -and $bangs -ge 3) {
+      $matchedTypes.Add("enfase")
+      $maxSev = 1
+    }
+    if ($matchedTypes.Count -gt 0) {
+      $show = if ($ln.Length -gt 220) { $ln.Substring(0, 220) + " ..." } else { $ln }
+      $hits.Add([PSCustomObject]@{ Text = $show; Severity = $maxSev; Types = ($matchedTypes -join ",") })
+    }
+  }
+  return $hits
+}
+
+$frictionHits = @(Get-FrictionHits $userMsgsRaw.ToArray())
+Write-Host ("[OK] atrito detectado (regex deterministico): " + $frictionHits.Count + " linha(s).")
+if ($frictionHits.Count -gt 0) {
+  $frictionName = "friction-" + $today + "-" + $id8
+  $fsb = New-Object System.Text.StringBuilder
+  [void]$fsb.AppendLine("---")
+  [void]$fsb.AppendLine("name: " + $frictionName)
+  [void]$fsb.AppendLine("description: Atrito do operador detectado por regex na sessao " + $latest.BaseName + ".")
+  [void]$fsb.AppendLine("metadata:")
+  [void]$fsb.AppendLine("  node_type: memory")
+  [void]$fsb.AppendLine("  type: friction")
+  [void]$fsb.AppendLine("  originSessionId: " + $latest.BaseName)
+  [void]$fsb.AppendLine("  status: proposed")
+  [void]$fsb.AppendLine("---")
+  [void]$fsb.AppendLine("")
+  [void]$fsb.AppendLine("# Atrito do operador - " + $today)
+  [void]$fsb.AppendLine("")
+  [void]$fsb.AppendLine("> Gerado por scripts/session-reflection.ps1 (regex deterministico, sem LLM). Fonte do canal:")
+  [void]$fsb.AppendLine("> engine/rsi/rsi.md, trigger 'operator-friction-pattern'. NUNCA aplica nada sozinho -")
+  [void]$fsb.AppendLine("> so registra. 3+ ocorrencias do MESMO tipo em sessoes distintas = candidato a padrao")
+  [void]$fsb.AppendLine("> (scripts/rsi-patterns.ps1).")
+  [void]$fsb.AppendLine("")
+  [void]$fsb.AppendLine("Transcript de origem: " + $latest.Name)
+  [void]$fsb.AppendLine("")
+  [void]$fsb.AppendLine("## Itens (" + $frictionHits.Count + ")")
+  [void]$fsb.AppendLine("")
+  foreach ($h in $frictionHits) {
+    [void]$fsb.AppendLine("- severidade " + $h.Severity + " | tipo: " + $h.Types)
+    [void]$fsb.AppendLine("  > " + $h.Text)
+  }
+  $frictionFile = Join-Path $ProposalsDir ($frictionName + ".md")
+  if ($DryRun) {
+    Write-Host ("[OK] DRY-RUN: NAO gravou. Gravaria o atrito em: " + $frictionFile)
+  } else {
+    New-Item -ItemType Directory -Force -Path $ProposalsDir | Out-Null
+    [System.IO.File]::WriteAllText($frictionFile, $fsb.ToString(), $utf8)
+    Write-Host ("[OK] atrito gravado: " + $frictionFile)
+  }
+}
+Write-Host ""
 
 # (4.5) DEDUP POR CONTEUDO (conserta P1: digests byte-a-byte iguais entupindo a caixa).
 # Assina o MIOLO (msgs + decisoes); se ja foi visto, nao grava outro inbox - so atualiza o .last.
@@ -270,10 +381,9 @@ foreach ($d in $decOut) {
 Write-Host ""
 Write-Host ("[OK] descartado pela lista anti-captura: " + $discarded.Count + " linha(s).")
 
-# (5) Montar o conteudo do inbox. Sufixo {id8} da sessao no nome: duas sessoes no mesmo
-# dia nao sobrescrevem o digest uma da outra (os consumidores usam o wildcard reflection-inbox-*).
-$id8 = $latest.BaseName -replace '[^A-Za-z0-9]', ''
-if ($id8.Length -gt 8) { $id8 = $id8.Substring(0, 8) }
+# (5) Montar o conteudo do inbox. Sufixo {id8} da sessao no nome (computado mais acima): duas
+# sessoes no mesmo dia nao sobrescrevem o digest uma da outra (consumidores usam o wildcard
+# reflection-inbox-*).
 $inboxName = "reflection-inbox-" + $today + "-" + $id8
 $sb = New-Object System.Text.StringBuilder
 [void]$sb.AppendLine("---")
@@ -346,7 +456,8 @@ if ($DryRun) {
 
 Write-Host ""
 Write-Host ("Resumo: " + $userOut.Count + " msg(s) de usuario | " + $decOut.Count +
-  " ponto(s) de decisao | " + $discarded.Count + " descartado(s) | inbox " +
+  " ponto(s) de decisao | " + $discarded.Count + " descartado(s) | " + $frictionHits.Count +
+  " atrito(s) detectado(s) | inbox " +
   $(if ($DryRun) { "proposto (nao gravado)" } else { "gravado em _proposals/" }))
 
 exit 0

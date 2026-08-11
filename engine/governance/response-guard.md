@@ -14,27 +14,66 @@ ja ligado. Lembrete no boot nao e enforcement - o freio precisa estar no pedal, 
 
 ## As 2 regras (deterministicas, sem LLM, sem rede)
 
-1. **DELEGA** - se o turno escreveu/editou arquivo de algum cliente (`clients/...`, fora de
-   memoria/proposta/backup/scratchpad/state/scripts) sem nenhuma chamada de `Agent`/`Task` no
-   mesmo turno, e violacao. A excecao legitima e a ORDEM EXPLICITA do Operator para a Alia
-   executar ela mesma - essa excecao fica registrada na Task (engine/orchestration.md), nao no
-   guard: o guard nao le a Task, entao ele mede o padrao geral e a excecao vira "aceitar o alerta"
-   em modo aviso, nunca um bypass tecnico escondido no script.
+1. **DELEGA** - se o turno escreveu/editou arquivo de dominio (`clients/`, `engine/`, `docs/`,
+   `skills/`, `scripts/`, `AGENTS.md`, `CLAUDE.md`, raiz - fora de
+   memoria/proposta/backup/scratchpad/state) sem nenhuma chamada de `Agent`/`Task` no mesmo turno,
+   e violacao. A excecao legitima e a ORDEM EXPLICITA do Operator para a Alia executar ela mesma -
+   ver "A VALVULA" abaixo: desde 09/08/2026 essa excecao tem maquina propria, nao e mais so
+   "aceitar o alerta" em modo aviso.
 2. **GROUNDING** - se o texto da resposta final tem 3 ou mais afirmacoes de peso (referencia a
    arquivo por extensao, ou padrao `arquivo:linha`) e nenhum rotulo de proveniencia (`[MEDIDO`,
    `[INFERIDO`, `[LIDO`) aparece em algum ponto do texto, e violacao. Espelha o criterio 6
-   (Fundamentada) do Quality Gate, na porta de saida em vez de so no Gate de Artifact.
+   (Fundamentada) do Quality Gate, na porta de saida em vez de so no Gate de Artifact. Esta regra
+   e a maquina real da L14 do law-ledger ("Grounding: afirmar fato exige LEU ou rotulo INFERIDO") -
+   ver engine/governance/law-ledger.md.
 
 ## Os 2 modos e a rampa
 
-O guard nasce em **aviso**: nunca bloqueia, so grava uma linha por turno em
-`studio/response-guard-log.jsonl`. E o modo certo para o primeiro ciclo porque ainda nao sabemos
-a taxa real de falso-positivo das 2 regras num check so sintatico. Depois de olhar o log por um
-tempo (a meta e uma semana de operacao real) e confirmar que a taxa de falso-positivo e baixa, o
-`mode` em response-guard.yaml vira **bloqueio** - so entao o guard passa a devolver
-`{"decision":"block","reason":"..."}` quando acha violacao. Pular a rampa (nascer direto em
-bloqueio) e o mesmo erro que travou o item no backlog antes (OPP-22, onda 2: "hook bloqueante trava
-instancia viva" foi o risco que impediu de implementar).
+O guard nasceu em **aviso** (nunca bloqueia, so grava uma linha por turno em
+`studio/response-guard-log.jsonl`) - o modo certo para o primeiro ciclo, quando ainda nao se sabia
+a taxa real de falso-positivo das 2 regras num check so sintatico. Em 09/08/2026, apos calibrar os
+limiares contra 94 turnos reais logados (ver o cabecalho de response-guard.yaml), o `mode` virou
+**bloqueio**: violacao agora devolve `{"decision":"block","reason":"..."}` no stdout do hook. Pular
+a rampa (nascer direto em bloqueio) teria sido o mesmo erro que travou o item no backlog antes
+(OPP-22, onda 2: "hook bloqueante trava instancia viva" foi o risco que impediu de implementar) -
+por isso a rampa (aviso primeiro, log real, so depois bloqueio) foi respeitada.
+
+## A VALVULA - a excecao vira maquina (09/08/2026)
+
+A REGRA 1 sempre teve uma excecao doutrinaria: o Operator pode mandar a Alia executar dominio ela
+mesma (engine/orchestration.md, engine/governance/client-truth.md - "Reforcos de fronteira"). Antes
+da valvula, essa excecao so existia em prosa: em modo bloqueio ela nao tinha por onde passar - ou o
+guard bloqueava trabalho legitimo, ou alguem desligava o `mode` inteiro (repetindo o padrao que fez
+outros 10 mecanismos nascerem em aviso e nunca virarem bloqueio).
+
+A valvula abre SO com as duas pernas provadas no MESMO turno (fail-closed: falta uma, ou e ambigua,
+a valvula fica fechada):
+
+1. **Linguagem natural do Operator** - a mensagem que o Operator digitou no turno bate com uma
+   ordem explicita de execucao direta (`faca voce mesma`, `resolve direto`, `nao delega`, `sem
+   especialista`, `sem agente`, entre outras - lista completa no header de `response-guard.ps1`).
+   Nunca configuracao: o Operator e leigo, tem TDAH e nao edita arquivo nenhum pra isso.
+2. **Registro auditavel** - no mesmo turno, uma tool de shell chamou
+   `scripts/register-task.ps1 ... -OperatorOrder` e o registro deu certo (`[OK] tarefa registrada`
+   no resultado da tool). REUSA o mecanismo que ja existia (`register-task.ps1` grava
+   `operator_order:true` na Task) - a valvula nao inventa um segundo conceito paralelo de excecao.
+
+Quando as duas pernas batem, a REGRA 1 nao acusa violacao NAQUELE turno - e so naquele: a proxima
+resposta do operador comeca um turno novo, com a janela do guard reiniciada do zero (a linguagem
+natural do turno anterior nao e lida de novo). O log grava tres campos por turno -
+`ordem_detectada`, `ordem_registrada`, `valvula_aberta` - para que "a valvula abriu" fique
+DISTINGUIVEL de "nao houve sinal de dominio" ou "houve delegacao normal": excecao registrada e
+excecao; excecao silenciosa seria furo. A valvula so desarma a REGRA 1; a REGRA 2 (GROUNDING)
+continua intacta - a excecao e sobre QUEM executa, nunca sobre citar fonte sem rotular.
+
+**Conserto necessario para a valvula fazer prova real (09/08/2026):** provando a valvula pelo
+negativo descobriu-se que o recorte do "turno atual" (item abaixo) tratava qualquer `tool_result`
+como se fosse a ULTIMA mensagem do Operator - no contrato da API todo `tool_result` chega como uma
+mensagem de role `"user"` tambem. Sem filtrar isso, a janela do turno quase sempre cortava fora o
+proprio `Write`/`Edit` que a REGRA 1 existe para pegar (e a chamada de `register-task.ps1` que a
+valvula precisa achar). `response-guard.ps1` agora so aceita como inicio de turno uma mensagem
+"user" que carrega TEXTO genuino (string ou bloco `type='text'`) - mensagem que so tem
+`tool_result` nao conta mais.
 
 ## A limitacao aceita e declarada
 

@@ -3,6 +3,13 @@
 # T11 e T12 NAO sao cobertos aqui de proposito (sem spec de check neste harness);
 # se precisarem virar check, adicionar bloco proprio e atualizar esta lista.
 # Sem acentos, sem emojis. UTF-8 sem BOM.
+#
+# -UpdateReadme: modo de SINCRONIA (nao e o smoke normal). So mexe na linha "(N na versao atual"
+# de README.md, reescrevendo pro total real deste contexto quando bater errado - causa raiz do
+# numero publico fossilizar (161 -> 179 -> 185): o numero era so escrito a mao. Uso: chamado por
+# package-release.ps1 contra o PACOTE construido, antes do gate oficial (ver o script para o fluxo
+# completo: sincroniza, copia pra raiz da oficina, so entao roda o gate real sem o switch).
+param([switch]$UpdateReadme)
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot          # raiz do alia/
@@ -13,6 +20,7 @@ $squad  = Join-Path $client "squad"
 
 $script:fail = 0
 $script:pass = 0
+$script:skip = 0
 
 function Check([string]$name, [bool]$cond, [string]$detail = "") {
   if ($cond) {
@@ -355,43 +363,57 @@ if (Test-Path $loopsYaml) {
   }
   Check "Loops: contrato de 6 elementos (OPP-57) em todo loop do demo" ($sixBad.Count -eq 0) ("incompleto vs ids:" + $idCount + " -> " + ($sixBad -join ", "))
 }
-Check "Loop Designer: mecanismo install-loops.ps1 existe" (Test-Path (Join-Path $root "scripts\install-loops.ps1"))
 # deep-research e o loop que sustenta a promessa de RSI; o mecanismo (agente-driven via MCP) tem
 # que estar declarado de verdade - o catalogo do Perplexity (busca normal Sonnet 4.6, jamais Sonar).
 Check "Loop Designer: mecanismo de pesquisa (MCP perplexity) declarado" (Test-Path (Join-Path $root "optional-mcps\perplexity\manifest.yaml"))
 
-# --- Loops agendados fiados no runner (anti-orfao) ---
-# Todo loop scheduled do catalogo (loops.catalog.yaml) cujo mecanismo e um script (scripts/*.ps1)
-# tem que estar mapeado no run-loops.ps1 (arrays $daily/$weekly). Sem isso o loop fica orfao: existe
-# no catalogo e tem mecanismo, mas o runner padrao nunca o dispara (foi o bug do memory-curator).
-# Loops com mecanismo agente-driven (deep-research, sem scripts/*.ps1) ficam de fora por contrato.
+# --- Loops agendados sem agendador (anti-fantasma) ---
+# CORTE (10/08/2026, mandato do CEO): nao ha mais Task Scheduler nem runner (install-loops.ps1 e
+# run-loops.ps1 foram removidos - agendamento do SO e estado escondido, invisivel, nao viaja com o
+# produto). Todo loop scheduled do catalogo (loops.catalog.yaml, secao scheduled_loops) cujo
+# mecanismo e um script (scripts/*.ps1) tem que ter consumidor MEDIDO: o basename do script
+# aparece de fato invocado em scripts/smoke-test-studio.ps1 (a prova que roda em todo trabalho
+# relevante). Sem isso o loop e fantasma - existe no catalogo, tem mecanismo, ninguem o chama.
 Write-Host ""
-Write-Host "-- Loops agendados no runner (anti-orfao) --"
+Write-Host "-- Loops agendados sem agendador (anti-fantasma) --"
 $catalogPath = Join-Path $engine "governance\loops.catalog.yaml"
-$runnerPath  = Join-Path $root "scripts\run-loops.ps1"
-$orphanLoops = @()
-if ((Test-Path $catalogPath) -and (Test-Path $runnerPath)) {
+$studioSmokePath = Join-Path $root "scripts\smoke-test-studio.ps1"
+$loopsCheckName = "Loops: todo scheduled com mechanism=script tem consumidor medido em smoke-test-studio.ps1 (sem fantasma)"
+if (-not (Test-Path $catalogPath)) {
+  # loops.catalog.yaml e engine/ (shipDirs SEMPRE empacota engine/ - ver package-release.ps1).
+  # Ausencia aqui nao tem contexto que a explique - e defeito real, reprova sempre.
+  Check $loopsCheckName $false ("catalogo ausente: " + $catalogPath)
+} elseif (-not (Test-Path $studioSmokePath)) {
+  # scripts/smoke-test-studio.ps1 e o smoke DA INSTANCIA do operador (le clientes/squads/state.json
+  # dele) - nao e mecanismo do motor, por isso package-release.ps1 NUNCA o empacota (allowlist de
+  # scripts/, auditoria de superficie 10/08/2026 - ver o comentario la). Rodando de dentro de um
+  # pacote construido este arquivo SEMPRE vai estar ausente: e o DESENHO, nao um defeito do
+  # pacote - reprovar aqui tornaria o check estruturalmente impossivel de passar em qualquer
+  # pacote, para sempre. Mas tambem nao vira [PASS] silencioso (isso afirmaria "sem loop fantasma"
+  # sem checar nada de verdade). Saida honesta: SKIP explicito, fora da conta de pass/fail. A
+  # protecao continua de pe em todo contexto onde o arquivo existe - a oficina (aqui mesmo, quando
+  # rodado da raiz do lab) e qualquer instancia real do operador que adote o mesmo padrao (ex.:
+  # scripts/smoke-test-studio.ps1 na raiz do Studio Farina).
+  Write-Host ("[SKIP] " + $loopsCheckName + " -> nao verificado aqui: scripts/smoke-test-studio.ps1 e arquivo da INSTANCIA do operador, nunca empacotado por desenho. Protecao real fica de pe na oficina e em toda instancia real que tiver o arquivo.")
+  $script:skip++
+} else {
   $catTxt = ReadText $catalogPath
-  # ids dos loops com mechanism: scripts/<nome>.ps1 (basename = id no runner)
+  # recorta so o bloco scheduled_loops (ate a proxima chave de topo, ex: manual_commands/detects)
+  $schedBlock = [regex]::Match($catTxt, '(?ms)^scheduled_loops:\s*$(.*?)(?=^\S|\z)')
+  $schedTxt = if ($schedBlock.Success) { $schedBlock.Groups[1].Value } else { "" }
+  # ids dos loops com mechanism: scripts/<nome>.ps1
   $needed = @()
-  foreach ($m in [regex]::Matches($catTxt, '(?im)^\s*mechanism:\s*scripts/([A-Za-z0-9._-]+)\.ps1\s*$')) {
+  foreach ($m in [regex]::Matches($schedTxt, '(?im)^\s*mechanism:\s*scripts/([A-Za-z0-9._-]+)\.ps1\s*$')) {
     $needed += $m.Groups[1].Value
   }
   $needed = $needed | Select-Object -Unique
-  # mapa do runner: conteudo dos arrays $daily e $weekly
-  $runTxt = ReadText $runnerPath
-  $mapped = @()
-  foreach ($arr in @('daily','weekly')) {
-    $am = [regex]::Match($runTxt, ('(?m)^\s*\$' + $arr + '\s*=\s*@\(([^)]*)\)'))
-    if ($am.Success) {
-      foreach ($q in [regex]::Matches($am.Groups[1].Value, '"([^"]+)"')) { $mapped += $q.Groups[1].Value }
-    }
+  $studioSmokeTxt = ReadText $studioSmokePath
+  $ghostLoops = @()
+  foreach ($id in $needed) {
+    if ($studioSmokeTxt -notmatch [regex]::Escape($id + ".ps1")) { $ghostLoops += $id }
   }
-  foreach ($id in $needed) { if ($mapped -notcontains $id) { $orphanLoops += $id } }
-} else {
-  $orphanLoops += "(catalogo ou runner ausente)"
+  Check $loopsCheckName ($ghostLoops.Count -eq 0) ("fantasma(s): " + ($ghostLoops -join ", "))
 }
-Check "Loops: todo scheduled com mechanism=script esta no runner (sem orfao)" ($orphanLoops.Count -eq 0) ("orfao(s): " + ($orphanLoops -join ", "))
 
 # --- T14 Knowledge Ablation (proxy) ---
 Write-Host "-- T14 Knowledge Ablation (proxy) --"
@@ -636,7 +658,7 @@ foreach ($y in $allYaml) {
 Check ("Manifestos: " + $pairs + " pares prosa<->yaml intactos (nenhum orfao/vazio)") ($brokenPairs.Count -eq 0) ("quebrado(s): " + ($brokenPairs -join ", "))
 
 # --- Enforcement de delegacao no ponto de decisao (OPP-74) ---
-# A lei DELEGA (orchestration.md) morava so em prosa de boot e reincidiu (02/ago, mOS): em sessao
+# A lei DELEGA (orchestration.md) morava so em prosa de boot e reincidiu (02/ago, num Client real): em sessao
 # longa a Alia voltou a executar dominio com a propria mao. Mesma licao do veto COO: regra que nao
 # vira guard de maquina reincide. O guard aqui e duplo: (a) o hook delegation-guard.ps1 existe;
 # (b) esta LIGADO em .claude/settings.json como UserPromptSubmit. Projetado-mas-desligado reprova.
@@ -715,6 +737,78 @@ foreach ($rel in $leiDocs) {
 }
 Check ("Marcador LEI presente nos " + $leiDocs.Count + " docs inviolaveis do nucleo") ($leiMissing.Count -eq 0) ("sem marcador: " + ($leiMissing -join ", "))
 
+# --- Alinhamento: a regua de risco do escopo + a rodada de perguntas (L29, OPP-78) ---
+# Vizinho direto do bloco acima de proposito: L29 EMENDA a lei de escalonamento (a mesma que L03/L16
+# declaram) em vez de criar uma segunda lei. A lei sempre proibiu perguntar FATO e sempre permitiu
+# perguntar DECISAO - o que faltava era o QUANDO, e o QUANDO agora e NUMERO: 4 fatores, piso 5 de 8,
+# teto de 4 perguntas por rodada e de 2 rodadas. Sem estes checks a onda 1 vira a enesima lei
+# so-em-prosa, que e exatamente o que o law-ledger existe pra impedir. Todos casam o TEXTO do
+# arquivo alvo: numero afrouxado para julgamento ("quando achar necessario") reprova na hora.
+Write-Host ""
+Write-Host "-- Alinhamento: regua de risco + rodada de perguntas (OPP-78) --"
+$alinhaPath = Join-Path $root "skills\alinhamento\SKILL.md"
+$alinhaMd = if (Test-Path -LiteralPath $alinhaPath) { ReadText $alinhaPath } else { "" }
+$constMdAl = ReadText (Join-Path $engine "constitution.md")
+# Prosa do motor quebra linha onde couber: as assercoes de FRASE casam contra a versao achatada
+# (espaco unico), senao uma quebra de linha inocente derruba a guarda por motivo errado.
+$alinhaFlat = ($alinhaMd -replace '\s+', ' ')
+
+# (a) Os 4 fatores nomeados + o piso como DIGITO, pareado skill <-> constituicao (o par impede que
+# um lado afrouxe sozinho - mesmo padrao dos checks pareados prosa+manifesto do resto do trilho).
+$alinhaFatores = @("DESFAZ","REFAZ","LEITURAS","DISTANCIA")
+$alinhaTemFatores = $true
+foreach ($ft in $alinhaFatores) { if ($alinhaMd -notmatch ('\b' + $ft + '\b')) { $alinhaTemFatores = $false } }
+$pisoSkill = [regex]::Match($alinhaMd, '(?im)^\*\*O piso e (\d+)\.\*\*')
+$pisoConst = [regex]::Match($constMdAl, '(?i)o piso e (\d+) de 8')
+$pisoSkillVal = if ($pisoSkill.Success) { $pisoSkill.Groups[1].Value } else { "(sem digito)" }
+$pisoConstVal = if ($pisoConst.Success) { $pisoConst.Groups[1].Value } else { "(sem digito)" }
+$pisoOk = $pisoSkill.Success -and $pisoConst.Success -and ($pisoSkillVal -eq $pisoConstVal)
+Check "Alinhamento: a regua declara os 4 fatores e o piso NUMERICO" ($alinhaTemFatores -and $pisoOk) ("4 fatores na skill: " + $alinhaTemFatores + "; piso skill/constituicao: " + $pisoSkillVal + "/" + $pisoConstVal)
+
+# (b) Os tetos anti-tagarelice sao numero, nao bom senso - e o mesmo numero nos dois lugares da skill.
+$tetoM = [regex]::Match($alinhaFlat, '(?i)Teto duro:\s*no maximo (\d+) perguntas por rodada e no maximo (\d+) rodadas')
+$tetoPergunta = if ($tetoM.Success) { $tetoM.Groups[1].Value } else { "(sem digito)" }
+$tetoRodada = if ($tetoM.Success) { $tetoM.Groups[2].Value } else { "(sem digito)" }
+$tetoOk = $tetoM.Success -and ($tetoPergunta -eq "4") -and ($tetoRodada -eq "2") -and
+          ($alinhaFlat -match '(?i)teto de 4 perguntas por rodada, teto de 2 rodadas')
+Check "Alinhamento: tetos de 4 perguntas e 2 rodadas declarados" $tetoOk ("teto medido: " + $tetoPergunta + " perguntas / " + $tetoRodada + " rodadas (esperado 4/2, repetido na secao Invariante)")
+
+# (c) A escada de investigacao (L03/L16) e PRE-CONDICAO da regua, com os 3 degraus nomeados. Sem
+# isto a regua vira licenca pra perguntar fato - o risco 2 declarado no estudo.
+$escadaOk = ($alinhaFlat -match '(?i)escada de investigacao ja tem que ter sido esgotada') -and
+            ($alinhaFlat -match '(?i)\(1\) memoria') -and
+            ($alinhaFlat -match '(?i)\(2\) arquivos') -and
+            ($alinhaFlat -match '(?i)\(3\) web') -and
+            ($alinhaFlat -match '(?i)escada de investigacao roda ANTES da regua')
+Check "Alinhamento: a escada de investigacao e pre-condicao" $escadaOk "falta a escada esgotada como pre-condicao, um dos 3 degraus (memoria/arquivos/web) ou a invariante 'ANTES da regua'"
+
+# (d) Todo exemplo de pergunta carrega a recomendacao da Alia + a rodada oferece a saida "voce
+# decide". Pergunta sem recomendacao e a clausula que o Gate reprova ("empurrar trabalho de volta").
+$alinhaBlocos = [regex]::Matches($alinhaMd, '(?s)```(.*?)```')
+$blocosPergunta = @($alinhaBlocos | Where-Object { $_.Groups[1].Value -match '(?m)^\s*\d\)\s' })
+$semRecomendacao = @($blocosPergunta | Where-Object { $_.Groups[1].Value -notmatch '(?i)Eu faria:' })
+$temSaida = ($alinhaMd -match '(?i)escreve "voce decide"') -and ($alinhaMd -match '(?i)Toda pergunta tem a saida "voce decide"')
+Check "Alinhamento: todo exemplo de pergunta traz recomendacao e a saida 'voce decide'" (($blocosPergunta.Count -ge 1) -and ($semRecomendacao.Count -eq 0) -and $temSaida) ("exemplos de pergunta: " + $blocosPergunta.Count + "; sem 'Eu faria': " + $semRecomendacao.Count + "; saida 'voce decide' declarada: " + $temSaida)
+
+# (e) Encoding (lei do CEO) + zero jargao nos exemplos. A lista de termos proibidos e LIDA de
+# engine/agents/persona.md (fonte unica, nunca duplicada aqui) e vale onde o operador de fato le:
+# os blocos de exemplo da skill. Rodada tecnica e pior que nenhuma rodada.
+$alinhaAscii = $false
+if (Test-Path -LiteralPath $alinhaPath) {
+  $alinhaAscii = $true
+  foreach ($b in [System.IO.File]::ReadAllBytes($alinhaPath)) { if ($b -gt 127) { $alinhaAscii = $false; break } }
+}
+$personaMdAl = ReadText (Join-Path $engine "agents\persona.md")
+$proibM = [regex]::Match($personaMdAl, '(?s)Termos proibidos no output ao usuario[^\r\n]*\r?\n(.*?)\.\r?\n')
+$termosProib = @()
+if ($proibM.Success) {
+  $termosProib = @($proibM.Groups[1].Value -split ',' | ForEach-Object { ($_.Trim() -replace '\s+', ' ') } | Where-Object { $_ -ne "" })
+}
+$exemplosTxt = (($alinhaBlocos | ForEach-Object { $_.Groups[1].Value }) -join "`n")
+$jargao = @()
+foreach ($t in $termosProib) { if ($exemplosTxt -match ('(?i)\b' + [regex]::Escape($t) + '\b')) { $jargao += $t } }
+Check "Alinhamento: skill sem acento, sem emoji e sem termo da lista proibida" ($alinhaAscii -and ($termosProib.Count -ge 10) -and ($jargao.Count -eq 0)) ("ascii: " + $alinhaAscii + "; termos lidos da persona: " + $termosProib.Count + "; jargao nos exemplos: " + ($jargao -join ", "))
+
 # --- Pesquisa segura (LEI anti-runaway) ---
 # Garante que a LEI de pesquisa segura existe e e auditavel no produto: a prosa (tools.md) e o
 # manifesto (tools.yaml) declaram a trava, e o catalogo de MCP de pesquisa (perplexity) liga so o
@@ -773,12 +867,14 @@ foreach ($f6 in $sixFields) {
 }
 Check "Loops: contrato de 6 elementos pareado em loops.md + loops.catalog.yaml" ($catHasAll -and $catContract -and $mdContract) "falta o contrato (6 campos required + contract_6_elements) no catalogo e/ou a secao na prosa"
 
-# --- Teto de gasto duro (OPP-58): contador frugal existe, morde e o runner freia ---
+# --- Teto de gasto duro (OPP-58): contador frugal existe e morde ---
 # budget-check.ps1 (sem LLM) le costs[] do state.json e compara com token_cap (per_round/daily).
 # O item so esta pronto quando o smoke FALHA se a regra for violada: fixture estourado tem que dar
 # exit 1 + PACOTE DE PROVA (o que rodou, quanto gastou, onde estourou, recomendacao); fixture dentro
-# do teto tem que dar exit 0. E o runner (run-loops.ps1) tem que CHAMAR o contador no inicio de cada
-# volta e PULAR o loop estourado - senao o freio e script solto sem pedal.
+# do teto tem que dar exit 0. CORTE (10/08/2026): o runner que chamava este contador a cada volta
+# (run-loops.ps1) foi removido junto com o agendamento do Windows - o script fica sem chamador
+# ativo, mantido so porque rsi.yaml (over-budget-path, OPP-58) o documenta como fonte executavel
+# do gatilho de estouro de custo do RSI (ver nota no proprio budget-check.ps1).
 Write-Host ""
 Write-Host "-- Teto de gasto duro (budget-check, OPP-58) --"
 $bcScript = Join-Path $root "scripts\budget-check.ps1"
@@ -792,9 +888,6 @@ if ((Test-Path $bcScript) -and (Test-Path $bcFxOver) -and (Test-Path $bcFxUnder)
   $underOut = (& $bcScript -Id "loop-teste" -CapRound 5000 -CapDaily 20000 -StatePath $bcFxUnder -Date "2026-07-01" 6>&1) -join "`n"; $underExit = $LASTEXITCODE
   Check "Budget: fixture dentro do teto -> PASS (exit 0)" (($underExit -eq 0) -and ($underOut -match '\[PASS\]')) ("exit: " + $underExit)
 }
-$runnerTxt = ReadText (Join-Path $root "scripts\run-loops.ps1")
-$runnerBrakes = ($runnerTxt -match 'budget-check\.ps1') -and ($runnerTxt -match '(?i)PULADO')
-Check "Budget: run-loops.ps1 chama budget-check e PULA loop estourado" $runnerBrakes
 $rsiBudget = ($rsiYml -match '(?im)^\s*source:\s*budget-check')
 Check "Budget: rsi.yaml over-budget-path aponta o contador como fonte" $rsiBudget
 
@@ -1264,6 +1357,286 @@ foreach ($f in $leiMdFiles) {
 }
 Check "Law Ledger: toda declaracao de LEI em engine/**.md tem entrada arquivo:linha em law-ledger.md" ($leiMissing.Count -eq 0) ("sem entrada no ledger: " + ($leiMissing -join ", "))
 
+# =========================================================================================
+# OPP-76 - o mapa, a memoria e a linhagem param de ser fe e viram medida (M1-M4)
+# Regra da casa medida na auditoria de 04/08 (research/graph-engineering/03-auditoria-interna.md,
+# secao 2.3): o exit code do PowerShell NAO propaga por toda rota de shell (graph-check saiu com
+# exit 1 e o bash chamador recebeu 0). Por isso TODO check daqui pra baixo casa o TEXTO da saida
+# ([FAIL], [FAKE], RESULTADO: FAIL), nunca so o $LASTEXITCODE.
+# =========================================================================================
+
+# --- M1: a guarda do MAPA discrimina (falso e podre), nao so ausencia ---
+# Antes: o unico criterio era "existe GRAPH_REPORT.md e nodes > 0" - falsificavel com um JSON de 5
+# minutos (2 dos 5 grafos de cliente eram exatamente isso). Agora a guarda julga AUTENTICIDADE
+# (schema node-link do graphify) e PODRIDAO (mtime do grafo vs os arquivos-fonte da base).
+Write-Host ""
+Write-Host "-- Mapa: guarda dura do grafo (OPP-76 M1) --"
+$utf8NoBom76 = New-Object System.Text.UTF8Encoding($false)
+$gcTxt76 = if (Test-Path -LiteralPath $gcScript) { ReadText $gcScript } else { "" }
+Check "Mapa: graph-check classifica os 4 estados (OK/STALE/FAKE/FALTA) e imprime [FAIL] (texto, nao exit code)" (($gcTxt76 -match 'FAKE') -and ($gcTxt76 -match 'STALE') -and ($gcTxt76 -match 'FALTA') -and ($gcTxt76 -match 'AllowStale') -and ($gcTxt76 -match '\[FAIL\]'))
+
+# (a) DISCRIMINACAO 1: grafo FORJADO (JSON escrito a mao - schema edges, sem graph.html) reprova.
+$fkStudio = Join-Path ([System.IO.Path]::GetTempPath()) ("gc-fake-" + $PID)
+$fkOut = Join-Path $fkStudio "clients\forjado\squad\knowledge\graphify-out"
+New-Item -ItemType Directory -Force -Path $fkOut | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $fkOut "GRAPH_REPORT.md"), "# Graph Report - forjado`r`n", $utf8NoBom76)
+[System.IO.File]::WriteAllText((Join-Path $fkOut "graph.json"), '{"generated":"2026-08-04","source":"escrito a mao","nodes":[{"id":"A"},{"id":"B"}],"edges":[{"from":"A","to":"B","rel":"usa"}]}', $utf8NoBom76)
+$fkOutTxt = (& $gcScript -Path $fkStudio 6>&1) -join "`n"
+if (Test-Path -LiteralPath $fkStudio) { Remove-Item -Recurse -Force -LiteralPath $fkStudio -ErrorAction SilentlyContinue }
+Check "Mapa: graph-check DISCRIMINA grafo FORJADO (JSON a mao com nos > 0 sai [FAKE] e reprova)" (($fkOutTxt -match '\[FAKE\]') -and ($fkOutTxt -match '\[FAIL\]'))
+
+# (b) DISCRIMINACAO 2: grafo AUTENTICO porem PODRE sai [STALE]; -AllowStale rebaixa a aviso.
+$stStudio = Join-Path ([System.IO.Path]::GetTempPath()) ("gc-stale-" + $PID)
+$stBase = Join-Path $stStudio "clients\podre\squad\knowledge"
+$stOut = Join-Path $stBase "graphify-out"
+New-Item -ItemType Directory -Force -Path $stOut | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $stOut "GRAPH_REPORT.md"), "# Graph Report - podre`r`n", $utf8NoBom76)
+[System.IO.File]::WriteAllText((Join-Path $stOut "graph.html"), "<html></html>", $utf8NoBom76)
+$stJson = Join-Path $stOut "graph.json"
+[System.IO.File]::WriteAllText($stJson, '{"directed":true,"multigraph":false,"graph":{},"nodes":[{"id":"A","community":0,"source_file":"a.md","file_type":"md"},{"id":"B","community":0,"source_file":"b.md","file_type":"md"}],"links":[{"source":"A","target":"B"}]}', $utf8NoBom76)
+$stDoc = Join-Path $stBase "doc.md"
+[System.IO.File]::WriteAllText($stDoc, "# doc que mudou depois do grafo`r`n", $utf8NoBom76)
+(Get-Item -LiteralPath $stJson).LastWriteTime = (Get-Date).AddDays(-2)
+(Get-Item -LiteralPath $stDoc).LastWriteTime  = (Get-Date).AddHours(-1)
+$stHard = (& $gcScript -Path $stStudio -MaxNewerFiles 0 6>&1) -join "`n"
+$stSoft = (& $gcScript -Path $stStudio -MaxNewerFiles 0 -AllowStale 6>&1) -join "`n"
+if (Test-Path -LiteralPath $stStudio) { Remove-Item -Recurse -Force -LiteralPath $stStudio -ErrorAction SilentlyContinue }
+Check "Mapa: graph-check DISCRIMINA grafo PODRE (fonte mais nova que o grafo sai [STALE] e reprova)" (($stHard -match '\[STALE\]') -and ($stHard -match '\[FAIL\]'))
+Check "Mapa: -AllowStale rebaixa podridao a [AVISO] sem esconder (o rollout faseado do OPP-76)" (($stSoft -match '\[AVISO\]') -and ($stSoft -match '\[PASS\]') -and ($stSoft -notmatch '\[FAIL\]'))
+
+# --- M2: a ADOCAO da lei do grafo passa a ser medida (sensor + contador) ---
+# A lei "grafo antes de varredura" tinha 3 declaracoes no motor e ZERO medida. O sensor mede, nao
+# pune; o que reprova aqui e "projetado-mas-desligado" - a mesma regra de ouro do M1 do OPP-75.
+Write-Host ""
+Write-Host "-- Adocao do mapa: o sensor mede a lei do grafo (OPP-76 M2) --"
+$gsSensor = Join-Path $root "scripts\graph-usage-sensor.ps1"
+$gsCount  = Join-Path $root "scripts\graph-usage.ps1"
+Check "Adocao: graph-usage-sensor.ps1 (sensor) + graph-usage.ps1 (contador) presentes" ((Test-Path -LiteralPath $gsSensor) -and (Test-Path -LiteralPath $gsCount))
+
+$preWired = $false; $preMatcher = ""
+if (Test-Path -LiteralPath $settingsPath) {
+  try {
+    $sjPre = (ReadText $settingsPath) | ConvertFrom-Json
+    foreach ($ptEntry in @($sjPre.hooks.PreToolUse)) {
+      foreach ($h in @($ptEntry.hooks)) {
+        if ("$($h.command)" -match 'graph-usage-sensor\.ps1') { $preWired = $true; $preMatcher = "$($ptEntry.matcher)" }
+      }
+    }
+  } catch { }
+}
+Check "Adocao: hook PreToolUse do sensor LIGADO em .claude/settings.json COM matcher (sem matcher dispara em toda tool e custa ~450ms por chamada)" ($preWired -and ($preMatcher -match 'Grep') -and ($preMatcher -match 'Bash') -and ($preMatcher -match 'PowerShell')) ("ligado=" + $preWired + " matcher='" + $preMatcher + "' - projetado-mas-desligado reprova (CONSERTO 10/08: PowerShell tinha rota de fuga, furo 2)")
+
+# O sensor MEDE: leitura de mapa vira kind=map, varredura cega vira kind=scan, o resto nao entra.
+# Precisa de processo filho: o sensor le stdin, e stdin so vem redirecionado por pipe de verdade.
+$guLedger = Join-Path ([System.IO.Path]::GetTempPath()) ("gu-sensor-" + $PID + ".jsonl")
+if (Test-Path -LiteralPath $guLedger) { Remove-Item -LiteralPath $guLedger -Force }
+$guMapPayload  = '{"session_id":"S1","cwd":"C:/x/studio-farina","hook_event_name":"PreToolUse","tool_name":"Read","tool_input":{"file_path":"C:/x/studio-farina/clients/acme-saas/squad/knowledge/graphify-out/GRAPH_REPORT.md"}}'
+$guScanPayload = '{"session_id":"S1","cwd":"C:/x/studio-farina","hook_event_name":"PreToolUse","tool_name":"Grep","tool_input":{"path":"clients/acme-saas/src"}}'
+$guNoisePayload= '{"session_id":"S1","cwd":"C:/x/studio-farina","hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"clients/acme-saas/a.md"}}'
+# CONSERTO 10/08 (furo 2, prova 8): a ferramenta PowerShell varria por FORA da conta - este payload
+# prova que ela agora ENTRA no ledger igual a Bash/Grep/Glob, com os idiomas nativos do PowerShell
+# (Select-String) reconhecidos, nao so os tokens POSIX (rg/grep/findstr/find) que ja cobria.
+$guPsScanPayload = '{"session_id":"S1","cwd":"C:/x/studio-farina","hook_event_name":"PreToolUse","tool_name":"PowerShell","tool_input":{"command":"Select-String -Path clients/acme-saas/*.ts -Pattern TODO -Recurse"}}'
+foreach ($pl in @($guMapPayload, $guScanPayload, $guNoisePayload, $guPsScanPayload)) {
+  $pl | & powershell -ExecutionPolicy Bypass -File $gsSensor -LedgerPath $guLedger 2>&1 | Out-Null
+}
+$guLines = @()
+if (Test-Path -LiteralPath $guLedger) { $guLines = @([System.IO.File]::ReadAllLines($guLedger) | Where-Object { $_.Trim() -ne "" }) }
+if (Test-Path -LiteralPath $guLedger) { Remove-Item -LiteralPath $guLedger -Force -ErrorAction SilentlyContinue }
+$guSensorOk = ($guLines.Count -eq 3) -and ($guLines[0] -match '"kind":"map"') -and ($guLines[1] -match '"kind":"scan"') -and
+              ($guLines[0] -match '"scope":"clients/acme-saas"') -and ($guLines[1] -match '"scope":"clients/acme-saas"')
+Check "Adocao: o sensor MEDE (leitura de mapa=map, varredura=scan, escopo por Client) e IGNORA o resto (Write nao entra no ledger)" $guSensorOk ("linhas gravadas: " + $guLines.Count + " (esperado 3)")
+$guPsOk = ($guLines.Count -eq 3) -and ($guLines[2] -match '"tool":"PowerShell"') -and ($guLines[2] -match '"kind":"scan"') -and ($guLines[2] -match '"match":"select-string"')
+Check "Adocao (furo 2, prova 8): varredura por PowerShell agora CONTA no ledger (tool=PowerShell, kind=scan, match=select-string) - antes do conserto: zero linhas, rota de fuga" $guPsOk ("3a linha: " + $(if ($guLines.Count -ge 3) { $guLines[2] } else { "(ausente)" }))
+
+# O contador ACUSA o furo (varreu sem ler o mapa antes) e nao acusa quem leu antes.
+$guFixture = Join-Path ([System.IO.Path]::GetTempPath()) ("gu-fixture-" + $PID + ".jsonl")
+$guSb = New-Object System.Text.StringBuilder
+$guBase = (Get-Date).ToUniversalTime().AddDays(-1)
+for ($i = 1; $i -le 6; $i++) {
+  $tScan = $guBase.AddMinutes($i * 10)
+  if ($i -le 2) {
+    # par que OBEDECEU: leu o mapa antes de varrer
+    [void]$guSb.AppendLine('{"ts":"' + $tScan.AddMinutes(-5).ToString("yyyy-MM-ddTHH:mm:ss.fff") + 'Z","session":"S' + $i + '","tool":"Read","kind":"map","scope":"clients/c' + $i + '","match":"graph-report","path":""}')
+  }
+  [void]$guSb.AppendLine('{"ts":"' + $tScan.ToString("yyyy-MM-ddTHH:mm:ss.fff") + 'Z","session":"S' + $i + '","tool":"Grep","kind":"scan","scope":"clients/c' + $i + '","match":"grep","path":""}')
+}
+[System.IO.File]::WriteAllText($guFixture, $guSb.ToString(), $utf8NoBom76)
+$guOut = (& $gsCount -Path $guFixture -Days 14 6>&1) -join "`n"
+if (Test-Path -LiteralPath $guFixture) { Remove-Item -LiteralPath $guFixture -Force -ErrorAction SilentlyContinue }
+# CONSERTO 11/08/2026 (janela honesta): graph-usage.ps1 agora julga o veredito pela JANELA DA
+# TRAVA (desde a data em que o gate passou a recusar - ver cabecalho do script), nao mais pelo
+# historico misturado inteiro; o formato da linha ADOCAO/FUROS ganhou o rotulo "(janela da trava)".
+# A fixture usa AddDays(-1) (sempre DEPOIS do corte fixo 2026-08-10, ja que "agora" so anda pra
+# frente), entao os 6 pares desta fixture sempre caem dentro da janela.
+Check "Adocao: o contador ACUSA o furo por par (sessao, escopo) - 2 de 6 leram o mapa antes -> [AVISO] abaixo do alvo" (($guOut -match 'ADOCAO \(janela da trava[^\r\n]*: 2/6') -and ($guOut -match 'FUROS \(janela da trava\): 4 par') -and ($guOut -match 'VEREDITO: \[AVISO\]'))
+
+$guAusente = (& $gsCount -Path (Join-Path ([System.IO.Path]::GetTempPath()) ("gu-nao-existe-" + $PID + ".jsonl")) 6>&1) -join "`n"
+Check "Adocao: ledger AUSENTE reprova como sensor desligado (a medida nunca e presumida)" (($guAusente -match '\[FAIL\]') -and ($guAusente -match 'sensor esta DESLIGADO'))
+
+# --- M2b: o GATE quando o codebase NAO TEM MAPA NENHUM (furo fechado, mandato do CEO 10/08) ---
+# Antes: sem mapa em disco, o gate nunca disparava - nem a MEDIDA de aviso, so o sensor. Agora:
+# NUNCA bloqueia (nao da pra exigir o que nao existe - gerar custa modelo, decisao do operador),
+# mas avisa 1x por sessao+escopo na PRIMEIRA varredura, calado dai em diante. Fixture ISOLADA via
+# -Root (nunca cria nada dentro de clients/ real) - prova pelo negativo dos casos do mandato.
+#
+# CONSERTO 10/08 (validacao independente, 2 furos): o aviso "passa com aviso" abaixo agora e
+# provado pelo CONTRATO JSON (hookSpecificOutput.additionalContext), nao mais por texto solto em
+# stdout (furo 1 - Write-Host em PreToolUse nunca chegava ao modelo, so aparecia rodando o script
+# isolado). E toda RECUSA e repetida com PowerShell alem de Bash/Grep/Glob (furo 2 - PowerShell
+# varria por fora do matcher, sem ser medido nem recusado).
+Write-Host ""
+Write-Host "-- Gate do mapa: SEM mapa avisa 1x (JSON additionalContext) e nunca bloqueia; COM mapa nao lido recusa em TODA ferramenta (10/08/2026) --"
+$ggRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("gg-root-" + $PID)
+if (Test-Path -LiteralPath $ggRoot) { Remove-Item -Recurse -Force -LiteralPath $ggRoot -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Force -Path $ggRoot | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $ggRoot ".claude") | Out-Null
+$ggLedger = Join-Path $ggRoot "ledger.jsonl"
+
+# Cenario 1 (prova 3, negativo): cliente SEM mapa nenhum em disco - 1a varredura da sessao PASSA
+# com aviso ENTREGUE POR JSON (additionalContext) - NAO texto solto (furo 1) e NAO deny (nunca
+# bloqueia o que nao existe).
+$ggScanNoMap = '{"session_id":"GNM","cwd":"C:/x","hook_event_name":"PreToolUse","tool_name":"PowerShell","tool_input":{"command":"Get-ChildItem clients/semmapa -Recurse"}}'
+$ggOut1 = ($ggScanNoMap | & powershell -ExecutionPolicy Bypass -File $gsSensor -LedgerPath $ggLedger -Root $ggRoot 2>&1) -join "`n"
+$ggOut1Json = $null
+try { $ggOut1Json = $ggOut1 | ConvertFrom-Json } catch { }
+$ggOut1Ok = ($null -ne $ggOut1Json) -and ($ggOut1Json.hookSpecificOutput.additionalContext -match '(?i)\[SEM-MAPA\]') -and
+            (($ggOut1Json.hookSpecificOutput.PSObject.Properties.Name -notcontains "permissionDecision") -or ($ggOut1Json.hookSpecificOutput.permissionDecision -ne "deny"))
+Check "Gate SEM mapa (prova 3, furo 1): 1a varredura PASSA com aviso [SEM-MAPA] em JSON hookSpecificOutput.additionalContext (nao texto solto, nao deny)" $ggOut1Ok ("saida: " + $ggOut1)
+
+# Cenario 2 (prova 3, negativo): mesma sessao+escopo, 2a varredura - passa CALADA (aviso 1x, nao a
+# cada chamada - aviso repetido vira ruido e o agente aprende a ignorar).
+$ggOut2 = ($ggScanNoMap | & powershell -ExecutionPolicy Bypass -File $gsSensor -LedgerPath $ggLedger -Root $ggRoot 2>&1) -join "`n"
+Check "Gate SEM mapa (prova 3): 2a varredura da MESMA sessao+escopo passa CALADA, sem JSON nenhum (aviso nao repete)" ($ggOut2.Trim() -eq '')
+
+# Prepara client COM mapa em disco para os cenarios 3 (multi-ferramenta) e 4 (depois de ler).
+$ggMapDir = Join-Path $ggRoot "clients\commapa\graphify-out"
+New-Item -ItemType Directory -Force -Path $ggMapDir | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $ggMapDir "GRAPH_REPORT.md"), "# Graph Report`r`n", $utf8NoBom76)
+
+# Cenario 3 (prova 1+2, negativo): cliente COM mapa, mapa NUNCA lido - RECUSA em TODA ferramenta
+# capaz de varrer, uma sessao por ferramenta (isola o contador de tentativas). PowerShell e o
+# caso do furo 2 (antes passava direto); Bash/Grep/Glob sao a prova de que ninguem regrediu.
+$ggToolPayloads = [ordered]@{
+  PowerShell = '{"session_id":"GWM-PS","cwd":"C:/x","hook_event_name":"PreToolUse","tool_name":"PowerShell","tool_input":{"command":"Select-String -Path clients/commapa/*.ts -Pattern TODO"}}'
+  Bash       = '{"session_id":"GWM-BASH","cwd":"C:/x","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"grep -rn TODO clients/commapa/src"}}'
+  Grep       = '{"session_id":"GWM-GREP","cwd":"C:/x","hook_event_name":"PreToolUse","tool_name":"Grep","tool_input":{"path":"clients/commapa/src"}}'
+  Glob       = '{"session_id":"GWM-GLOB","cwd":"C:/x","hook_event_name":"PreToolUse","tool_name":"Glob","tool_input":{"path":"clients/commapa/**/*.ts"}}'
+}
+foreach ($ggTool in $ggToolPayloads.Keys) {
+  $ggOutTool = ($ggToolPayloads[$ggTool] | & powershell -ExecutionPolicy Bypass -File $gsSensor -LedgerPath $ggLedger -Root $ggRoot 2>&1) -join "`n"
+  Check ("Gate COM mapa nao lido (prova 1/2): RECUSA por " + $ggTool + " (permissionDecision deny) - " + $(if ($ggTool -eq 'PowerShell') { "furo 2 fechado" } else { "sem regressao" })) ($ggOutTool -match '"permissionDecision":"deny"')
+}
+
+# Cenario 4 (prova 4): depois de LER o mapa, a mesma sessao varre e passa SEM atrito (sem JSON
+# nenhum - nem deny, nem additionalContext).
+$ggReadMap = '{"session_id":"GWM-READ","cwd":"C:/x","hook_event_name":"PreToolUse","tool_name":"Read","tool_input":{"file_path":"clients/commapa/graphify-out/GRAPH_REPORT.md"}}'
+$null = $ggReadMap | & powershell -ExecutionPolicy Bypass -File $gsSensor -LedgerPath $ggLedger -Root $ggRoot 2>&1
+$ggScanAfterRead = '{"session_id":"GWM-READ","cwd":"C:/x","hook_event_name":"PreToolUse","tool_name":"PowerShell","tool_input":{"command":"Select-String -Path clients/commapa/*.ts -Pattern TODO"}}'
+$ggOut4 = ($ggScanAfterRead | & powershell -ExecutionPolicy Bypass -File $gsSensor -LedgerPath $ggLedger -Root $ggRoot 2>&1) -join "`n"
+Check "Gate DEPOIS de ler o mapa (prova 4): varredura passa SEM atrito, sem JSON nenhum" ($ggOut4.Trim() -eq '')
+
+# Cenario 5 (prova 5): Read de arquivo unico NUNCA bloqueia, mesmo sem mapa lido, em sessao nova.
+$ggReadSingle = '{"session_id":"GWM-SINGLE","cwd":"C:/x","hook_event_name":"PreToolUse","tool_name":"Read","tool_input":{"file_path":"clients/commapa/src/algum-arquivo.ts"}}'
+$ggOut5 = ($ggReadSingle | & powershell -ExecutionPolicy Bypass -File $gsSensor -LedgerPath $ggLedger -Root $ggRoot 2>&1) -join "`n"
+Check "Gate: Read de arquivo unico NUNCA bloqueia (prova 5), mesmo com mapa nao lido" ($ggOut5.Trim() -eq '')
+
+# Cenario 6 (prova 6): killswitch por variavel de ambiente desliga o BLOQUEIO inteiro.
+$ggScanKillswitch = '{"session_id":"GWM-KILL-ENV","cwd":"C:/x","hook_event_name":"PreToolUse","tool_name":"PowerShell","tool_input":{"command":"Select-String -Path clients/commapa/*.ts -Pattern TODO"}}'
+$envBackup = $env:ALIA_GRAPH_GATE_OFF
+$env:ALIA_GRAPH_GATE_OFF = "1"
+$ggOut6 = ($ggScanKillswitch | & powershell -ExecutionPolicy Bypass -File $gsSensor -LedgerPath $ggLedger -Root $ggRoot 2>&1) -join "`n"
+$env:ALIA_GRAPH_GATE_OFF = $envBackup
+Check "Gate: killswitch ALIA_GRAPH_GATE_OFF=1 (prova 6) libera sem deny/aviso mesmo com mapa nao lido" ($ggOut6.Trim() -eq '')
+
+# Cenario 7 (prova 6): killswitch por arquivo-sentinela .claude/graph-gate.off tem o mesmo efeito.
+$ggSentinel = Join-Path $ggRoot ".claude\graph-gate.off"
+[System.IO.File]::WriteAllText($ggSentinel, "", $utf8NoBom76)
+$ggScanKillswitch2 = '{"session_id":"GWM-KILL-FILE","cwd":"C:/x","hook_event_name":"PreToolUse","tool_name":"PowerShell","tool_input":{"command":"Select-String -Path clients/commapa/*.ts -Pattern TODO"}}'
+$ggOut7 = ($ggScanKillswitch2 | & powershell -ExecutionPolicy Bypass -File $gsSensor -LedgerPath $ggLedger -Root $ggRoot 2>&1) -join "`n"
+Remove-Item -LiteralPath $ggSentinel -Force -ErrorAction SilentlyContinue
+Check "Gate: killswitch arquivo-sentinela .claude/graph-gate.off (prova 6) tem o mesmo efeito" ($ggOut7.Trim() -eq '')
+
+# Cenario 8 (prova 7, negativo): payload quebrado (erro real dentro do script) - blindagem total, exit 0 sempre.
+$ggBadPayload = "isto nao e json valido {{{"
+$ggBadPayload | & powershell -ExecutionPolicy Bypass -File $gsSensor -LedgerPath $ggLedger -Root $ggRoot 2>&1 | Out-Null
+Check "Gate blindado (prova 7): payload quebrado (JSON invalido) libera silencioso, exit sempre 0 (nunca trava Read/Grep/Glob/Bash/PowerShell)" ($LASTEXITCODE -eq 0)
+
+# Prova 8 (contagem honesta): o ledger desta fixture isolada tem linha kind=scan para CADA
+# ferramenta usada acima, PowerShell incluso - antes do conserto do furo 2, a linha de PowerShell
+# nunca existiria (nem contada, nem recusavel).
+$ggLedgerLines = @()
+if (Test-Path -LiteralPath $ggLedger) { $ggLedgerLines = @([System.IO.File]::ReadAllLines($ggLedger) | Where-Object { $_.Trim() -ne "" }) }
+$ggPsCounted = @($ggLedgerLines | Where-Object { $_ -match '"tool":"PowerShell"' -and $_ -match '"kind":"scan"' }).Count
+Check "Gate (prova 8): ledger CONTA as varreduras por PowerShell ($ggPsCounted linha(s) tool=PowerShell/kind=scan) - antes do conserto: zero, sempre" ($ggPsCounted -ge 3)
+
+if (Test-Path -LiteralPath $ggRoot) { Remove-Item -Recurse -Force -LiteralPath $ggRoot -ErrorAction SilentlyContinue }
+
+# --- M3: memoria com validade no tempo (bi-temporal em ARQUIVO, sem banco) ---
+# Fato que morre parava de mentir so virando veto escrito a mao + teste novo (o caso COO). Agora a
+# janela de validade e um DADO no cabecalho da nota, e o estado sai do formato.
+Write-Host ""
+Write-Host "-- Memoria com validade no tempo (OPP-76 M3) --"
+$mcScript = Join-Path $root "scripts\memory-curator.ps1"
+$mcTxt76 = if (Test-Path -LiteralPath $mcScript) { ReadText $mcScript } else { "" }
+Check "Memoria: memory-curator.ps1 tem o modo -Validade e imprime RESULTADO: (texto que o smoke le)" (($mcTxt76 -match '\[switch\]\$Validade') -and ($mcTxt76 -match 'RESULTADO: FAIL') -and ($mcTxt76 -match 'RESULTADO: PASS'))
+
+$mvRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("mv-fixture-" + $PID)
+$mvVault = Join-Path $mvRoot "memory"
+New-Item -ItemType Directory -Force -Path $mvVault | Out-Null
+function Write-FxNote([string]$file, [string]$fm, [string]$body) {
+  [System.IO.File]::WriteAllText($file, "---`r`n" + $fm + "`r`n---`r`n`r`n" + $body + "`r`n", $utf8NoBom76)
+}
+Write-FxNote (Join-Path $mvVault "fx-fato-vivo.md") "name: fx-fato-vivo`r`ndescription: preferencia estavel do operador" "O operador prefere a rota barata primeiro."
+Write-FxNote (Join-Path $mvVault "fx-prazo-fechado.md") "name: fx-prazo-fechado`r`nvalido_de: 2019-01-01`r`nvalido_ate: 2020-01-01`r`ndescription: foco de sprint com prazo declarado" "Valia so naquela janela."
+Write-FxNote (Join-Path $mvVault "fx-trocado.md") "name: fx-trocado`r`nsubstituido_por: fx-fato-vivo`r`nfonte: CEO 02/07/2026`r`ndescription: fato que foi trocado por outro" "Foi trocado, continua auditavel no disco."
+Write-FxNote (Join-Path $mvVault "fx-registra-morte.md") "name: fx-registra-morte`r`nvalidade: registro`r`nsubstitui: fx-trocado`r`ndescription: esta nota REGISTRA que o fato antigo foi DERRUBADO pelo CEO" "Ela carrega o fato vigente, nao e o cadaver."
+$mvSemMorto = (& $mcScript -Validade -Vault $mvVault 6>&1) -join "`n"
+Check "Memoria: -Validade deriva os 3 estados do cabecalho (VIGENTE / VENCIDO por valido_ate / SUPERSEDIDO por substituido_por)" (($mvSemMorto -match '\[VENCIDO\][^\r\n]*fx-prazo-fechado') -and ($mvSemMorto -match '\[SUPERSEDIDO\][^\r\n]*fx-trocado') -and ($mvSemMorto -match 'VIGENTE: 2'))
+Check "Memoria: 'validade: registro' e o escape honesto - nota que REGISTRA a morte de terceiro nao vira cadaver (RESULTADO: PASS)" (($mvSemMorto -match 'RESULTADO: PASS') -and ($mvSemMorto -notmatch 'fx-registra-morte - a tarja'))
+
+# agora o fato morto se passando por vigente: tarja de supersessao com o cabecalho aberto.
+Write-FxNote (Join-Path $mvVault "fx-morto-vivo.md") "name: fx-morto-vivo`r`ndescription: posicionamento DERRUBADO pelo CEO em 02/07" "O cabecalho nao fecha janela nenhuma - e o caso COO."
+$mvComMorto = (& $mcScript -Validade -Vault $mvVault 6>&1) -join "`n"
+if (Test-Path -LiteralPath $mvRoot) { Remove-Item -Recurse -Force -LiteralPath $mvRoot -ErrorAction SilentlyContinue }
+Check "Memoria: -Validade REPROVA fato morto se passando por vigente ([FATO-MORTO-VIVO] + RESULTADO: FAIL)" (($mvComMorto -match '\[FATO-MORTO-VIVO\][^\r\n]*fx-morto-vivo') -and ($mvComMorto -match 'RESULTADO: FAIL'))
+
+$mtTxt = ReadText (Join-Path $engine "governance\memory-types.md")
+Check "Memoria: a doutrina declara a janela de validade (valido_de/valido_ate/substituido_por) em memory-types.md" (($mtTxt -match 'valido_ate') -and ($mtTxt -match 'substituido_por') -and ($mtTxt -match '(?i)VIGENTE'))
+
+# --- M4: o ledger de Tasks lido como GRAFO de linhagem ---
+# O state.json ja era um grafo (base_artifact -> artifact) e ninguem o lia como grafo: responder
+# "o que quebra se eu mexer aqui" exigia ler 86 Tasks na mao.
+Write-Host ""
+Write-Host "-- Linhagem: o ledger lido como grafo (OPP-76 M4) --"
+$lgScript = Join-Path $root "scripts\lineage-graph.ps1"
+$lgFixture = Join-Path $root "scripts\fixtures\lineage-state.json"
+Check "Linhagem: lineage-graph.ps1 + fixture determinista presentes" ((Test-Path -LiteralPath $lgScript) -and (Test-Path -LiteralPath $lgFixture))
+if ((Test-Path -LiteralPath $lgScript) -and (Test-Path -LiteralPath $lgFixture)) {
+  $lgHealth = (& $lgScript -Health -StateFile $lgFixture 6>&1) -join "`n"
+  $lgHealthOk = ($lgHealth -match '(?m)^\s*ORFAS[\. \(\)a-z]*[\. ]2\s*$') -and ($lgHealth -match 'TASK-002 x2') -and ($lgHealth -match '(?m)^\s*ids repetidos no ledger[\. ]+1\b')
+  Check "Linhagem: -Health acusa em NUMERO o que o rastro tem de furado (2 orfas + 1 id repetido na fixture)" $lgHealthOk
+  $lgImpact = (& $lgScript -Impact "docs/base.md" -StateFile $lgFixture 6>&1) -join "`n"
+  $lgImpactOk = ($lgImpact -match 'QUEM ENTREGOU ISTO \(1\)') -and ($lgImpact -match '\[nivel 1\]') -and ($lgImpact -match '\[nivel 2\]') -and ($lgImpact -match 'docs/neto\.md')
+  Check "Linhagem: -Impact segue a cadeia transitiva base_artifact -> artifact (nivel 1 e nivel 2 na fixture)" $lgImpactOk
+  $lgTrace = (& $lgScript -Trace "docs/neto.md" -StateFile $lgFixture 6>&1) -join "`n"
+  Check "Linhagem: -Trace volta elo por elo ate a RAIZ (a base externa ao ledger fica nomeada)" (($lgTrace -match "via 'docs/derivado\.md'") -and ($lgTrace -match 'RAIZ'))
+}
+
+# Ledger: id UNICO no ato do registro. O id duplicado nascia do calculo por CONTAGEM (tasks.Count+1):
+# uma Task removida a mao fazia a contagem voltar a um numero ja usado. A fixture reproduz exatamente
+# isso - 2 Tasks em disco, maior id TASK-005 - e o proximo id tem que ser TASK-006, nunca TASK-003.
+$rtDupState = Join-Path ([System.IO.Path]::GetTempPath()) ("rt-dup-" + $PID + ".json")
+[System.IO.File]::WriteAllText($rtDupState, '{"studio":"fx","updated":"2026-08-04","clients":[],"tasks":[{"id":"TASK-001","client":"alia-flow-lab","project":"p","title":"a","specialist":"quality-runner","status":"done","artifact":"","base_artifact":"","session":"","gate_verdict":"","created":"2026-01-01T00:00:00Z"},{"id":"TASK-005","client":"alia-flow-lab","project":"p","title":"b","specialist":"quality-runner","status":"done","artifact":"","base_artifact":"","session":"","gate_verdict":"","created":"2026-01-02T00:00:00Z"}]}', $utf8NoBom76)
+$rtDupOut = (& $rtScript -Client "alia-flow-lab" -Title "id unico" -Project "p" -Specialist "quality-runner" -StateFile $rtDupState 6>&1) -join "`n"
+$rtDupIds = @()
+if (Test-Path -LiteralPath $rtDupState) {
+  try { $rtDupIds = @(((ReadText $rtDupState) | ConvertFrom-Json).tasks | ForEach-Object { "$($_.id)" }) } catch { }
+  Remove-Item -LiteralPath $rtDupState -Force -ErrorAction SilentlyContinue
+}
+$rtDupOk = ($rtDupIds -contains "TASK-006") -and (@($rtDupIds | Group-Object | Where-Object { $_.Count -gt 1 }).Count -eq 0)
+Check "Ledger: register-task GARANTE id unico no ato (parte do MAIOR id, nao da contagem - a origem da TASK-085 duplicada)" $rtDupOk ("ids apos o registro: " + ($rtDupIds -join ", "))
+
 # --- Drift de versao: oficina vs release vs produto (M5, AVISO - nunca reprova) ---
 # So o CEO resolve drift entre as 3 versoes (publicar e decisao dele). Isto e AVISO, nao Check:
 # nunca pode reprovar o smoke, ou o proprio incentivo invertido deste cluster (tratar delegar/
@@ -1320,6 +1693,15 @@ if ($readmeM.Success) { $readmeVal = [int]$readmeM.Groups[1].Value }
 if ($claimsExists) {
   Warn "Numero publico: README.md - contexto oficina tem mais checks que o produto, nunca vai bater; trava real e no pacote" $readmeM.Success ("README.md diz " + $readmeVal + "; verificado a serio por package-release.ps1 dentro do pacote/repo publico")
 } else {
+  if ($UpdateReadme -and $readmeM.Success -and ($readmeVal -ne $expectedFinalCount)) {
+    # Causa raiz do fossil (161 -> 179 -> 185): o numero era escrito a mao, muda toda vez que um
+    # check novo entra. Aqui, e so aqui (modo -UpdateReadme, chamado pelo empacotador), a linha e
+    # REESCRITA pro total real deste contexto - nunca acontece num smoke normal sem o switch.
+    $newReadmeTxt = [regex]::Replace($readmeTxt, '\(\d+ na versao atual', "(" + $expectedFinalCount + " na versao atual")
+    [System.IO.File]::WriteAllText($readmePath, $newReadmeTxt, (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host ("[SYNC] Numero publico: README.md corrigido automaticamente de " + $readmeVal + " para " + $expectedFinalCount + " (-UpdateReadme)")
+    $readmeVal = $expectedFinalCount
+  }
   Check "Numero publico: README.md ('N na versao atual') bate com o total real executado pelo smoke" (($readmeM.Success) -and ($readmeVal -eq $expectedFinalCount)) ("README.md diz " + $readmeVal + "; total real que o smoke vai reportar = " + $expectedFinalCount)
 }
 
@@ -1338,7 +1720,8 @@ if ($claimsExists) {
 
 # --- Resultado ---
 Write-Host ""
-Write-Host ("Checks: " + $script:pass + " PASS, " + $script:fail + " FAIL")
+$skipSuffix = if ($script:skip -gt 0) { ", " + $script:skip + " SKIP" } else { "" }
+Write-Host ("Checks: " + $script:pass + " PASS, " + $script:fail + " FAIL" + $skipSuffix)
 if ($script:fail -eq 0) {
   Write-Host "ALL GREEN"
   exit 0

@@ -53,14 +53,18 @@ operador moram na instancia aplicada dele, jamais no produto.
 
 ## As regras duras (a LEI)
 
-1. **Produto so produto.** O Contexto Produto cobre o motor e nada de operador. Nenhuma pasta de
-   marketing/comercial e nenhum cliente real dentro do que viaja.
-2. **Raiz so convencional.** A raiz do repositorio contem apenas arquivos convencionais. Nenhum
+Orientacao geral (poda 09/08/2026, law-ledger L22: rebaixada de item numerado da LEI pra aqui - o
+guarda-chuva "produto so produto" nao tem check proprio, mas os 3 vetores concretos abaixo, que sao
+onde a violacao de fato acontece, continuam com machine-checkable de verdade): o Contexto Produto
+cobre o motor e nada de operador - nenhuma pasta de marketing/comercial e nenhum cliente real dentro
+do que viaja. As 3 leis abaixo sao os vetores testados dessa orientacao.
+
+1. **Raiz so convencional.** A raiz do repositorio contem apenas arquivos convencionais. Nenhum
    `.md` solto fora de `{README.md, AGENTS.md, CHANGELOG.md}`. Documentacao do produto vive em
    `docs/`. Pastas sao livres.
-3. **studio.example limpa.** `studio.example/clients/` contem SO o demo `acme-saas`. Qualquer outro
+2. **studio.example limpa.** `studio.example/clients/` contem SO o demo `acme-saas`. Qualquer outro
    id de cliente ali e violacao (e dado de operador vazando para o produto).
-4. **Marca/go-to-market fora do produto.** Material de marca, design e go-to-market e do operador
+3. **Marca/go-to-market fora do produto.** Material de marca, design e go-to-market e do operador
    (ou do dono do produto, em sua instancia privada). Nunca na raiz do produto, nunca em `docs/` que
    viaja, nunca em `studio.example`.
 

@@ -75,12 +75,71 @@ A GERACAO nao e uma flag do CLI `graphify` (o CLI so faz `install`/`path`/`expla
 e gerado pela **skill graphify**, que o agente roda: detecta os arquivos -> extrai entidades/relacoes
 (estrutural por tree-sitter + semantica pelo proprio modelo do agente, tudo LOCAL) -> build/cluster ->
 escreve `graph.json` + `GRAPH_REPORT.md` + `graph.html` na pasta `graphify-out/`. Passos:
-1. `python -m graphify install --platform <claude|codex|opencode>` - instala a skill no coding agent hospedeiro.
+1. O motor da ferramenta (interpretador + pacote) e REQUISITO da instalacao desde 10/08/2026 (mandato
+   do CEO) - `scripts/ensure-graphify.ps1` garante isso sozinho no primeiro contato (`skills/setup-alia`),
+   cadeia fail-soft (tenta a rota mais leve, escala sozinha, nunca trava, nunca pede terminal ao
+   operador). So se tudo falhar mesmo assim ele fica indisponivel e a Alia avisa e segue nas notas.
 2. O agente roda a skill apontando para a pasta do Client; a saida vai pra `squad/knowledge/graphify-out/`.
-3. PROVADO end-to-end no Studio Farina (cliente farina, 29/jun): 39 nos, 53 arestas, 6 comunidades.
-NOTA HONESTA: hoje a geracao depende do agente rodar a skill - nao ha hook que gere sozinho ao criar o
-Squad. Enquanto isso, o setup-alia OFERECE e o agente gera sob demanda. (Auto-geracao no onboarding =
-evolucao futura declarada.)
+   Esta parte (a GERACAO por Client) continua sob demanda de proposito - custa modelo, e decisao do
+   operador, nunca automatica so por criar o Squad (nao confundir com o passo 1, que e so o motor
+   ficar pronto pra usar).
+3. PROVADO end-to-end num Client do estudio (29/jun): 39 nos, 53 arestas, 6 comunidades.
+NOTA HONESTA: a geracao POR CLIENT ainda depende do agente rodar a skill (`/graphify <path>`) - nao ha
+hook que gere sozinho ao criar o Squad, e essa parte segue sendo decisao do operador (custa modelo).
+O que mudou em 10/08/2026 foi so o passo 1 (o motor ficar pronto): antes dependia de ter Python na
+maquina, agora e garantido sozinho, sem o operador precisar saber o que roda por baixo.
+
+### A guarda do mapa: existir nao basta, tem que ser AUTENTICO e estar EM DIA (OPP-76)
+
+> LEI: mapa forjado ou podre nao vale como mapa. `graphify-out/` que nao e saida real do graphify,
+> ou grafo mais velho que o corpus que ele cobre, e PIOR que nao ter grafo - tem cara de fonte
+> curada e leva o agente a um mundo que ja mudou.
+
+Ate 04/08/2026 a guarda so perguntava "existe `GRAPH_REPORT.md` e `nodes` > 0?" - criterio que
+qualquer JSON escrito a mao em 5 minutos satisfaz. Medido na auditoria: **2 dos 5** grafos de cliente
+eram exatamente isso, e **nenhum** dos grafos do studio estava em dia (80 arquivos do proprio lab
+mais novos que o grafo do lab). `scripts/graph-check.ps1` passou a classificar cada Client em quatro
+estados, e a rodar contra os Clients REAIS - nao mais so contra o cliente-demo:
+
+| Estado | O que e | Veredito |
+|---|---|---|
+| **OK** | saida real do graphify e em dia com a base que cobre | passa |
+| **STALE** | autentico, porem PODRE: arquivos-fonte mudaram depois do `graph.json` | reprova (`-AllowStale` rebaixa a aviso) |
+| **FAKE** | tem `graphify-out/` mas o conteudo nao e saida do graphify | reprova |
+| **FALTA** | sem pasta, sem relatorio, sem `graph.json` ou grafo vazio | reprova |
+
+Autenticidade = o que o pipeline realmente escreve: `GRAPH_REPORT.md` + `graph.html` + `graph.json`
+no schema node-link (`directed`/`multigraph`/`nodes`/`links`), nos com `id` + `community` +
+procedencia (`source_file`/`file_type`), arestas com `source`/`target`. Podridao = o mtime do
+`graph.json` contra os arquivos-fonte da base (`-MaxNewerFiles`, default 10).
+
+Rota barata de conserto: `scripts/graph-check.ps1 -Refresh` tenta `graphify update` (re-extrai SEM
+custo de modelo) nos grafos podres. FAKE e FALTA nao tem rota barata - exigem a skill
+(`/graphify <base>`), e isso custa modelo: e decisao do operador, nunca do smoke.
+
+**Leitura do resultado:** case o TEXTO da saida (`[FAIL]`, `[FAKE]`, `[STALE]`), NUNCA o exit code -
+foi medido que o `exit 1` do PowerShell nao propaga por toda rota de shell usada aqui.
+
+### A adocao da lei e MEDIDA, nao presumida (OPP-76)
+
+> LEI: lei sem contador e fe. A aderencia a "grafo antes de varredura" e medida por sessao e por
+> codebase, e o sensor que a mede tem que estar LIGADO - "projetado-mas-desligado" reprova a prova.
+
+A lei acima estava escrita em tres lugares do motor e ninguem nunca soube se ela era cumprida. Duas
+pecas fecham isso, e nenhuma delas bloqueia nada:
+
+- `scripts/graph-usage-sensor.ps1` (hook `PreToolUse`, matcher `Read|Grep|Glob|Bash`) anota em
+  ledger append-only `studio/graph-usage-log.jsonl` dois eventos e mais nada: LEITURA DE MAPA
+  (`kind=map`) e VARREDURA (`kind=scan`). Nunca grava conteudo de arquivo, nunca grava o texto do
+  operador, nunca grava a linha de comando do Bash - so o token que casou. Qualquer erro, sai em
+  silencio: falha de sensor jamais trava o trabalho. O matcher e OBRIGATORIO (sem ele o hook dispara
+  em toda chamada de ferramenta e cada disparo custa ~450ms so de boot do powershell).
+- `scripts/graph-usage.ps1` e o contador. A unidade de medida e o par **(sessao, escopo)**: ler o
+  grafo de um Client nao autoriza varrer outro as cegas. ADOCAO = par que leu o mapa ANTES da
+  primeira varredura; FURO = par que varreu sem ler. Alvo >= 70% com amostra minima de 5 pares.
+
+O sensor entra MEDINDO, nao punindo: a taxa e AVISO ate haver historico real. O que reprova hoje e
+so o que pode ser provado hoje - o hook ligado.
 
 ### Bonus: commit auditavel de memoria e grafo
 
@@ -105,8 +164,9 @@ resultado anterior.
 Exemplo real do proprio produto - os scripts em `scripts/` ja sao esse colapso:
 `smoke-test.ps1` roda dezenas de checks (engine, studio, squad, gates, ablation, encoding) numa
 unica invocacao e devolve `ALL GREEN` ou a lista de falhas; conferir cada item por chamada de tool
-custaria N vezes mais contexto. O mesmo vale para `install-loops.ps1` (le o yaml e gera a config num
-passo).
+custaria N vezes mais contexto. O mesmo colapso vale para a curadoria de memoria: em vez de um
+agendador de SO separado, `smoke-test-studio.ps1` chama `memory-curator.ps1 -Validade` dentro da
+propria prova - a rotina "de vez em quando" anda de carona no pipeline que ja roda sempre.
 
 ## Budget e a metrica viva
 

@@ -42,14 +42,17 @@ operador nunca precisa rodar script na mao - quem roda e a Alia.
    - has_ddd (client.md tem glossario / linguagem ubiqua?)
    - dominios e velocidade do conhecimento (design, growth, AI, marketing = rapido;
      ops interno, juridico = lento)
-3. Aplicar as regras R0..R6 da spec (`engine/features/loop-designer.md`):
+3. Aplicar as regras R0..R6 da spec (`engine/features/loop-designer.md`); CORTE de 10/08/2026
+   (mandato do CEO): health-check, evolution-scan, debt-scan, squad-report, ddd-drift-scan e
+   deep-research sairam da selecao automatica (nenhum tinha consumidor do proprio relatorio;
+   deep-research tambem custa modelo sem freio de orcamento real) - viraram comando manual
+   (`loops.catalog.yaml` -> `manual_commands`), a Alia so os sugere pontualmente, nunca instancia:
    - R0: status != active -> NENHUM loop agendado. Parar e reportar isso.
-   - R1: active -> health-check (diario) + evolution-scan + debt-scan + squad-report (semanais)
+   - R1: active -> memory-curator (semanal) - unico agendado por padrao
    - R2: active -> gate-on-artifact + fix-on-fail
    - R3: has_code -> drift-on-commit + pr-review
-   - R4: has_ddd -> ddd-drift-scan (diario)
-   - R5: dominio rapido -> deep-research diario nesses dominios
-   - R6: so dominio lento -> deep-research semanal ou nenhum
+   - R4: has_ddd -> nada agendado; sugerir comando manual `ddd-drift-scan` se o operador pedir
+   - R5/R6: deep-research fica sob demanda (aciona quando o operador pede pesquisa de dominio)
 4. Apresentar o Plano de Loops ao operador: tabela (loop, cadencia, dono, custo, por que),
    o custo somado (quantos cost_class medio/alto), e pedir aprovacao.
 
@@ -60,13 +63,16 @@ operador nunca precisa rodar script na mao - quem roda e a Alia.
    last_result: null).
 2. Gravar `clients/{id}/loops.yaml` com escrita UTF-8 sem BOM (no Windows/PowerShell, usar
    [System.IO.File]::WriteAllText com UTF8Encoding($false) - nunca Set-Content cru).
-3. Ligar o mecanismo (sob demanda por padrao):
+3. Ligar o mecanismo (sem agendador de SO - CORTE 10/08/2026, mandato do CEO: Task Scheduler e
+   estado escondido na maquina, invisivel, nao viaja com o produto; `install-loops.ps1` e
+   `run-loops.ps1` foram removidos):
    - Loops de evento: ja cobertos pelos hooks/gates do engine (nada a instalar).
-   - Loops agendados: por padrao a Alia os roda sob demanda via `scripts/run-loops.ps1 -Client {id}`
-     (`-Due daily|weekly|all`) quando estao devidos e o operador aceita - nenhuma infra de SO.
-   - OPCIONAL (sem sessao aberta): quem quiser os agendados rodando de madrugada sozinho usa
-     `scripts/install-loops.ps1 -Client {id} -Install` para registrar no Task Scheduler. E uma
-     escolha do operador, nao o caminho padrao.
+   - `memory-curator` (o unico agendado): nao precisa de nada a instalar. `scripts/smoke-test-studio.ps1`
+     ja chama `memory-curator.ps1 -Validade` toda vez que a prova roda, e a prova roda em todo
+     trabalho relevante - rotina que precisa rodar "de vez em quando" roda quando a prova roda.
+   - Os demais scans mecanicos (health-check, ddd-drift-scan, evolution-scan, debt-scan,
+     squad-report): comando manual, sem cadencia - o operador (ou a Alia, se pedido) roda
+     `scripts/{id}.ps1 -Client {id}` quando quiser.
 4. Registrar no estado que o cliente tem governanca ativa (loops criados).
 
 ## Modo REVISAR
@@ -91,6 +97,8 @@ projeto tem dominio de velocidade alta (R5). Para configura-lo:
 
 ## Invariante
 
-- Frugal: projeto nao-ativo = zero loop agendado. deep-research so em dominio ativo e rapido.
+- Frugal: projeto nao-ativo = zero loop agendado. deep-research e sob demanda, nunca agendado.
 - Todo loop nasce com `review_on`. Loop sem retorno e aposentado, nao mantido por inercia.
 - Toda escrita de arquivo: UTF-8 sem BOM, sem acentos, sem emojis.
+- Loop agendado sem consumidor medido do proprio relatorio nao entra na selecao automatica (licao
+  do corte de 10/08/2026: virar comando manual documentado, nao rotina fantasma).

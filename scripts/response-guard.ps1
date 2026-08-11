@@ -17,13 +17,34 @@
 
   2 regras deterministicas (sem LLM, sem rede) sobre o TURNO ATUAL (da ultima mensagem de role
   "user" ate o fim do transcript):
-    REGRA 1 (DELEGA): Write/Edit/NotebookEdit em clients/... (fora de memory/, _proposals/,
-      _backups/, scratchpad, state.json, scripts/) sem nenhuma chamada de Agent/Task no turno.
+    REGRA 1 (DELEGA): Write/Edit/NotebookEdit em qualquer arquivo de dominio (clients/, engine/,
+      docs/, skills/, scripts/, AGENTS.md, CLAUDE.md, raiz - fora de memory/, _proposals/,
+      _backups/, scratchpad, state.json) sem nenhuma chamada de Agent/Task no turno.
     REGRA 2 (GROUNDING): 3+ "afirmacoes de peso" (referencia a arquivo por extensao, ou padrao
       arquivo:linha) no texto da ultima mensagem do assistente, sem nenhum rotulo [MEDIDO],
       [INFERIDO] ou [LIDO] em algum ponto do texto.
 
-  Doutrina completa (os 2 modos, a rampa, a excecao legitima, a limitacao aceita) em
+  A VALVULA (excecao legitima da REGRA 1, 09/08/2026): a lei DELEGA sempre teve uma excecao
+  doutrinaria - o Operator pode mandar a coordenadora executar dominio ela mesma (ver
+  engine/orchestration.md e engine/governance/client-truth.md, "excecao so por ordem explicita do
+  Operator, registrada na Task"). Ate aqui essa excecao nao tinha maquina: ou o guard bloqueava
+  trabalho legitimo, ou alguem desligava o modo bloqueio inteiro. A valvula fecha isso com 5
+  propriedades (doutrina completa em response-guard.md):
+    a) Ativada por LINGUAGEM NATURAL do Operator na propria mensagem do turno (regex sobre o texto
+       digitado por humano - nunca sobre config; o Operator nao edita arquivo nenhum).
+    b) Escopo de UM TURNO: so olha o texto do proprio turno (a janela ja isolada pela REGRA 1),
+       nunca vaza para o proximo pedido.
+    c) AUDITAVEL: so abre se, no MESMO turno, uma tool de shell (Bash ou PowerShell) chamou
+       scripts/register-task.ps1 com -OperatorOrder e o registro deu certo ("[OK] tarefa
+       registrada" no resultado da tool) - REUSA
+       o mecanismo que ja existe (register-task.ps1 grava operator_order:true na Task), nao inventa
+       um segundo conceito paralelo. O log grava valvula_aberta=true, nunca so "sem violacao".
+    d) FAIL-CLOSED: linguagem detectada sem o registro auditavel (ou vice-versa) NAO abre a
+       valvula - o turno segue como violacao normal se sinal_dominio existir.
+    e) A valvula so desarma a REGRA 1 (DELEGA). A REGRA 2 (GROUNDING) e o resto do guard continuam
+       intactos - a excecao e sobre QUEM executa, nunca sobre citar fonte sem rotular.
+
+  Doutrina completa (os 2 modos, a rampa, a valvula, a limitacao aceita) em
   engine/governance/response-guard.md. Limiares e modo vem de engine/governance/response-guard.yaml
   (default se faltar/ilegivel: mode=aviso).
 
@@ -65,6 +86,29 @@ function Get-ToolUsesFromContent {
     $bt = $null
     try { $bt = $block.type } catch { }
     if ($bt -eq 'tool_use') { $out.Add($block) }
+  }
+  return $out.ToArray()
+}
+
+function Get-ToolResultsFromContent {
+  # Blocos type='tool_result' de uma mensagem (role user costuma carregar o resultado da tool
+  # chamada pelo assistant). Devolve objetos {tool_use_id, text} - so o que a VALVULA precisa pra
+  # confirmar que scripts/register-task.ps1 -OperatorOrder rodou com sucesso NO MESMO turno.
+  param($content)
+  $out = New-Object System.Collections.Generic.List[object]
+  if ($null -eq $content -or ($content -is [string])) { return $out.ToArray() }
+  foreach ($block in @($content)) {
+    $bt = $null
+    try { $bt = $block.type } catch { }
+    if ($bt -ne 'tool_result') { continue }
+    $tuid = $null
+    try { $tuid = [string]$block.tool_use_id } catch { }
+    $rc = $null
+    try { $rc = $block.content } catch { }
+    $rtext = ""
+    if ($rc -is [string]) { $rtext = $rc }
+    else { $rtext = ((Get-TextFromContent $rc) -join "`n") }
+    $out.Add([pscustomobject]@{ tool_use_id = $tuid; text = $rtext })
   }
   return $out.ToArray()
 }
@@ -130,8 +174,14 @@ try {
   $cfg = Get-ResponseGuardConfig (Join-Path $root "engine\governance\response-guard.yaml")
 
   # (1) Le so o TETO de linhas (perf: transcript pode ser grande, timeout do hook e 15s).
+  # -Encoding UTF8 explicito (CONSERTO achado ao provar a VALVULA pelo negativo, 09/08/2026): sem
+  # isso o Get-Content do Windows PowerShell 5.1 le o .jsonl (UTF-8 sem BOM, como todo transcript
+  # real) na codepage ANSI do sistema - todo acento do Operator (fala normal em portugues, LEI e so
+  # de ARQUIVO) vira 2 bytes soltos em vez de 1 char, e a deteccao de linguagem natural da valvula
+  # nunca casava. As 2 regras originais (extensao de arquivo, rotulo [MEDIDO/INFERIDO/LIDO]) nunca
+  # pegaram este furo por serem puro ASCII.
   $tailCap = 2000
-  $rawLines = @(Get-Content -LiteralPath $transcriptPath -Tail $tailCap -ErrorAction Stop)
+  $rawLines = @(Get-Content -LiteralPath $transcriptPath -Tail $tailCap -Encoding UTF8 -ErrorAction Stop)
 
   $objects = New-Object System.Collections.Generic.List[object]
   foreach ($rl in $rawLines) {
@@ -143,32 +193,58 @@ try {
   }
   if ($objects.Count -eq 0) { exit 0 }
 
-  # (2) Isola o TURNO ATUAL: da ULTIMA mensagem de role "user" ate o fim. Se nenhuma "user"
+  # (2) Isola o TURNO ATUAL: da ULTIMA mensagem GENUINA de role "user" ate o fim. Se nenhuma
   # aparecer na janela lida (turno maior que o teto), usa a janela inteira (limitacao aceita).
+  # CONSERTO (09/08/2026, achado ao provar a VALVULA pelo negativo): no contrato da API, todo
+  # tool_result tambem chega como uma mensagem de role "user" - sem filtrar isso, "ultima
+  # mensagem user" quase sempre caia num tool_result (o ultimo da cadeia de tools do turno), NUNCA
+  # na instrucao real do Operator. turnLines cortava fora TODO tool_use anterior a esse tool_result
+  # - inclusive o Write/Edit que a REGRA 1 (DELEGA) existe para pegar. So conta como inicio de
+  # turno uma mensagem "user" que carrega TEXTO genuino (string ou bloco type='text'); mensagem
+  # "user" que so tem tool_result nao conta.
   $turnStart = 0
   for ($i = $objects.Count - 1; $i -ge 0; $i--) {
     $t = $null
     try { $t = $objects[$i].type } catch { }
-    if ($t -eq 'user') { $turnStart = $i; break }
+    if ($t -ne 'user') { continue }
+    $m = $null
+    try { $m = $objects[$i].message } catch { }
+    $c = $null
+    try { $c = $m.content } catch { }
+    if (@(Get-TextFromContent $c).Count -eq 0) { continue }
+    $turnStart = $i
+    break
   }
   $turnLines = @($objects[$turnStart..($objects.Count - 1)])
 
-  # (3) Coleta todo tool_use do turno (para a REGRA 1) e o texto da ULTIMA mensagem assistant
-  # (para a REGRA 2).
+  # (3) Coleta todo tool_use do turno (para a REGRA 1), o texto da ULTIMA mensagem assistant
+  # (para a REGRA 2), e - para a VALVULA - todo texto digitado pelo Operator (role "user") e todo
+  # tool_result do turno (para confirmar o register-task.ps1 -OperatorOrder).
   $allToolUses = New-Object System.Collections.Generic.List[object]
+  $allToolResults = New-Object System.Collections.Generic.List[object]
+  $operatorTexts = New-Object System.Collections.Generic.List[string]
   $lastAssistantIdx = -1
   for ($i = 0; $i -lt $turnLines.Count; $i++) {
     $entry = $turnLines[$i]
     $etype = $null
     try { $etype = $entry.type } catch { }
-    if ($etype -ne 'assistant') { continue }
     $msg = $null
     try { $msg = $entry.message } catch { }
     $content = $null
     try { $content = $msg.content } catch { }
+    if ($etype -eq 'user') {
+      # Get-TextFromContent so devolve blocos type='text' (ou content string) - blocos
+      # type='tool_result' ficam de fora daqui, entao isto pega SO texto de fato digitado pelo
+      # Operator, nunca saida de tool disfarcada de "user" (contrato da API).
+      foreach ($t in (Get-TextFromContent $content)) { $operatorTexts.Add($t) }
+      foreach ($tr in (Get-ToolResultsFromContent $content)) { $allToolResults.Add($tr) }
+      continue
+    }
+    if ($etype -ne 'assistant') { continue }
     foreach ($tu in (Get-ToolUsesFromContent $content)) { $allToolUses.Add($tu) }
     $lastAssistantIdx = $i
   }
+  $operatorText = ($operatorTexts -join "`n")
 
   $lastAssistantText = ""
   if ($lastAssistantIdx -ge 0) {
@@ -181,7 +257,15 @@ try {
   }
 
   # (4) REGRA 1 - DELEGA.
-  $excludeSubstrings = @('memory/', '_proposals/', '_backups/', 'scratchpad', 'state.json', 'scripts/')
+  # CONSERTO (auditoria forense, defeito 6): a exclusao tinha 'scripts/' na lista (nunca sinaliza) E
+  # o gatilho so disparava para caminho '(^|/)clients/' - editar engine/, docs/, skills/, scripts/,
+  # AGENTS.md, CLAUDE.md ou qualquer arquivo de raiz NUNCA levantava sinal, so trabalho dentro de um
+  # Client. Isso mediu sinal_dominio=0 em 81+ turnos mesmo com trabalho de dominio real acontecendo
+  # fora de clients/ (este proprio conserto e um exemplo: escreve em scripts/ e engine/governance/).
+  # Escopo agora e "qualquer escrita que NAO esteja numa exclusao legitima" - cobre clients/,
+  # engine/, docs/, skills/, scripts/, AGENTS.md, CLAUDE.md e raiz. As exclusoes legitimas
+  # (memoria/estado/backup/scratchpad - nunca sao "execucao de dominio") continuam de fora.
+  $excludeSubstrings = @('memory/', '_proposals/', '_backups/', 'scratchpad', 'state.json')
   $sinalDominio = $false
   $houveDelegacao = $false
   foreach ($tu in $allToolUses) {
@@ -196,15 +280,60 @@ try {
       }
       if (-not [string]::IsNullOrWhiteSpace($fp)) {
         $norm = $fp.Replace('\', '/').ToLowerInvariant()
-        if ($norm -match '(^|/)clients/') {
-          $excluded = $false
-          foreach ($ex in $excludeSubstrings) { if ($norm.Contains($ex)) { $excluded = $true; break } }
-          if (-not $excluded) { $sinalDominio = $true }
-        }
+        $excluded = $false
+        foreach ($ex in $excludeSubstrings) { if ($norm.Contains($ex)) { $excluded = $true; break } }
+        if (-not $excluded) { $sinalDominio = $true }
       }
     }
   }
-  $violacaoDelega = $sinalDominio -and (-not $houveDelegacao)
+  # (4b) A VALVULA - excecao legitima a REGRA 1 (doutrina completa no header deste script e em
+  # response-guard.md). Fail-closed por construcao: SO abre com as duas pernas provadas no MESMO
+  # turno; qualquer uma faltando (ou ambigua) deixa a valvula fechada e o turno segue regra normal.
+  #   perna 1 (linguagem natural) - o Operator escreveu uma ordem explicita de execucao direta.
+  #   perna 2 (registro auditavel) - scripts/register-task.ps1 -OperatorOrder rodou e teve sucesso
+  #     no turno (reusa o mecanismo que ja grava operator_order:true na Task - nao duplica conceito).
+  # Acentos via [char]0xNNNN (nao literal no arquivo - arquivo fica ASCII) mas o padrao ainda casa
+  # fala do Operator com acento (conversa e com acento, so ARQUIVO e ASCII).
+  $cCed = [char]0x00E7   # c-cedilha (ca -> faca)
+  $aTil = [char]0x00E3   # a-til (nao)
+  $eCir = [char]0x00EA   # e-circunflexo (voce)
+  # CONSERTO: cada elemento precisa de parenteses proprios - "," tem precedencia MENOR que "+" no
+  # PowerShell ('a' + 'b', 'c' vira 'a' + ('b','c'), nao ('a'+'b'), 'c') - sem isolar cada
+  # concatenacao, o array virava 1 elemento so (os demais absorvidos e colados com espaco).
+  $ordemPatterns = @(
+    ('fa[' + $cCed + 'c]a?\s+(voc[' + $eCir + ']|vc)\s+mesm[ao]'),
+    ('resolv\w*\s+direto'),
+    ('execut\w*\s+(voc[' + $eCir + ']|vc)\s+mesm[ao]'),
+    ('n[' + $aTil + 'a]o\s+delegu?e?\b'),
+    ('sem\s+delegar'),
+    ('sem\s+delega[' + $cCed + 'c][' + $aTil + 'a]o'),
+    ('sem\s+especialista'),
+    ('sem\s+agente'),
+    ('voc[' + $eCir + ']\s+mesma\s+resolve'),
+    ('n[' + $aTil + 'a]o\s+precisa\s+delegar')
+  )
+  $ordemRegex = '(' + ($ordemPatterns -join '|') + ')'
+  $ordemDetectada = [bool]([regex]::IsMatch($operatorText, $ordemRegex, 'IgnoreCase'))
+
+  $ordemRegistrada = $false
+  foreach ($tu in $allToolUses) {
+    $tname = $null
+    try { $tname = [string]$tu.name } catch { }
+    if ($tname -ne 'Bash' -and $tname -ne 'PowerShell') { continue }
+    $cmd = $null
+    try { $cmd = [string]$tu.input.command } catch { }
+    if ([string]::IsNullOrWhiteSpace($cmd)) { continue }
+    if ($cmd -notmatch 'register-task\.ps1' -or $cmd -notmatch '-OperatorOrder') { continue }
+    $tuid = $null
+    try { $tuid = [string]$tu.id } catch { }
+    foreach ($tr in $allToolResults) {
+      if ($tr.tool_use_id -ne $tuid) { continue }
+      if ($tr.text -match '\[OK\] tarefa registrada') { $ordemRegistrada = $true }
+    }
+  }
+  $valvulaAberta = $ordemDetectada -and $ordemRegistrada
+
+  $violacaoDelega = $sinalDominio -and (-not $houveDelegacao) -and (-not $valvulaAberta)
   $delegaOk = -not $violacaoDelega
 
   # (5) REGRA 2 - GROUNDING.
@@ -233,6 +362,9 @@ try {
     grounding_ok     = $groundingOk
     sinal_dominio    = $sinalDominio
     houve_delegacao  = $houveDelegacao
+    ordem_detectada  = $ordemDetectada
+    ordem_registrada = $ordemRegistrada
+    valvula_aberta   = $valvulaAberta
     qtd_afirmacoes   = $qtdAfirmacoes
     chars_resposta   = $charsResposta
   }
@@ -247,7 +379,7 @@ try {
     if ($anyViolation) {
       $reasons = New-Object System.Collections.Generic.List[string]
       if (-not $delegaOk) {
-        $reasons.Add("Turno escreveu/editou arquivo em clients/ sem chamar Agent/Task (falta delegacao) - delegue ao especialista mais capaz, ou registre ordem explicita do Operator na Task.")
+        $reasons.Add("Turno escreveu/editou arquivo de dominio sem chamar Agent/Task (falta delegacao) - delegue ao especialista mais capaz, ou - se foi ordem explicita do Operator pra executar direto - registre com 'scripts/register-task.ps1 ... -OperatorOrder' no mesmo turno pra abrir a valvula (ver response-guard.md).")
       }
       if (-not $groundingOk) {
         $reasons.Add("Resposta tem " + $qtdAfirmacoes + " referencia(s) a arquivo sem rotulo [MEDIDO]/[INFERIDO]/[LIDO] - rotule a fonte de cada afirmacao de peso antes de fechar.")
@@ -263,6 +395,7 @@ try {
   $informativo = ($charsResposta -gt $cfg.min_chars_informativo) -and (-not $houveDelegacao)
   Write-Host ("[RESPONSE-GUARD][aviso] delega_ok=" + $delegaOk + " grounding_ok=" + $groundingOk +
     " sinal_dominio=" + $sinalDominio + " houve_delegacao=" + $houveDelegacao +
+    " valvula_aberta=" + $valvulaAberta +
     " qtd_afirmacoes=" + $qtdAfirmacoes + " chars_resposta=" + $charsResposta +
     " informativo_sem_delegacao=" + $informativo)
   exit 0

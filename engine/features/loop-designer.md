@@ -29,34 +29,29 @@ Divisao de responsabilidade, sem sobreposicao:
    que cadencia, dono e custo) e justifica cada escolha por uma regra explicita. O operador aprova
    ou ajusta antes de virar registro.
 2. **Criar** - os loops aprovados sao gravados como registros reais em `clients/{id}/loops.yaml` e
-   ligados ao mecanismo: por padrao a propria Alia roda os agendados sob demanda (via a skill,
-   quando estao devidos e o operador aceita), e o engine cobre os de evento. O agendador do SO e
-   opcional (ver "Execucao sob demanda").
+   ligados ao mecanismo: o engine cobre os de evento; o unico agendado sobrevivente
+   (`memory-curator`) roda quando a prova roda (ver "Execucao sob demanda"). Sem agendador de SO -
+   e estado escondido, invisivel, nao viaja com o produto (mandato do CEO, 10/08/2026).
 3. **Revisar** - na data de `review_on`, a Alia audita o loop pelo `last_result`: se agregou valor,
    mantem (com novo `review_on`); se nao, reduz a cadencia ou aposenta. Loop sem retorno e
    aposentado com motivo - nenhum loop sobrevive por inercia.
 
-## Execucao sob demanda e sugestao proativa (opt-in)
+## Execucao sem agendador (CORTE 10/08/2026, mandato do CEO)
 
-O loop nao precisa de agendador de SO para existir. O modelo padrao e agente-driven: a Alia
-**percebe** quando um loop esta devido (abertura de trabalho num cliente, entrega de Artifact, data
-de cadencia atingida) e **sugere proativamente** roda-lo - enquadrando pelo beneficio, nao pelo
-mecanismo: rodar a rotina de saude e o que garante que o cliente e o produto evoluam de forma
-saudavel (sem drift escondido, sem estagnacao silenciosa, sem debito acumulado). A sugestao e sempre
-**opt-in**: o operador aceita ou adia; nada e obrigatorio e nada roda as escondidas.
+O loop NAO precisa de agendador de SO para existir - Task Scheduler e estado escondido na maquina:
+invisivel, nao viaja com o produto, dependencia de sistema operacional. `run-loops.ps1` (runner sob
+demanda) e `install-loops.ps1` (instalador no Task Scheduler) foram removidos.
 
-Quando o operador aceita, a Alia executa os loops devidos numa unica passada
-(`scripts/run-loops.ps1` - colapso PTC: 1 invocacao, 1 resumo consolidado em linguagem do operador),
-nunca pedindo que o operador rode script na mao. Cada scan continua frugal (so le, custo de token
-zero); a skill e a camada de julgamento (quando sugerir, como configurar, como apresentar).
+O unico loop agendado que sobrevive (`memory-curator`) roda pelo mecanismo mais simples possivel:
+`scripts/smoke-test-studio.ps1` ja chama `memory-curator.ps1 -Validade` toda vez que a prova roda,
+e a prova roda em todo trabalho relevante. Rotina que precisa rodar "de vez em quando" roda quando
+a prova roda - zero agendamento, zero estado fora do repositorio. Os demais scans mecanicos
+(health-check, ddd-drift-scan, evolution-scan, debt-scan, squad-report) sao comando manual: o
+operador (ou a Alia, se pedido) roda `scripts/{id}.ps1 -Client {id}` quando quiser, sem cadencia
+fixa. `deep-research` segue agente-driven, sob demanda via skill, nunca agendado.
 
-> Agendador do SO = OPCIONAL. Para quem quer os loops rodando sem sessao aberta (de madrugada,
-> sozinho), `scripts/install-loops.ps1` ainda registra os agendados no Task Scheduler. Mas o caminho
-> padrao - e o recomendado para a maioria - e a Alia sugerir e rodar sob demanda. O operador nunca
-> precisa configurar infra de SO para ter governanca.
-
-Configuravel por projeto: o `loops.yaml` do cliente declara quais loops, em que cadencia, e se a
-sugestao proativa esta ligada (`proactive: on|off` por loop, default `on` para projeto ativo).
+Configuravel por projeto: o `loops.yaml` do cliente declara quais loops existem e em que cadencia
+nominal (`memory-curator`: semanal), mesmo sem mecanismo de agendamento algum por tras do numero.
 
 ## Catalogo de loops (de onde a Alia escolhe)
 
@@ -70,16 +65,18 @@ quadro abaixo e o resumo operacional; o contrato completo e o manifesto estao em
 | drift-on-commit | evento (commit) | none | Squad Owner (T1) | baixo | desvio de DDD |
 | pr-review | evento (PR aberto) | none | Squad Owner (T1) | medio | verdict de revisao |
 | fix-on-fail | evento (gate Fail) | none | Specialist -> Owner | medio | tentativas de correcao |
-| health-check | agendado | diaria | Squad Owner -> Alia | baixo | projeto vivo e consistente? |
-| ddd-drift-scan | agendado | diaria | Squad Owner (T1) | baixo | drift acumulado vs glossario |
-| deep-research | agendado | diaria | Alia (T2) | medio (quota Perplexity) | knowledge atualizado + RSI |
-| evolution-scan | agendado | semanal | Alia (T2) | baixo | sinal de estagnacao |
-| debt-scan | agendado | semanal | Alia (T2) | baixo | Concerns abertos |
-| squad-report | agendado | semanal | Squad Owner -> Alia | baixo | status para o Tier 2 |
+| memory-curator | agendado | semanal | Alia (T2) | baixo | memorias/regras consolidadas; stale arquivado |
 
 > Os quatro de evento (gate-on-artifact, drift-on-commit, pr-review, fix-on-fail) custam zero ate o
-> evento acontecer - por isso ficam ligados por padrao em todo projeto ativo. Os agendados sao os
-> que a Alia decide ligar ou nao, e em que cadencia: e ai que esta a economia.
+> evento acontecer - por isso ficam ligados por padrao em todo projeto ativo. `memory-curator` e o
+> UNICO agendado que a Alia recomenda por padrao hoje (10/08/2026): e o unico com consumidor real
+> medido (`scripts/smoke-test-studio.ps1`) e roda de graca. `health-check`, `ddd-drift-scan`,
+> `evolution-scan`, `debt-scan`, `squad-report` foram cortados do catalogo agendavel (nenhum tinha
+> leitor do proprio relatorio) - continuam existindo como **comando manual**
+> (`loops.catalog.yaml` -> `manual_commands`); a Alia pode sugerir rodar um deles pontualmente, mas
+> nao os instancia mais como loop agendado por padrao. `deep-research` tambem saiu do agendamento
+> (agente-driven, custa modelo, sem freio de orcamento real) - vira capacidade sob demanda: a Alia
+> aciona quando o operador pede pesquisa de dominio, nunca via Task Scheduler.
 
 ## O raciocinio (perfil do projeto -> loops recomendados)
 
@@ -91,15 +88,15 @@ codificadas em [loop-designer.rules.yaml](loop-designer.rules.yaml) para aplicac
 | Regra | Condicao | Loops |
 |-------|----------|-------|
 | R0 Frugal | status != active (pausado/arquivado) | NENHUM loop agendado. So eventos, se o projeto for tocado. |
-| R1 Baseline | status = active | health-check (diario) + evolution-scan + debt-scan + squad-report (semanais) |
+| R1 Baseline | status = active | memory-curator (semanal) - unico agendado por padrao (corte 10/08/2026) |
 | R2 Eventos | status = active | gate-on-artifact + fix-on-fail (sempre) |
 | R3 Codigo | has_code = true | drift-on-commit + pr-review |
-| R4 DDD | has_ddd = true | ddd-drift-scan (diario) |
-| R5 Conhecimento rapido | dominio com velocidade alta (design, growth, AI, marketing) | deep-research diario nesses dominios |
-| R6 Conhecimento lento | so dominios estaveis (ops interno, juridico) | deep-research semanal, ou nenhum |
+| R4 DDD | has_ddd = true | comando manual `ddd-drift-scan` sob demanda (nao agendado - ver corte) |
+| R5/R6 Conhecimento | qualquer velocidade | `deep-research` fica sob demanda (skill aciona quando o operador pede pesquisa de dominio); nunca agendado |
 
-> Velocidade do conhecimento = o quanto o estado-da-arte de um dominio muda. Design e growth mudam
-> rapido (vale pesquisa diaria); processo interno muda devagar (pesquisa diaria seria desperdicio).
+> Velocidade do conhecimento = o quanto o estado-da-arte de um dominio muda; hoje so afeta a
+> PRIORIDADE que a Alia da ao pedido sob demanda de `deep-research`, nao mais uma cadencia
+> agendada (corte 10/08/2026: agente-driven custa modelo e nao tinha freio de orcamento real).
 > R0 e a regra que prevalece: projeto fora de `active` zera os agendados antes de qualquer outra.
 
 ## O registro de um loop (o dado real)

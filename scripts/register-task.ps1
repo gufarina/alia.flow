@@ -52,6 +52,7 @@ param(
 # Status default virou "open": registrar ANTES de executar e a LEI - "done" e excecao declarada.
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot "_studio.ps1")   # Get-ClientStates: o estado do Client (OPP-77)
 if ([string]::IsNullOrWhiteSpace($StateFile)) { $StateFile = Join-Path $root "state.json" }
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 
@@ -90,7 +91,23 @@ if ($null -eq ($json.PSObject.Properties.Name | Where-Object { $_ -eq 'tasks' })
 }
 
 $existing = @($json.tasks)
-$id  = "TASK-{0:D3}" -f ($existing.Count + 1)
+# ID UNICO NO ATO DO REGISTRO (OPP-76). O calculo antigo era "contagem + 1": bastava uma Task
+# arquivada/removida a mao pra contagem voltar a um numero ja usado e nascer um id DUPLICADO -
+# foi assim que o ledger ganhou duas TASK-085 (medido no -Health do lineage-graph em 04/08).
+# Regra nova: parte do MAIOR id ja existente (nao da contagem) e ainda assim avanca enquanto o
+# candidato colidir. O ledger e append-only; id repetido quebra toda leitura de linhagem.
+$usedIds = @{}
+$maxNum = 0
+foreach ($t in $existing) {
+  $tid = "$($t.id)"
+  if ($tid -eq "") { continue }
+  $usedIds[$tid] = $true
+  $m = [regex]::Match($tid, '^TASK-(\d+)$')
+  if ($m.Success) { $n = [int]$m.Groups[1].Value; if ($n -gt $maxNum) { $maxNum = $n } }
+}
+$nextNum = [math]::Max($maxNum + 1, $existing.Count + 1)
+$id = "TASK-{0:D3}" -f $nextNum
+while ($usedIds.ContainsKey($id)) { $nextNum++; $id = "TASK-{0:D3}" -f $nextNum }
 $now = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
 
 if ([string]::IsNullOrWhiteSpace($Project)) {
@@ -129,7 +146,14 @@ if ($Specialist -eq "alia") {
     exit 1
   }
 } else {
-  Write-Host ("[AVISO] squad.yaml nao encontrado para '" + $Client + "' (" + $squadYaml + "): nao deu pra validar -Specialist '" + $Specialist + "' contra o time. Prosseguindo (cliente sem squad nao trava Task nova).")
+  # OPP-77: Client pontual/arquivado nao TEM squad por desenho - dizer "faltou squad" ali seria
+  # inventar um buraco. Ativo (ou sem estado declarado) segue recebendo o aviso de sempre.
+  $cSt = Get-ClientStateOf (Get-ClientStates $StateFile) $Client
+  if ($cSt -ne "ativo") {
+    Write-Host ("[INFO] Client '" + $Client + "' esta como " + $cSt + " no registro: nao tem squad por desenho (OPP-77), entao -Specialist '" + $Specialist + "' nao e validado contra time nenhum. Task registrada normalmente.")
+  } else {
+    Write-Host ("[AVISO] squad.yaml nao encontrado para '" + $Client + "' (" + $squadYaml + "): nao deu pra validar -Specialist '" + $Specialist + "' contra o time. Prosseguindo (cliente sem squad nao trava Task nova).")
+  }
 }
 
 $task = [PSCustomObject][ordered]@{

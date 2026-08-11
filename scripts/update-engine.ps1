@@ -127,12 +127,19 @@ function Get-Sha256([string]$path) {
   return (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
 }
 # Devolve o diff de uma pasta espelhada: listas de caminhos RELATIVOS New/Changed/Removed.
-function Get-MirrorDiff([string]$srcDir, [string]$dstDir) {
+# $excludePrefixes: caminhos relativos (prefixo, com \) que sao ESTADO LOCAL DA INSTANCIA (nao
+# motor) - ficam de fora do espelho por completo: nunca copiados, nunca removidos.
+function Get-MirrorDiff([string]$srcDir, [string]$dstDir, [string[]]$excludePrefixes = @()) {
   $new = @(); $changed = @(); $removed = @()
+  function Test-Excluded([string]$rel, [string[]]$prefixes) {
+    foreach ($p in $prefixes) { if ($rel -eq $p -or $rel.StartsWith($p + "\")) { return $true } }
+    return $false
+  }
   $srcFiles = @{}
   if (Test-Path -LiteralPath $srcDir) {
     foreach ($f in (Get-ChildItem -LiteralPath $srcDir -Recurse -File)) {
       $rel = $f.FullName.Substring($srcDir.Length).TrimStart('\')
+      if (Test-Excluded $rel $excludePrefixes) { continue }
       $srcFiles[$rel] = $f.FullName
     }
   }
@@ -140,6 +147,7 @@ function Get-MirrorDiff([string]$srcDir, [string]$dstDir) {
   if (Test-Path -LiteralPath $dstDir) {
     foreach ($f in (Get-ChildItem -LiteralPath $dstDir -Recurse -File)) {
       $rel = $f.FullName.Substring($dstDir.Length).TrimStart('\')
+      if (Test-Excluded $rel $excludePrefixes) { continue }
       $dstFiles[$rel] = $f.FullName
     }
   }
@@ -169,7 +177,10 @@ foreach ($d in $engineDirs) {
   $src = Join-Path $lab $d
   if (-not (Test-Path -LiteralPath $src)) { continue }
   $dst = Join-Path $root $d
-  $diff = Get-MirrorDiff $src $dst
+  # rsi/_archive e rsi/_candidates sao ESTADO LOCAL DA INSTANCIA (lineage de RSI desta
+  # instalacao), nao motor - nunca propagados nem apagados pelo espelho (ver engine/rsi/rsi.md).
+  $excl = if ($d -eq "engine") { @("rsi\_archive","rsi\_candidates") } else { @() }
+  $diff = Get-MirrorDiff $src $dst $excl
   $n = $diff.New.Count; $c = $diff.Changed.Count; $r = $diff.Removed.Count
   Write-Host ("    [motor]   " + $d + "\ (espelho diff-only): " + $n + " NOVO, " + $c + " ALTERADO, " + $r + " REMOVIDO")
   foreach ($rel in $diff.New)     { Write-Host ("        NOVO      " + $d + "\" + $rel) }

@@ -4,7 +4,7 @@
 
   Por que existe: a lei "a Alia delega dominio, nunca executa" morava so em prosa
   (persona.md, orchestration.md) carregada no boot. Em sessao longa ou pedido grande, o
-  contexto dilui e a Alia volta a executar com a propria mao (incidentes de 02/ago: mOS -
+  contexto dilui e a Alia volta a executar com a propria mao (incidentes de 02/ago: num Client -
   ia mapear codigo na mao com grafo pronto; ja tinha acontecido antes). Mesmo padrao do
   veto COO: a regra so parou de reincidir quando virou guard de maquina (smoke), nao prosa.
   Este hook aplica o mesmo principio ao DELEGA: a lei e re-injetada a CADA pedido do

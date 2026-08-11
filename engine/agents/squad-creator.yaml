@@ -48,9 +48,34 @@ protocol:
 member_output_contract:
   files_per_member:
     - "agents/{id}.md"      # persona / fluxo agentico
-    - "agents/{id}.yaml"    # config: id, role, domain, gateway, model, expert_minds, knowledge, triggers, tools, outputs
+    - "agents/{id}.yaml"    # config: id, role, domain, camada (A/B/C - ver camada_field), gateway, model, expert_minds, knowledge, triggers, tools, outputs
     - "knowledge/"          # segundo cerebro, anexado em camadas
   invariant: "Faltando qualquer um dos tres = integrante incompleto."
+
+# O campo que declara a camada em agents/{id}.yaml - contrato lido por scripts/squad-bridge.ps1
+# (o gerador). Nome canonico: `camada`, flat no topo do arquivo, valores A/B/C. Sinonimos aceitos
+# pelo gerador (nesta ordem de tentativa, primeiro que existir vence): `layer` (mesmo alfabeto
+# A/B/C - e o que o exemplo studio.example/clients/acme-saas usa) e o tier de modelo (`model` ou
+# `tier`: strong=A, standard=B, fast=C) quando nem camada nem layer existem. squad.yaml e a fonte
+# da verdade do TIME: quem ele declara Gateway (campo `gateway: <id>` de topo, `gateway: true` por
+# membro, ou `squad.owner`) E camada A, SEMPRE - essa fonte vence o yaml individual do agente,
+# mesmo em conflito (o gerador avisa quando corrige um conflito assim). Camada indeterminavel em
+# TODAS as fontes -> o gerador nao assume B em silencio, avisa no resumo (fail-loud).
+camada_field:
+  canonical: camada
+  values: [A, B, C]
+  synonyms:
+    - field: layer
+      values: [A, B, C]
+    - field: "model (ou tier)"
+      values: { strong: A, standard: B, fast: C }
+  precedence:
+    - "squad.yaml: Gateway declarado (gateway: <id> de topo | gateway: true por membro | squad.owner) => camada A, sempre vence"
+    - "squad.yaml: campo camada/layer por membro (override sobre o yaml individual)"
+    - "agents/{id}.yaml: campo camada (canonico)"
+    - "agents/{id}.yaml: campo layer (sinonimo)"
+    - "agents/{id}.yaml: model/tier strong/standard/fast (sinonimo)"
+    - "indeterminavel em tudo acima: gerador avisa no resumo, nao assume B em silencio"
 
 # LLM por papel: cada Specialist novo nasce com `model:` (tier) no seu .yaml.
 # O tier segue a CAMADA de cerebro (mesma logica de frugalidade) - ver agents/model-matrix.yaml.

@@ -21,6 +21,9 @@ risco de drift. Precisa do threshold/cerca exata: abra `rsi.yaml`. Para o resto,
 ## Squads e especialistas (abrir ao montar/inspecionar um squad)
 
 - engine/squad-system.md - anatomia do Specialist, segundo cerebro em camadas (A/B/C), invariantes.
+- scripts/squad-bridge.ps1 - a ponte persona -> agente invocavel: gera `.claude/agents/{client}-{id}.md`
+  (modo spawn) ou `.context-load.md` (modo context-load, host sem sub-agente nativo) a partir da
+  MESMA fonte (squad.yaml + agents/{id}.yaml + agents/{id}.md). Doutrina no cabecalho do script.
 - engine/agents/squad-creator.md - como a Alia spawna o Squad Creator e gera o time.
 - engine/agents/persona-skeleton.md - ordem canonica das secoes de toda persona de Specialist.
 - engine/agents/alia.md - definicao publica/generica do agente central.
@@ -35,9 +38,14 @@ risco de drift. Precisa do threshold/cerca exata: abra `rsi.yaml`. Para o resto,
 - engine/governance/quality-gate.md - a regua unica (6 criterios + verdicts). Roda a cada Artifact.
 - engine/governance/loops.md - catalogo da governanca: 2 tiers + taxonomia de loops.
 - engine/governance/memory-types.md - tipos de Memory e TTL (quando uma nota expira).
+- engine/governance/memory-audit.md - checklist de higiene da Memory (nota vencida/duplicada/contraditoria).
 - engine/governance/provenance.md - quem pode mudar cada artefato e como (diff, nunca deleta).
 - engine/governance/evolution-pipeline.md - o caminho de um achado (finding) ate a decisao do CEO (proposal -> aprovacao), via OPP-NN.
 - engine/governance/instance-separation.md - a LEI dos 2 contextos (produto CLEAN vs instancia aplicada) e os guardrails que a fazem cumprir.
+- engine/governance/client-truth.md - as 4 leis que protegem a documentacao do cliente (knowledge-first, claims registry, publico-vs-interno, reuse-first).
+- engine/governance/public-surface.md - a LEI do que pode existir no git (produto publico, nunca material de dev do cliente).
+- engine/governance/response-guard.md - o freio na PORTA DE SAIDA da resposta (hook de Stop, `response-guard.ps1`): as 2 regras (DELEGA/GROUNDING), os 2 modos (aviso/bloqueio) e a valvula de excecao por ordem do Operator.
+- engine/governance/law-ledger.md - registro de toda LEI declarada no motor: onde vive, que teste cobre, COBERTA ou SEM TESTE.
 
 ## Entrega e workflows (abrir ao executar um ciclo de entrega)
 
@@ -46,6 +54,9 @@ risco de drift. Precisa do threshold/cerca exata: abra `rsi.yaml`. Para o resto,
 - engine/workflows/story-cycle.md - o protocolo de 5 passos aplicado a dev (da intencao ao Artifact).
 - engine/workflows/qa-loop.md - ciclo de correcao quando o Gate da Fail.
 - engine/workflows/command-chaining.md - um comando orquestra N skills em sequencia.
+- skills/alinhamento/SKILL.md - a regua de risco do escopo + a rodada de perguntas de decisao
+  (sub-passo do IDENTIFICA). Abrir quando o pedido admitir mais de uma leitura ou a entrega for
+  cara de desfazer.
 - engine/features/validated-artifacts.md - validacao do contrato/formato do entregavel.
 - engine/features/examples-driven.md - olhar o padrao-ouro antes de criar (REUSE first).
 
@@ -56,7 +67,7 @@ risco de drift. Precisa do threshold/cerca exata: abra `rsi.yaml`. Para o resto,
 - engine/features/frugal-skills.md - capacidades por script (sem LLM) para tarefas deterministicas.
 - engine/rsi/rsi.md - como o sistema aprende e melhora a si mesmo a cada Loop.
 - engine/features/loop-designer.md - a Alia receita os loops de cada projeto (comando *loops).
-- engine/features/deep-research-loop.md - loop agendado que mantem o segundo cerebro vivo.
+- engine/features/deep-research-loop.md - loop sob demanda (agente-driven, sem agendamento) que mantem o segundo cerebro vivo.
 
 ## Engenharia e evolucao do motor (abrir ao mexer em codigo ou versionar o engine)
 

@@ -20,6 +20,610 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.50.4] - 2026-08-11
+
+PATCH - Fecha 3 frentes que uma sessao anterior deixou pela metade (o processo caiu no meio).
+
+**1. Lixo de teste na raiz.** `_scratch_test_archive.json` (arquivo vazio, 0 bytes, sobra de um
+teste de frente interrompida) removido - a prova "Raiz limpa: so a allowlist canonica" volta a
+verde.
+
+**2. `scripts/ensure-graphify.ps1` ganha versao fixa.** Antes instalava "o que vier" do indice
+publico do pacote `graphifyy` - sem trava nenhuma, uma release nova fora do controle da casa podia
+quebrar silenciosamente uma maquina nova (o pacote virou REQUISITO da instalacao em 10/08). Agora
+instala a versao CONHECIDA-BOA (`$GraphifyyPinnedVersion` no topo do script, medida nesta maquina
+via `python -m pip show graphifyy`: 0.4.23 - a UNICA linha que muda quando a casa decidir
+atualizar). Se a versao fixa sumir do indice (release removida), o script DEGRADA sozinho para a
+mais recente disponivel, MAS avisa a rota no `-StatusPath` (ex. "uv-latest-fallback") - degradar
+avisando e melhor que falhar em silencio. Contrato fail-soft intacto: exit 0 sempre, nunca trava o
+primeiro contato.
+
+**3. `scripts/graph-usage.ps1` ganha a janela honesta.** A metrica de adocao ao mapa misturava
+sessoes de ANTES do gate (`scripts/graph-usage-sensor.ps1`) sequer recusar varredura com sessoes
+de DEPOIS - "10,7% em 56 pares" julgava a lei por um periodo em que ela nao tinha como pegar
+ninguem. Data do corte derivada por FATO VERIFICAVEL (diff de disco entre dois backups do updater,
+nunca editados a mao): `_backups/RESGATE-2026-08-09-pre-1.0/scripts/graph-usage-sensor.ps1` (168
+linhas, sem nenhuma logica de recusa) contra
+`_backups/pre-update-1.48.0-para-1.50.0-20260810-154713/scripts/graph-usage-sensor.ps1` (389
+linhas, timestamp 2026-08-10T15:47:13, ja com a recusa inteira) - o gate nasceu entre 09/08 e
+10/08 15:47, sem entrada dedicada no CHANGELOG para o commit exato. Corte adotado, conservador de
+proposito (nunca favorece a nota): 2026-08-10T00:00:00Z. A saida agora mostra OS DOIS numeros
+sempre: adocao NA JANELA DA TRAVA (o veredito que o smoke le) e adocao NO HISTORICO COMPLETO (o
+ledger nunca se apaga). Medido apos o conserto: **10,5% em 19 pares desde 10/08/2026** (janela da
+trava) contra **10,7% em 56 pares** (historico completo) - o numero da janela CONTINUA vermelho
+(abaixo do alvo de 70%), proibido afrouxar para passar; `scripts/smoke-test-studio.ps1` delega ao
+mesmo script, sem duplicar a conta.
+
+Nao mexeu: `engine/rsi/**`, `scripts/squad-bridge.ps1`, `scripts/response-guard.ps1`,
+`scripts/check-public-surface.ps1`, `.claude/agents/**`, `clients/*/squad/**`,
+`clients/*/artifacts/**`, `memory/**`, `state.json`.
+
+## [1.50.3] - 2026-08-10
+
+PATCH - Conserto dos 2 furos que uma sessao de validacao independente mediu na lei "grafo antes
+de varredura" (`scripts/graph-usage-sensor.ps1`, hook de PreToolUse), os dois na metade "avisar
+sem bloquear" - a metade "recusar" ja funcionava.
+
+**FURO 1 (o aviso nunca chegava ao modelo).** O aviso `[SEM-MAPA]` (client sem mapa nenhum, 1a
+varredura da sessao) e o aviso de ESCAPE (3a tentativa seguida) eram impressos com `Write-Host`.
+Isso funciona em hooks de `UserPromptSubmit` (texto solto em stdout vira contexto do modelo), mas
+NAO em `PreToolUse` - contrato diferente, confirmado por 2 fontes independentes (agente
+`claude-code-guide` + fetch direto de `code.claude.com/docs/en/hooks.md`): em PreToolUse, texto
+solto em stdout e IGNORADO; so o JSON em `hookSpecificOutput` chega ao modelo. Rodar o script
+isolado (como o smoke fazia) escondia o furo porque capturava o stdout bruto, sem passar pelo
+contrato real do hook. CONSERTO: os dois avisos agora saem como
+`{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"<texto>"}}` - campo
+oficial que injeta contexto no modelo MESMO quando o tool call e permitido (nao bloqueia).
+
+**FURO 2 (a porta dos fundos, mais grave).** O matcher do hook (`Read|Grep|Glob|Bash`) nao
+cobria a ferramenta PowerShell (shell nativo do Windows, distinto de Bash/git-bash neste
+harness): varredura por PowerShell passava por FORA do sensor inteiro - nem contava no ledger,
+nem podia ser recusada. Medido: 1699+ linhas no ledger antes/depois de uma varredura por
+PowerShell num client com mapa nao lido - zero registro. Consequencia dupla: rota de fuga trivial
+da lei, e a taxa de adesao medida ficava artificialmente otimista (varreduras que furavam a lei
+via PowerShell nunca entravam no denominador). CONSERTO: matcher ganhou `|PowerShell`; o
+classificador de comando passou a reconhecer os idiomas de varredura do PowerShell
+(`Select-String`/`sls`, `Get-ChildItem -Recurse`/`gci -r`/`dir /s`), alem dos que ja cobria
+(rg/grep/findstr/find/ack/ag). Ferramentas fora do matcher (Write/Edit/NotebookEdit, Agent,
+WebFetch/WebSearch/browser/computer-use, `mcp__terminal__read_terminal`) ficam de fora por
+justificativa documentada no cabecalho do script (alvo ja conhecido, ou nao alcancam disco local
+por caminho/comando arbitrario), nao por omissao.
+
+Ambos os furos, junto com o matcher, tambem existiam em `.claude/settings.json` - corrigido no
+mesmo lote. 8 provas negativas novas em `scripts/smoke-test.ps1` (COM mapa recusa em
+PowerShell/Bash/Grep/Glob; SEM mapa avisa 1x via `additionalContext` e cala na 2a; depois de ler o
+mapa passa sem atrito; Read de arquivo unico nunca bloqueia; killswitch por env var e por
+arquivo-sentinela; erro proposital libera silencioso; ledger conta PowerShell). Smoke da oficina:
+214 PASS, 0 FAIL (subiu de 205 com as fixtures novas).
+
+## [1.50.2] - 2026-08-10
+
+PATCH - O conserto do falso positivo (1.50.1) destravou o passo 3/3 do empacotador e revelou dois
+defeitos pre-existentes que ele mascarava, os dois so aparecendo quando o smoke roda DE DENTRO do
+pacote construido.
+
+**1. Check de loops fantasma (`scripts/smoke-test.ps1`) era estruturalmente impossivel de passar
+dentro de um pacote.** O check exigia `scripts/smoke-test-studio.ps1` para confirmar que todo loop
+`scheduled` com `mechanism=script` tem consumidor medido - mas esse arquivo e o smoke DA INSTANCIA
+do operador (le clientes/squads/state.json dele), nunca empacotado por desenho (allowlist de
+`scripts/`, auditoria de superficie de hoje mais cedo). CONSERTO: o check agora distingue contexto
+pelo arquivo. Catalogo ausente = reprova sempre (defeito real, engine/ sempre ship). Catalogo
+presente e `smoke-test-studio.ps1` ausente = `[SKIP]` explicito, fora da conta de pass/fail -
+nunca `[PASS]` silencioso que finge ter verificado o que nao verificou. Catalogo +
+`smoke-test-studio.ps1` presentes (a oficina, ou qualquer instancia real do operador) = check
+real, sem mudanca de comportamento.
+
+**2. Numero publico do README fossilizado pela 3a vez (161 -> 179 -> 185; real medido hoje: 187
+no pacote antes do conserto do item 1 acima - 186 depois, ja que o check de loops fantasma virou
+`[SKIP]` e sai da conta).** Causa raiz: o numero era escrito a mao e o total muda a cada check novo. CONSERTO DE
+CAUSA RAIZ: `scripts/smoke-test.ps1` ganha o modo `-UpdateReadme` (so reescreve a linha "(N na
+versao atual" quando bate errado, nunca mexe no resto do arquivo, nunca roda sozinho num smoke
+normal). `scripts/package-release.ps1` chama esse modo contra o PACOTE recem-montado, ANTES do
+gate oficial, e copia o README corrigido de volta pra raiz da oficina (a fonte) - assim o numero
+se autocorrige a cada empacotamento, em vez de esperar um humano notar a 4a fossilizacao.
+
+`scripts/package-release.ps1` volta a fechar (MANIFEST gerado) com os dois defeitos corrigidos.
+
+---
+
+## [1.50.1] - 2026-08-10
+
+PATCH - Falso positivo no guarda da superficie publica (`scripts/check-public-surface.ps1`)
+travava o empacotamento. O check de identidade de Client (10/08/2026) usava `\b<id>\b`, e em
+regex HIFEN conta como fronteira de palavra: o nome real de um servidor MCP declarado em
+`.mcp.json` (usado por `scripts/squad-bridge.ps1`) segue o padrao "ferramenta-id-de-Client" e
+casava com `\b<id>\b` - acusado como vazamento, sendo so um pedaco de outro identificador, nao
+identidade nenhuma. CONSERTO: fronteira agora exige lookaround negativo pra `[\w-]`
+(letra/digito/underscore/hifen) dos dois lados, em vez de `\b` puro. Continua pegando a mencao
+ISOLADA ao Client em prosa/caminho (ex.: `clients/<id>/`, `-Client <id>` - espaco/barra/pontuacao
+seguem fronteira valida) e continua ignorando palavra portuguesa comum
+(escreve/sobrescreve/mostra/sinonimos - nenhuma tem um id de Client como token isolado). PROVADO
+PELO NEGATIVO rodando contra o pacote real (nao so fixture): o nome do servidor MCP deixa de
+acusar, caminho `clients/<id>/...` e flag `-Client <id>` continuam acusando.
+`scripts/package-release.ps1` volta a fechar (MANIFEST gerado).
+
+---
+
+## [1.50.0] - 2026-08-10
+
+MINOR - O grafo (graphify) deixa de ser "turbo opcional" e vira REQUISITO da instalacao (mandato do
+CEO). Motivacao: sem mapa, todo trabalho no codigo do cliente varre as cegas e gasta muito mais
+token - o mapa e o que torna a operacao barata e estavel. Ate agora dois furos deixavam essa lei
+meio letra morta: (1) instalar o motor da ferramenta dependia do operador ja ter Python na maquina,
+sem caminho automatico; (2) o gate que exige "leia o mapa antes de varrer" ficava INERTE pra quem
+nunca teve mapa nenhum - so protegia quem ja tinha. Os dois foram fechados.
+
+**1. Instalacao sem atrito e sem jargao (`scripts/ensure-graphify.ps1`, NOVO).** Cadeia fail-soft
+de 5 passos, nunca trava o primeiro contato: (a) ja disponivel (`python -m graphify --help`) -> nao
+faz nada; (b) `uv` disponivel -> rota preferida, garante Python sozinho (`uv python install
+--default`) e instala o pacote nele (`uv pip install --python`); (c) so Python, sem `uv` -> pip
+direto (rota antiga); (d) nada disponivel -> baixa o `uv` (binario unico, sem dependencia) e volta
+ao passo (b); (e) tudo falhou -> registra o estado num arquivo de status, imprime UMA frase de
+leigo (sem citar Python/pip/uv/pacote/nome de comando) e SEGUE no trabalho mesmo assim - requisito
+que falhou nunca vira bloqueio. Wired em `skills/setup-alia` (fala automatica, sem pedir "ok" -
+mesmo padrao da memoria nativa) e em `scripts/install.ps1` (roda logo apos a instalacao, ainda no
+"copia uma linha"). PROVADO numa maquina isolada do zero (sem Python/uv no PATH, scratchpad
+sandboxed): a cadeia baixou o `uv`, provisionou Python 3.12 gerenciado e comecou a instalar o
+pacote - 3 bugs reais achados e corrigidos nesse processo (invocacao nativa via `Start-Process` em
+vez do operador `&`, que falhava silencioso em ambiente minimo; aspas manuais no argumento em vez
+de array, que cortava caminho com espaco ao meio; `--break-system-packages` exigido pelo Python
+gerenciado do `uv`, que se recusa a instalar direto sem a flag). O CONTRATO fail-soft (exit 0
+sempre, uma frase honesta se falhar, nunca trava) se confirmou em toda execucao testada.
+
+**2. O gate deixa de ser inerte pra quem nao tem mapa (`scripts/graph-usage-sensor.ps1`).** Cliente
+SEM mapa nenhum em disco continua sem poder ser bloqueado (nao da pra exigir o que nao existe -
+gerar custa modelo, decisao do operador) - mas agora a 1a varredura da sessao+escopo AVISA
+`[SEM-MAPA]` (o custo de varrer as cegas + o comando pra gerar o mapa), e fica calado dai em diante
+(aviso 1x por sessao+escopo, nunca repetido - aviso repetido vira ruido e o agente aprende a
+ignorar). Todas as protecoes existentes preservadas: escape apos 2 recusas quando ha mapa nao lido,
+killswitch por env var e por arquivo-sentinela, blindagem total (erro -> exit 0 libera), Read de
+arquivo unico nunca bloqueia. PROVADO PELO NEGATIVO com 4 fixtures novas em `scripts/smoke-test.ps1`
+(escopo `clients/<id>` isolado via novo param `-Root`, nunca toca `clients/` real): projeto sem mapa
+passa COM aviso na 1a chamada e SEM aviso na 2a; projeto com mapa nao lido recusa como sempre (sem
+regressao); payload quebrado libera silencioso, exit sempre 0.
+
+**3. Documentacao corrigida (onde dizia "opcional", agora diz "requisito", com o PORQUE de
+negocio).** `AGENTS.md` (raiz e oficina), `skills/setup-alia/SKILL.md`, `engine/tools.md`,
+`docs/product/PRD.md`, `CREDITS.md`, `.claude/rules/graphify-integration.md` (raiz, so-estudio) e
+`docs/CAPACIDADE-REAL.md` (addendum datado, selo do item 26 mantido - a ADOCAO real ainda exige
+historico de sessoes, nao muda so por causa de codigo novo).
+
+Nao mexeu: `.claude/agents/**`, `state.json`, `clients/*/squad/**`, `clients/*/loops.yaml`,
+`engine/rsi/**`, `scripts/rsi-*.ps1`, `scripts/response-guard.ps1`, `scripts/squad-bridge.ps1`
+(fronteira do mandato).
+
+## [1.49.0] - 2026-08-10
+
+MINOR - Conserta o lider que nao podia liderar. Defeito medido por um teste de instalacao limpa:
+todo Squad montado seguindo a DOCUMENTACAO do produto (nao a pratica ja rodada dos 47 agentes reais
+da instancia) nascia com o Gateway em camada B - sem `Task`/`Agent` nas tools, sem modelo forte -
+invalidando a promessa central ("crie o time do seu cliente"). Rodar `scripts/squad-bridge.ps1`
+contra o demo oficial `studio.example/clients/acme-saas` (o que `AGENTS.md` manda usar para testar)
+confirmou: Maya, a Squad Owner, saia camada B/sonnet, sem `Task`, com a secao "voce e folha" - o
+oposto da propria persona dela, que descreve rotear Tasks.
+
+Causa raiz em tres camadas, todas corrigidas:
+
+**1. Parser e leitura (`scripts/squad-bridge.ps1`).** `Read-SimpleYaml` so entendia chave:valor
+flat e listas indentadas - nunca leu o mapa aninhado `agent: { id: maya, layer: A, ... }`, o unico
+formato que o exemplo oficial usa. Toda a config de Maya (role, domain, layer) virava silencio, e
+`Get-ScalarValue $data 'camada' 'B'` caia no default B para TODO MUNDO, inclusive o Gateway. Ganhou
+suporte a mapa aninhado de um nivel (achata pro topo, sem sobrescrever chave flat real) e a cadeia
+de resolucao de camada: campo canonico `camada` -> sinonimo `layer` -> tier de modelo
+(`model`/`tier`: strong=A, standard=B, fast=C) -> override de `squad.yaml` (`camada`/`layer` por
+membro) -> Gateway declarado em `squad.yaml` (`gateway: <id>` de topo | `gateway: true` por membro |
+`squad.owner`), que SEMPRE vence e forca A, mesmo em conflito com o yaml individual (avisa quando
+corrige). Camada indeterminavel em tudo isso -> nao assume B em silencio, avisa no resumo
+(fail-loud). `Read-SquadYamlCamadas` virou `Read-SquadYamlInfo` (mesma fonte, agora tambem resolve
+o Gateway pelas 3 formas medidas no parque).
+
+**2. Contrato documentado (`engine/agents/squad-creator.md` + `.yaml`).** O contrato declarava os
+campos de `agents/{id}.yaml` sem citar `camada` nenhuma - quem lia so a prosa nunca soube qual campo
+escrever. Nome canonico fixado: `camada` (A/B/C, flat no topo), com os sinonimos `layer` e o tier de
+modelo documentados e a ordem de precedencia inteira em `squad-creator.yaml#camada_field`. O passo
+`g` (Especificacao de Entrega + `knowledge/MAP.md` + grafo) existia SO no `.yaml`; agora tambem esta
+na prosa do `.md` como item 7 do protocolo - fechamento obrigatorio, nao surpresa de quem le so a
+config.
+
+**3. Rede de seguranca (`scripts/validate-workflow.ps1`).** O check `folha-sem-delegar` so
+confirmava a metade da regra: que camada B/C NAO carrega `Task`. Nunca cruzava `squad.yaml` (quem e
+o Gateway) contra as tools do agente gerado para confirmar que a camada A TINHA `Task` - por isso o
+defeito passou pelo smoke sem ser pego. Dois checks novos, `gateway-forte` e `gateway-com-task`,
+fecham a outra metade: o Gateway declarado em `squad.yaml` tem que ter `model: opus` e `Task` nas
+tools, ou FAIL nomeando o agente. `Get-SquadGateway` ganhou a mesma resolucao das 3 formas do bridge
+(mantida em sincronia, mesma precedencia).
+
+Prova pelo negativo, as 6:
+1. Bridge sobre o demo oficial (copia isolada) -> Maya sai `camada A, model opus`, tools com `Task`,
+   sem a secao "voce e folha" - antes do conserto saia B/sonnet/sem Task/com folha (reproduzido e
+   comparado byte a byte).
+2. Especialista de camada B do mesmo demo (Iris) -> continua sem `Task` nas tools (a regra de folha
+   nao afrouxou).
+3. Conflito plantado (squad.yaml declara Maya Gateway, `maya.yaml` diz `layer: B`) -> squad.yaml
+   vence, sai `camada A`, e o resumo avisa: "squad.yaml declara este id como Gateway mas a camada
+   resolvida era 'B' - squad.yaml vence, forcado para A".
+4. `validate-workflow.ps1` contra o demo corrigido -> `gateway-forte` e `gateway-com-task` PASS para
+   Maya; tools de Maya editadas a mao pra tirar `Task` -> os dois checks caem em FAIL nomeando
+   `acme-saas-maya`, provando que a rede pega o defeito plantado.
+5. Bridge `-DryRun` (spawn e context-load) contra os 47 agentes REAIS da instancia (todos os
+   Clients em producao + o lab) -> `gerados: 0, atualizados: 0, inalterados: 47` nos dois
+   modos - byte a byte identico ao que ja existia, zero regressao (esses squads ja usavam `camada`
+   flat e ja funcionavam certo).
+6. `validate-workflow.ps1` na instancia real -> `PASS: 223, FAIL: 0`, incluindo `gateway-forte`
+   PASS=6/FAIL=0 e `gateway-com-task` PASS=6/FAIL=0 (os 6 Gateways reais: nexus, zodiac, strategos,
+   evelyn, brand-strategy-lead, mentor).
+
+Placar: `scripts/smoke-test.ps1` (oficina) 201 PASS / 0 FAIL, ALL GREEN. `scripts/smoke-test-studio.ps1`
+59 PASS / 1 FAIL (o 1 e o conhecido "Adocao do mapa" - metrica de sessao, nao deste defeito).
+`docs/CAPACIDADE-REAL.md` item 5 (gerador `squad-bridge.ps1`) nao mudou de selo: a claim medida la
+("model vem da matriz de camada", 94 arquivos em disco) ja era verdadeira para os 47 agentes reais,
+que usam `camada` flat desde sempre - o defeito so se manifestava no caminho documentado/demo, agora
+tambem corrigido.
+
+## [1.48.0] - 2026-08-10
+
+MINOR - O motor de RSI ganha 5 pecas reais (o pilar deixa de ser meia-boca). Motivacao: o RSI e
+pilar declarado do produto e so tinha 2 elos vivos - digest de sessao (`session-reflection.ps1`)
+e promocao com CONFERE (`promote-memory.ps1`). Faltavam o canal de frustracao do dono (parado
+desde 14/jun), a deteccao de padrao recorrente, e o estagio APLICA (versionar/testar/reverter
+melhoria no proprio sistema). Uma pesquisa profunda do estado da arte (Darwin Godel Machine da
+Sakana, Voyager, Reflexion, GEPA/DSPy, AgentOptimizer) definiu 4 principios inegociaveis que
+regeram o desenho: arquivo nunca substituicao (versao anterior sempre preservada, rollback
+trivial), portao de teste obrigatorio (nada promove sem provar valor pelo negativo), held-out
+contra decisoes ja tomadas, e estrutura sobre instrucao (script/trava, nunca so paragrafo em
+markdown). Todas as 5 pecas foram provadas pelo negativo NESTA sessao, nao so lidas em codigo.
+
+**PECA 1 - o portao do estagio APLICA (`scripts/rsi-apply.ps1`, NOVO)**, o mais importante.
+Candidato de melhoria nasce em `engine/rsi/_candidates/<slug>/` (manifest + arquivo proposto +
+caso de teste especifico) - NUNCA edita o arquivo vivo direto. `-Candidate <slug>` roda o portao:
+(a) teste especifico contra o vivo, tem que FALHAR (senao: proposta desnecessaria, rejeitada);
+(b) aplica a variante numa COPIA TEMPORARIA isolada (`scripts/_rsi-lib.ps1`, NOVO - junction NTFS
+para os ~3.5GB de dados de Client que nao mudam, copia real so das pastas pequenas/evolutivas);
+(c) teste especifico contra a copia, tem que PASSAR; (d) os dois smokes (studio + oficina) contra
+a copia, nada pode regredir vs baseline do vivo; (e) held-out (PECA 4); (f) so entao promove: o
+vivo antigo vai para `engine/rsi/_archive/<data>-<slug>/original` (nunca se apaga), o candidato
+assume o lugar, `LINEAGE.md` registra a cadeia. Se o alvo e NUCLEO (constitution/glossary/
+persona/orchestration), o portao PARA no passo (f) e exige `-ApproveCore` explicito - nucleo
+nunca se auto-modifica sem humano, isso e comportamento (exit code 2 distinto), nao aviso.
+`-Rollback <slug>` restaura o arquivo arquivado por cima do vivo. Provado pelo negativo com 4
+candidatos de demonstracao (aplicados e depois limpos): candidato bom promoveu com LINEAGE.md e
+o rollback bateu byte a byte (hash SHA256 identico); candidato que injetava o termo legado banido
+foi rejeitado por regressao real no smoke (1 -> 2 arquivos afetados); candidato cujo teste ja
+passava no vivo foi rejeitado como desnecessario sem sequer criar copia; candidato de nucleo
+(persona.md) parou no passo de promocao sem tocar o arquivo vivo.
+
+**PECA 2 - o canal do dono (`scripts/session-reflection.ps1`, EDITADO)**. O mesmo hook de
+SessionEnd que gera o digest agora tambem varre a transcricao por atrito real do operador -
+regex/heuristica DETERMINISTICA (sem chamada de modelo: o hook roda no fim de toda sessao, com
+timeout). A lista de gatilhos foi calibrada lendo `memory/_proposals/_archive/` de verdade (nao
+inventada) - linguagem forte, correcao repetida, qualidade reprovada, processo travado. Escaneia
+a mensagem CRUA do usuario (antes da lista anti-captura do digest, que descartaria justamente
+"nao funciona" como ruido de ferramenta). Cada atrito vira item estruturado
+`memory/_proposals/friction-<data>-<id8>.md`; `reflect-check.ps1` (EDITADO, SessionStart) conta
+os itens pendentes junto com os digests. Provado com transcricao sintetica: frustracao plantada
+gerou o arquivo com severidade 3 e 4 tipos batidos; transcricao limpa nao gerou nada.
+
+**PECA 3 - o detector de recorrencia (`scripts/rsi-patterns.ps1`, NOVO)**. Varre digests e itens
+de atrito (staging + `_archive`) e detecta o mesmo tipo de item em 3+ sessoes DISTINTAS - "padrao,
+nunca incidente", agora com maquina. Dois classificadores: le o campo `tipo:` ja estruturado dos
+itens de atrito (PECA 2); e um classificador por palavra-chave sobre o texto livre dos digests,
+calibrado nos padroes que a casa ja sabia serem recorrentes (delegacao furada, numero publico
+fossil). NUNCA aplica nada - so relata (`-Write` grava o relatorio em `memory/_proposals/`, sem
+efeito colateral por padrao). Validado RETROATIVAMENTE contra o historico real (77 digests):
+achou "delegacao-furada" em 8 sessoes distintas (02/08 a 06/08/2026) - o padrao real que a casa
+so tinha em memoria solta - e "numero-publico-fossil" em 2 sessoes, reportado honestamente como
+abaixo do minimo, nao escondido.
+
+**PECA 4 - o held-out (`scripts/rsi-heldout.ps1`, NOVO)**. 6 assercoes deterministicas fixas que
+representam decisoes ja tomadas pelo dono, lidas de `docs/CLAIMS.md` (vetos/claims vigentes) e
+das LEIS ja registradas em prosa - nenhuma inventada: o cargo corporativo vetado nao reaparece na
+persona; a headline vigente nao some de `BRAND.md`; nenhum arquivo de motor tem emoji; nenhum tem
+caractere fora de ASCII; a LEI da superficie publica e o script que a mede continuam presentes; a
+oficina continua sem ser repositorio git. `rsi-apply.ps1` chama este script no passo (e).
+`-SelfTest` planta uma violacao de cada assercao numa copia isolada e confirma que SO aquela
+assercao falha - rodado e verde, as 6 pegam a propria violacao plantada sem ruido cruzado.
+
+**PECA 5 - reflexao por tipo de tarefa (`scripts/task-context.ps1`, EDITADO)**. Padrao Reflexion,
+minimo viavel: notas de memoria promovidas ganham campo opcional `aplica_a: <tipo>`.
+`task-context.ps1` ganhou `-TaskType <tipo>` - devolve as notas cujo `aplica_a` casa com o tipo
+pedido (match simples por campo, sem banco, sem embedding). Duas notas reais migradas:
+`memory/delegar-exige-classificar-o-dominio.md` (`aplica_a: delegacao`) e
+`memory/lp-vitrine-de-designer-aclamado.md` (`aplica_a: landing`), ambas devolvidas corretamente
+quando o tipo casa; tipo inexistente devolve mensagem honesta, nao erro.
+
+DOCS: `engine/rsi/rsi.md` reescrito para descrever o motor REAL (as 5 pecas, caminhos, limite
+honesto do que e automatico vs o que exige humano). `docs/CAPACIDADE-REAL.md` - itens 16, 21, 22
+mudaram de selo com a prova nova colada (16 e 22: FUNCIONA; 21: FUNCIONA parcial, 1 de 4
+gatilhos); placar FUNCIONA 22 -> 25, NAO EXISTE 10 -> 7. `docs/product/PRD.md` - secao 12 (RSI) e
+o roadmap (secao 19) atualizados para refletir o novo estado, sem otimismo sobre o que ainda
+falta (3 gatilhos de deteccao restantes; o estagio PROPOE - escrever o candidato - continua
+manual por desenho, o detector nunca aplica nada sozinho).
+
+Excluido do escopo por mandato explicito (outra frente trabalhando em paralelo):
+`clients/*/loops.yaml`, `engine/governance/loops.catalog.yaml`, `skills/loop-designer/**`,
+`.claude/agents/**`, `state.json`, `scripts/response-guard.ps1`,
+`scripts/graph-usage-sensor.ps1`, `scripts/squad-bridge.ps1`, `clients/*/artifacts/**`.
+
+Higiene: smoke-test-studio.ps1 ALL GREEN salvo a 1 falha deliberada (adocao do mapa, ja existente
+antes deste trabalho); smoke da oficina ALL GREEN (203 PASS, 0 FAIL); sem termo banido; sem
+acento em arquivo de maquina (achado e corrigido durante o trabalho: 1 acidental em `rsi.md`).
+
+---
+
+## [1.47.0] - 2026-08-10
+
+MINOR - Corte das rotinas fantasma. Mandato do CEO: das 7 rotinas do catalogo de loops agendados
+(`engine/governance/loops.catalog.yaml`), medido por grep na base inteira que 6
+(health-check, ddd-drift-scan, evolution-scan, debt-scan, squad-report, deep-research) nunca
+tinham consumidor do proprio relatorio - nenhum script nem doc lia
+`knowledge/loop-reports/{id}-*.md`, e nenhuma delas jamais foi instalada no Task Scheduler
+(0 tarefas `AliaFlow-*` em 09/08/2026). So `memory-curator` tinha consumidor MEDIDO
+(`scripts/smoke-test-studio.ps1` chama `memory-curator.ps1` na secao de memoria).
+
+Decisao aplicada, rotina a rotina, pelo criterio do mandato (produz + roda de graca +
+faria falta em 30 dias):
+- **memory-curator** - FICA agendada. Unica com consumidor real e cost_class baixo (script puro).
+- **health-check, ddd-drift-scan, evolution-scan, debt-scan, squad-report** - CORTADAS do
+  agendamento (`loops.catalog.yaml`: `scheduled_loops` -> `manual_commands`). Os scripts
+  continuam em `scripts/`, sem cadencia nem instalacao; rodam sob demanda.
+- **deep-research** - CORTADA do agendamento (ja era so agente-driven; nunca teve mecanismo
+  `.ps1` de verdade, e sem freio de orcamento real). Fica capacidade sob demanda da skill
+  Loop Designer.
+
+Escopo do corte: `clients/*/loops.yaml` (as 6 rotinas mecanicas
+removidas da instancia; `memory-curator` instanciado `status: active`) +
+`studio/clients/alia-flow-lab/loops.yaml` (o proprio dogfood do lab, mesmo tratamento) +
+`engine/governance/loops.catalog.yaml` (scheduled_loops reduzido a 1 + `manual_commands` novo) +
+`engine/governance/loops.md` + `engine/features/loop-designer.md` +
+`engine/features/loop-designer.rules.yaml` (regras R1/R4/R5/R6 nao instanciam mais as rotinas
+cortadas para clientes novos) + `skills/loop-designer/SKILL.md` +
+`engine/features/deep-research-loop.md`.
+
+Ajuste de mecanismo, corrigido e depois revertido na MESMA versao (o caminho errado nao chegou a
+sair desta entrada): uma frente anterior tentou instalar `memory-curator` de verdade no Windows
+Task Scheduler via `scripts/install-loops.ps1 -Install` (achando e corrigindo no caminho um bug
+real - a Action registrada nao passava `-Client` para o script alvo). Chegou a registrar 6 tarefas
+reais (`AliaFlow-{client}-memory-curator` para cada Client + o lab, `Get-ScheduledTask`
+confirmando estado `Ready`) e a rodar `memory-curator.ps1 -Client {id}` manualmente para os 6,
+gravando `last_result` em cada `loops.yaml`. O CEO cortou isso por completo, ainda nesta versao:
+tarefa agendada no Windows "nao e pra existir" - e estado escondido na maquina, invisivel, nao
+viaja com o produto, dependencia de sistema operacional que o corte desta mesma entrada (das 6
+rotinas fantasma) ja deveria ter evitado por principio. As 6 tarefas foram desregistradas
+(`Get-ScheduledTask -like "AliaFlow-*"` -> 0). `scripts/install-loops.ps1` e `scripts/run-loops.ps1`
+foram REMOVIDOS do motor (o unico consumidor de ambos era o proprio agendamento que saiu).
+`scripts/budget-check.ps1` FICA - sem chamador ativo agora que `run-loops.ps1` sumiu, mas
+`rsi.yaml` (trigger `over-budget-path`, OPP-58) o documenta como o contador executavel por tras
+do gatilho de estouro de custo do RSI; apaga-lo regrediria esse gatilho a "declarado sem
+execucao". A razao que fica: `memory-curator` NAO precisa de agendador - `smoke-test-studio.ps1`
+ja chama `memory-curator.ps1 -Validade` toda vez que a prova roda, e a prova roda em todo
+trabalho relevante. Rotina que precisa rodar "de vez em quando" roda quando a prova roda; zero
+agendamento, zero estado fora do repositorio. `clients/*/loops.yaml`
++ o `loops.yaml` do lab tiveram o campo `mechanism` de `memory-curator` corrigido (nao mais
+"via Task Scheduler"); nenhum `status: pending_install` fantasma sobrou.
+
+Docs atualizados para refletir o corte (e o segundo corte, do agendamento): `docs/CAPACIDADE-REAL.md`
+(item 32 mudou de "NAO EXISTE" para "FUNCIONA" sem depender de Task Scheduler, placar de selo
+ajustado), `docs/product/PRD.md` (item 32 sai da lista "NAO EXISTE"/roadmap P1, contagem de 11
+para 10, selo sem mencao a Task Scheduler), `docs/CLAIMS.md` (linha "Loops agendados" removida -
+nao e mais capacidade pendente, e mecanismo intencionalmente sem agendador),
+`engine/MAP.md` (nota do deep-research-loop ajustada para "sob demanda").
+
+## [1.46.0] - 2026-08-09
+
+MINOR - A delegacao ganha uma camada de execucao: persona vira agente invocavel (OPP-42), o
+laboratorio ganha squad proprio, e a regua leva 8 consertos forenses. Motivacao medida: os 44
+especialistas do studio eram personas em markdown (`clients/*/squad/agents/*.md`) que nada
+tornava acionaveis - causa-raiz da lei "a coordenadora DELEGA, nunca executa" (Principio I) ter
+0% de aderencia em 81 turnos: delegar custava mais caro que executar direto, porque nao havia
+agente pra chamar.
+
+M1 - O GERADOR. `scripts/squad-bridge.ps1` (NOVO): le `clients/*/squad/{squad.yaml, agents/*.yaml,
+agents/*.md}` e gera especialistas acionaveis, dois modos, mesma fonte. `-Mode spawn` (padrao) -
+escreve `.claude/agents/{client}-{id}.md` com frontmatter YAML valido (name/description/tools/
+model) para harness com sub-agente nativo (Claude Code); `tools` filtrado contra a whitelist real
+e contra `.mcp.json` (tool de servidor inexistente e descartada, nunca inventada); `model` vem da
+matriz de camada (A->opus, B->sonnet, C->haiku). `-Mode context-load` - escreve
+`.claude/agents/{client}-{id}.context-load.md`, um briefing PORTAVEL sem frontmatter para harness
+SEM sub-agente nativo (Codex, OpenCode); o coordenador carrega o arquivo inteiro e VESTE o papel no
+proprio turno. Materializa o desenho de `opportunities/OPP-42-delegacao-portavel.md`. Idempotente
+(2a rodada nao duplica), UTF-8 sem BOM, erro num agente nao derruba o resto.
+
+M2 - A SAIDA. `.claude/agents/` (NOVO, 47 pares / 94 arquivos - antes NAO EXISTIA nenhum). Cobertura
+1:1 com os 47 Specialists declarados em `clients/*/squad/agents/*.yaml`. `.claude/agents/` e saida
+de GERADOR, nunca fonte - editar um arquivo la a mao e erro, porque a proxima rodada de
+`squad-bridge.ps1` sobrescreve sem aviso. Mudar um Specialist e editar a persona em
+`clients/{id}/squad/` e rodar o script de novo.
+
+M3 - O LABORATORIO GANHA SQUAD (NOVO). `clients/alia-flow-lab/squad/`: antes o motor do proprio
+produto nao tinha squad nenhum (a Alia executava direto quando o assunto era o motor). Agora tem
+gateway **NEXUS** (Engine Lead & Quality Gateway, camada A, brain full) + 6 Specialists camada B:
+**LATTICE** (arquitetura do motor), **WEAVER** (engenharia de agente), **WARDEN** (provas e
+travas do smoke, exclusivo do gate), **CANON** (leis e governanca), **ARCHIVE** (memoria/linhagem/
+grafo), **COURIER** (empacotamento e publicacao, exclusivo do publish). Cadeia de publicacao dura:
+qualquer entrega -> WARDEN (gate de prova) -> COURIER (publica). `alia-flow-lab` entrou no array
+`clients[]` de `state.json` como Client roteavel do studio.
+
+M4 - A REGUA CONSERTADA (auditoria forense, 8 defeitos). `scripts/smoke-test-studio.ps1`,
+`scripts/check-public-surface.ps1`, `scripts/response-guard.ps1`, `engine/governance/law-ledger.md`
+receberam correcoes; nasceu `scripts/law-ledger-check.ps1` (NOVO) - confere `law-ledger.md` contra
+o disco de verdade: reprova LEI sem entrada na coluna "onde vive" e reprova ponteiro
+`script.ps1:linha` cujo texto citado nao bate com a linha real (o levantamento antigo era mantido
+A MAO e tinha apodrecido - 20 das 29 leis apontavam so para um script que nao roda nesta instancia).
+`engine/governance/response-guard.yaml` saiu de `mode: aviso` para **`mode: bloqueio`** - decisao
+do CEO tomada; falta evidencia de log real operando em bloqueio sem falso-positivo (o proximo
+passo, nao esta ainda).
+
+M5 - A LEI DO FORMATO DE PLANO (mandato do CEO, 09/08/2026). `engine/agents/persona.md` ganhou:
+todo PLANO, DIAGNOSTICO, DECISAO ou RELATORIO DE STATUS sai como pagina HTML pronta para abrir
+(nunca parede de texto no chat), com TLDR direto no topo, e a Alia TERMINA e MOSTRA - nunca
+pergunta antes ("quer que eu faca?", "prefere A ou B?").
+
+M6 - O PLACAR (`scripts/smoke-test-studio.ps1`, medido): **58 PASS / 1 FAIL**. O 1 FAIL e
+DELIBERADO: adocao do mapa de conhecimento (Graphify) em 9,1% de 44 pares medidos, abaixo do alvo
+de 70% - vermelho de proposito ate a lei do grafo virar estrutura, nao prosa lida e ignorada.
+
+LIMITE CONHECIDO (nao e defeito de construcao, documentado em `docs/product/ARQUITETURA.md` secao
+6): um agente gerado por `squad-bridge.ps1` NAO fica acionavel na sessao que o gerou - o harness do
+Claude Code le a lista de sub-agentes na ABERTURA da sessao; agente novo em `.claude/agents/` so
+vale a partir da PROXIMA sessao. No meio da sessao corrente, a saida e o modo `-Mode context-load`.
+
+HONESTIDADE SOBRE O ESTADO: os 47 Specialists foram GERADOS mas NENHUM executou um trabalho real
+de ponta a ponta ainda - a validacao so pode acontecer em sessao NOVA (por causa do limite acima).
+Construido != provado. `docs/product/PRD.md` (secao 17, tabela de maturidade) registra a nova
+capacidade como PARCIAL, fora do escopo da auditoria formal de 04/08/2026, ate a proxima rodada de
+`CAPACIDADE-REAL.md` reconciliar.
+
+M7 - CONSERTO DE PRINCIPIO (mandato do CEO, 09/08/2026): a regra "sem acentos, sem emojis" nasceu
+como protecao TECNICA de encoding (PowerShell Get-Content/WriteAllText corrompe acento) mas foi
+generalizada demais e chegou a contaminar entregavel para humano - um relatorio HTML saiu sem
+acento e com portugues errado. Fronteira corrigida na fonte (`engine/agents/persona.md`, secao
+"Como eu falo", raiz e oficina, copias identicas) e propagada a `AGENTS.md` (raiz e oficina, a
+frase mais larga - "em qualquer arquivo OU RESPOSTA" - era o proprio furo) e `CLAUDE.md` (raiz):
+ARQUIVO DE MAQUINA (motor, scripts, skills, docs tecnica interna) continua ASCII; ENTREGAVEL PARA
+HUMANO (relatorio, HTML, copy, e-mail - `clients/*/artifacts/`, `brand/`) exige ortografia correta,
+portugues do Brasil acentuado ou ingles correto conforme o publico, sempre em UTF-8 com charset
+explicito. Auditoria do check de encoding (`scripts/smoke-test.ps1`, secao "Encoding: zero
+non-ASCII"): MEDIDO que o escopo ja poupava entregavel humano (nunca inclui `.html`, nunca varre
+`clients/*/artifacts/` de cliente real nem o `brand/` de ativos finais - so `studio.example/`,
+`engine/`, `scripts/`, `skills/`, `docs/` e os arquivos convencionais de raiz) - nenhum ajuste de
+escopo foi necessario, so a doutrina estava desatualizada. O entregavel que motivou o achado
+(`clients/<client>/artifacts/reconstrucao-1.0-2026-08-09.html`, fora deste repo, na instancia
+aplicada) foi reescrito com acentuacao correta, conferido byte a byte contra corrupcao (0 sequencia
+mojibake, 0 caractere 0xFFFD, UTF-8 valido).
+
+---
+
+## [1.45.0] - 2026-08-06
+
+MINOR - Motor de briefing, onda 1: a Alia ganha um freio de escopo e aprende a PERGUNTAR sem virar
+chata (OPP-78, cluster de 5 movimentos). Motivacao medida: o passo IDENTIFICA tinha a porta e nao
+tinha a fechadura - `engine/orchestration.md` dizia "Ambiguo? faz UMA pergunta cirurgica" e mais
+nada: nenhum criterio de quando o pedido e ambiguo o bastante, nenhum formato, nenhum teto de
+perguntas e nenhum destino para a resposta. A disciplina de julgamento parava no mesmo lugar
+("pergunte so quando os ramos divergem demais" - julgamento sem regua), e o
+`engine/governance/law-ledger.md` ja marcava L03 e L16 como `SEM TESTE`: a lei anti-pergunta era
+forte na prosa e inexistente na maquina, a lei pro-pergunta nao existia nem na prosa. O dano tem
+data: 30/jun/2026, "crie um prompt pra reconstruir a LP" virou uma landing inteira reconstruida sem
+confirmar, o CEO cravou "ta tudo descasado" e foi pedir em outro lugar. Aplicando a regua nova
+aquele pedido: DESFAZ 1, REFAZ 2, LEITURAS 1, DISTANCIA 2 = 6 de 8, acima do piso - a rodada teria
+disparado.
+
+M1 - A CAPACIDADE. Nova `skills/alinhamento/SKILL.md`: a regua de risco (4 fatores - DESFAZ, REFAZ,
+LEITURAS, DISTANCIA - de 0 a 2 cada, total de 0 a 8, piso 5), a arvore de decisoes e sua fronteira,
+o formato da pergunta (numerada, com opcoes, com a recomendacao da Alia e com a saida "voce decide"
+em toda pergunta) e o fechamento em 3 linhas (DECIDIDO / AINDA NAO DA PRA DECIDIR / FORA DO ESCOPO).
+Abaixo do piso ela executa: 0 a 2 sem anunciar suposicao, 3 ou 4 assumindo e DECLARANDO em uma linha
+com a troca barata oferecida. Gatilho duro independente da nota: `DESFAZ = 2` (publicado, enviado,
+apagado, pago) sobe direto para a rodada. Rodada de peso nao inventa apresentacao - reusa
+`skills/decision-canvas/SKILL.md` (LEI reuse-first).
+
+M2 - O ROTEADOR. Novo `.claude/commands/alinhar.md` (o segundo comando do motor, ao lado de
+`/alia`): curto de proposito, porque e lido em todo pedido de risco enquanto o motor da rodada so
+carrega quando a rodada acontece - a mesma disclosure progressiva do `engine/MAP.md`. Passo 0 e a
+escada de investigacao, sempre primeiro; so depois mede e roteia. Digitado na mao pelo operador, a
+rodada roda mesmo com nota baixa (pedido explicito vence a regua).
+
+M3 - A LEI, EMENDADA NO PROPRIO LUGAR (nao duplicada). `engine/constitution.md` ganhou, logo abaixo
+do bloco de escalonamento existente e sem alterar uma virgula dele, o bloco `> LEI (a fronteira
+fato-vs-decisao)`: a lei acima sempre proibiu perguntar FATO e nunca proibiu perguntar DECISAO -
+preferencia, prioridade, criterio de "bom", risco aceito, rumo de produto e gasto nao tem escada que
+alcance. `engine/orchestration.md`: o passo 1 do protocolo passou a MEDIR antes de ramificar
+(alinhamento e sub-passo do IDENTIFICA, nunca um sexto passo - os 5 nomes seguem intactos e L12
+segue COBERTA pelos mesmos testes), e o bloco LEI de escalacao ganhou a distincao que faltava
+(escalacao devolve o problema depois de 3 abordagens falhas; a rodada devolve uma ESCOLHA ja
+resolvida, ANTES do trabalho comecar, exatamente para nao gastar as 3). `engine/MAP.md` indexou a
+capacidade nova na biblioteca sob demanda - nada disso e carregado no boot.
+
+M4 - A PROVA (5 verificacoes novas, 198 -> 203). Em `scripts/smoke-test.ps1`, vizinhas do bloco
+"Regras inviolaveis (marcador LEI)" de proposito, porque L29 emenda a mesma lei que L03/L16
+declaram: a regua declara os 4 fatores e o piso NUMERICO (pareado skill <-> constituicao, para que
+um lado nao afrouxe sozinho - mata "quando achar necessario"); os tetos de 4 perguntas e 2 rodadas
+sao lidos como digito e conferidos contra 4 e 2 (o anti-tagarelice virando maquina); a escada de
+investigacao aparece como pre-condicao com os 3 degraus nomeados (memoria -> arquivos -> web); todo
+exemplo de pergunta carrega "Eu faria:" e a rodada declara a saida "voce decide" (pergunta sem
+recomendacao e a clausula que o Gate reprova); e a skill nao tem acento, emoji nem termo da lista
+proibida nos exemplos - a lista e LIDA de `engine/agents/persona.md`, nunca duplicada no teste. Os 5
+foram provados pelo negativo, um a um, quebrando o arquivo e conferindo o `[FAIL]`.
+
+M5 - A LEI NASCE COBERTA. Entrada `L29` em `engine/governance/law-ledger.md` (fronteira
+fato-vs-decisao) citando os 5 checks - a regra de formacao do ledger cumprida. L03 e L16 seguem
+`SEM TESTE` de proposito: a regua nao verifica se a escada foi esgotada, e promove-las seria mentir
+no ledger. Os ponteiros `arquivo:linha` de L04, L13, L14, L15, L16 e L17 foram corrigidos, porque as
+duas edicoes de nucleo deslocaram as linhas que eles apontavam.
+
+Fechamento: smoke da oficina 198 -> 203 verificacoes, ALL GREEN (GUARD-NUM de `docs/CLAIMS.md`
+atualizado no mesmo movimento); baseline do nucleo regravado com `guard-core.ps1 -AllowCore` (as
+duas edicoes de nucleo foram intencionais e ficam registradas). Estudo de origem, com a leitura do
+repo `mattpocock/skills` e os tres incidentes da casa que calibraram o piso, em
+`research/briefing-engine/ESTUDO.md`.
+
+Escopo declarado, nao escondido: esta e a ONDA 1. Guardar a resposta na Task (campo `briefing` no
+`register-task.ps1` + a regua re-injetada pelo hook de decisao) e a onda 2; `/explica` e
+`/questionario` sao a onda 3 - o roteador ja cita os dois e diz, na propria tabela, que ainda nao
+estao instalados e o que fazer no lugar. O `wayfinder` do Matt fica de fora por decisao registrada
+(exige controle de tarefas com arestas de bloqueio, que a casa recusou); dele entram so as 3 linhas
+de fechamento. Divida consciente: nenhuma guarda checa se a NOTA da regua foi HONESTA - um agente
+pode pontuar baixo para justificar o que ja queria fazer. Isso e julgamento, nao formato; o que a
+onda 2 compra e a AUDITABILIDADE (a nota gravada na Task, visivel no Mission Control).
+
+## [1.44.0] - 2026-08-04
+
+MINOR - O mapa, a memoria e a linhagem param de ser fe e viram medida (OPP-76, cluster de 4
+movimentos). Motivacao: a auditoria interna de 04/08 mediu o veredito "projetado com rigor, ligado
+por lembrete" - a LEI do grafo estava escrita em 3 lugares do motor e registrada como COBERTA no
+law-ledger, mas `grep "graph" scripts/smoke-test-studio.ps1` devolvia ZERO ocorrencias: a guarda so
+rodava contra o cliente-demo. Pior, ela era falsificavel (o unico criterio era "existe
+GRAPH_REPORT.md e nodes > 0"), e 2 dos 5 grafos de cliente eram JSON escrito a mao que passava.
+
+M1 - A GUARDA DO MAPA. `scripts/graph-check.ps1` reescrito: classifica cada Client em OK / STALE /
+FAKE / FALTA. Autenticidade e o schema node-link real do graphify (directed+multigraph+links com
+source/target, nos com id+community+procedencia, mais graph.html) - JSON a mao nao passa mais.
+Podridao e o mtime do graph.json contra os arquivos-fonte da base (`-MaxNewerFiles`, default 10).
+`-Refresh` tenta a rota SEM custo de modelo (`graphify update`); `-AllowStale` rebaixa podridao a
+aviso. A propria fixture `studio.example/clients/acme-saas/.../graphify-out/` era FALSA e foi
+corrigida. A guarda passou a rodar contra os 9 Clients REAIS no smoke da instancia.
+
+M2 - A ADOCAO DA LEI PASSA A SER MEDIDA. Novo `scripts/graph-usage-sensor.ps1` (hook PreToolUse,
+matcher `Read|Grep|Glob|Bash`) anota em ledger append-only `studio/graph-usage-log.jsonl` dois
+eventos e mais nada: leitura de mapa (kind=map) e varredura (kind=scan). Nao bloqueia, nao julga,
+nunca grava conteudo de arquivo nem linha de comando. Novo `scripts/graph-usage.ps1` e o contador:
+a unidade e o par (sessao, escopo) - ler o grafo de um Client nao autoriza varrer outro as cegas.
+Alvo >= 70% com amostra minima de 5 pares. Entra MEDINDO, nao punindo: o que reprova hoje e o hook
+LIGADO (projetado-mas-desligado reprova), a taxa fica como AVISO ate haver historico.
+
+M3 - MEMORIA COM VALIDADE NO TEMPO. `scripts/memory-curator.ps1` ganhou `-Validade`: le os DOIS
+cofres de notas do operador (que ate entao se ignoravam - 105 notas) e deriva o estado de cada fato
+(VIGENTE / VENCIDO / SUPERSEDIDO) de campos opcionais no cabecalho (valido_de, valido_ate,
+substituido_por, substitui, fonte e o escape `validade: registro`), com os legados (status:
+superseded, expires:) lidos como sinonimo. Migracao suave: nota sem nenhum campo continua VIGENTE -
+nenhuma das 105 precisou ser tocada. Somente leitura, com uma unica escrita cirurgica possivel
+(`-Fechar <slug> -Aplicar`, com backup datado). So `[FATO-MORTO-VIVO]` reprova; os outros 3 achados
+sao sinal. Doutrina em `engine/governance/memory-types.md`, spec em
+`research/graph-engineering/spec-memoria-com-validade.md`. Fecha o caso COO sem precisar de um veto
+escrito a mao para cada fato que morre.
+
+M4 - O LEDGER LIDO COMO GRAFO. Novo `scripts/lineage-graph.ps1` (somente leitura): `-Impact` (o que
+depende disto), `-Trace` (de onde veio, elo por elo ate a raiz), `-Health` (a saude do rastro em
+numeros) e `-Html` (o mesmo mapa como pagina autocontida). As arestas saem de base_artifact ->
+artifact e so valem quando o produtor e ANTERIOR no tempo. Zero servidor, zero banco.
+
+Fechamento: smoke da oficina 179 -> 198 verificacoes (GUARD-NUM de docs/CLAIMS.md atualizado); smoke
+da instancia 45 -> 50, e passou a ter a primeira ocorrencia de "graph" da sua historia. 3 leis novas
+no `engine/governance/law-ledger.md` (L26 mapa autentico e em dia, L27 adocao medida, L28 fato de
+memoria se marca, nunca se apaga), todas nascendo COBERTA com o teste citado; L13 ganhou os testes
+de linhagem. Hook PreToolUse registrado em `.claude/settings.json` e propagado a instancia pelo
+mergeDirs do updater. Dois defeitos reais consertados na integracao: `memory-curator -Validade` so
+achava os cofres quando rodava da oficina (derivava a instancia como "dois niveis acima" sempre, e
+saia com "nenhum cofre encontrado" quando o smoke da instancia o chamava) e `register-task.ps1`
+calculava o id novo por CONTAGEM - a causa de nascimento do id duplicado no ledger; passou a partir
+do MAIOR id existente e a avancar enquanto colidir.
+
+Divida declarada, nao escondida: STALE entra como AVISO (regenerar grafo de cliente real custa
+modelo e e decisao do operador) e os 5 Clients sem mapa legitimo hoje entram como RATCHET em
+`studio/graph-map-baseline.txt` - qualquer nome NOVO fora dessa lista reprova na hora, e a lista so
+pode encolher. Ponteiro morto no rastro (3) segue AVISO: reprovar por divida antiga nao pega
+regressao nova.
+
 ## [1.43.0] - 2026-08-04
 
 MINOR - Auditoria de capacidade real: o produto media o que anunciava contra o que de fato
@@ -165,7 +769,7 @@ reescrita, nao copia literal - nao exige a clausula de dupla atribuicao do MIT d
 ## [1.42.1] - 2026-08-03
 
 PATCH - Exclusao pontual no guard de termo legado (secao g do smoke da instancia), motivada por
-um artefato real caindo no scan: `clients/farina/artifacts/auditoria-delegacao-2026-08-03.html`,
+um artefato real caindo no scan: `clients/<client>/artifacts/auditoria-delegacao-2026-08-03.html`,
 um painel executivo interno produzido para o CEO que narra a absorcao do aiox (assunto que o
 proprio CREDITS.md ja credita abertamente). scripts/smoke-test-studio.ps1 (secao g) ganhou a
 exclusao `clients/*/artifacts/` na mesma classe das ja isentas opportunities/, research/ e
@@ -236,7 +840,7 @@ update-engine.ps1 / git-sync.ps1 seguem manuais, fora do escopo deste cluster).
 ## [1.41.0] - 2026-08-02
 
 MINOR - Enforcement de delegacao no ponto de decisao (OPP-74). Incidente recorrente flagrado
-pelo CEO em 02/ago (mOS): a Alia ia mapear codigo do cliente na mao com grafo pronto, e ia
+pelo CEO em 02/ago (num Client real): a Alia ia mapear codigo do cliente na mao com grafo pronto, e ia
 executar auditoria de dominio em vez de delegar. Causa-raiz: a lei DELEGA morava so em prosa
 de boot (persona/orchestration) e dilui em sessao longa - mesmo padrao do veto COO, que so
 parou de reincidir quando virou guard de maquina. Tres entregas:
@@ -849,7 +1453,7 @@ auditoria pedida pelo CEO (02/jul) por problemas e rotas desnecessarias no motor
   (reflection-inbox-{data}-{id8}.md); duas sessoes no mesmo dia nao apagam mais o digest uma
   da outra (antes: WriteAllText no mesmo nome por data = perda silenciosa de aprendizado).
 - promote-memory.ps1 (anti-apodrecimento): avisa [ORFAO] para qualquer .md em _proposals/ fora
-  dos padroes prop-*.md / reflection-inbox-*.md. Incidente real: 2 propostas do Dott gravadas
+  dos padroes prop-*.md / reflection-inbox-*.md. Incidente real: 2 propostas de um Client gravadas
   como proposta-*.md ficaram 2 dias invisiveis para a promocao, sem nenhum aviso. O loop
   SINALIZA, nao apodrece. session-reflection/SKILL.md agora exige o prefixo prop- explicito.
 - package-release.ps1 (vazamento no pacote publico): o /XD do robocopy excluia "product"
@@ -962,7 +1566,7 @@ A geracao nao e flag do CLI graphify (so install/path/explain/query); e a SKILL 
 roda (detecta -> extrai estrutural+semantico LOCAL -> build/cluster -> graph.json + GRAPH_REPORT.md +
 graph.html em graphify-out/). engine/tools.md ganha a secao "Como gerar o grafo" com os passos + a nota
 honesta (depende do agente rodar; auto-geracao no onboarding = evolucao futura). PROVADO end-to-end no
-Studio Farina: cliente farina graphado (39 nos, 53 arestas, 6 comunidades) - o Graphify deixou de estar
+Studio Farina: um Client do estudio graphado (39 nos, 53 arestas, 6 comunidades) - o Graphify deixou de estar
 dormente no estudio.
 
 ---

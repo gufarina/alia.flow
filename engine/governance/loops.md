@@ -43,22 +43,36 @@ respondem no instante em que algo acontece.
 Rodam em cadencia fixa, independentemente de evento. Sao a rotina de saude: pegam o que um
 gatilho pontual nao ve - acumulo, afastamento lento, ausencia de progresso.
 
-| id | Cadencia padrao | Owner | Funcao |
-|----|-----------------|-------|--------|
-| `health-check` | diaria | Squad Owner | o projeto esta vivo e consistente? |
-| `ddd-drift-scan` | diaria | Squad Owner | entregaveis/codigo se afastando da linguagem ubiqua? |
-| `deep-research` | diaria | Alia | atualiza knowledge do dominio + propoe RSI |
-| `evolution-scan` | semanal | Alia | o projeto avancou desde o ultimo ciclo? (estagnacao -> bottleneck) |
-| `debt-scan` | semanal | Alia | Concerns marcados que nunca foram resolvidos |
-| `squad-report` | semanal | Squad Owner | status que a Alia (Tier 2) revisa |
-| `memory-curator` | semanal | Alia | memorias/regras consolidadas; stale arquivado (nunca deletado) |
+> CORTE (10/08/2026, mandato do CEO): das 7 rotinas originalmente no catalogo, so `memory-curator`
+> segue tendo consumidor real medido (`scripts/smoke-test-studio.ps1` chama `memory-curator.ps1
+> -Validade`) e roda de graca (script puro, sem custo de modelo). As outras 6 nao tinham nenhum
+> leitor do proprio relatorio (grep em toda a base nao achou consumidor de
+> `knowledge/loop-reports/{health-check,ddd-drift,evolution-scan,debt-scan,squad-report}-*.md`);
+> rodar sozinhas so acumulava arquivo. Elas nao desapareceram: viraram **comando manual** (rodar
+> o `.ps1` quando quiser, sem cadencia nem agendador) - ver `loops.catalog.yaml` secao
+> `manual_commands`. `deep-research` e o unico caso a parte: e agente-driven (custa modelo) e nunca
+> teve freio de orcamento real em producao; fica como capacidade sob demanda da skill Loop Designer,
+> fora do agendador. **Segundo corte, mesmo dia**: o Windows Task Scheduler tambem saiu por
+> completo - era estado escondido na maquina (invisivel, nao viaja com o produto). `memory-curator`
+> nao roda mais via runner nem via tarefa agendada: `smoke-test-studio.ps1` ja o chama toda vez que
+> a prova roda, e a prova roda em todo trabalho relevante. Rotina que precisa rodar "de vez em
+> quando" roda quando a prova roda - zero agendamento, zero estado fora do repositorio.
 
-> Cadencias sao *padrao*; o operador ajusta. Cada loop agendado tem um mecanismo real (`scripts/*.ps1`)
-> - um loop sem mecanismo e uma promessa vazia, e o Quality Gate reprova. Por padrao a Alia roda os
-> agendados SOB DEMANDA (a skill Loop Designer sugere proativamente quando devido; o operador aceita,
-> a Alia roda via `scripts/run-loops.ps1` - 1 passada, 1 resumo). O Task Scheduler
-> (`scripts/install-loops.ps1`) e OPCIONAL, para quem quer execucao sem sessao aberta. Governanca nao
-> exige infra de SO nem que o operador rode script na mao.
+| id | Cadencia padrao | Owner | Funcao | Estado (10/08/2026) |
+|----|-----------------|-------|--------|----------------------|
+| `memory-curator` | semanal | Alia | memorias/regras consolidadas; stale arquivado (nunca deletado) | roda via `smoke-test-studio.ps1` (sem agendador) |
+| `health-check` | manual | Squad Owner | o projeto esta vivo e consistente? | comando manual |
+| `ddd-drift-scan` | manual | Squad Owner | entregaveis/codigo se afastando da linguagem ubiqua? | comando manual |
+| `evolution-scan` | manual | Alia | o projeto avancou desde o ultimo ciclo? (estagnacao -> bottleneck) | comando manual |
+| `debt-scan` | manual | Alia | Concerns marcados que nunca foram resolvidos | comando manual |
+| `squad-report` | manual | Squad Owner | status que a Alia (Tier 2) revisa | comando manual |
+| `deep-research` | sob demanda | Alia | atualiza knowledge do dominio + propoe RSI | capacidade da skill, nao agendada |
+
+> Cadencia e *padrao*; o operador ajusta. Todo loop `status: active` tem um mecanismo real
+> (`scripts/*.ps1`) - um loop sem mecanismo e uma promessa vazia, e o Quality Gate reprova. O
+> agendado sobrevivente NAO tem runner nem Task Scheduler: `memory-curator.ps1 -Validade` roda
+> dentro de `smoke-test-studio.ps1`, na mesma invocacao que ja valida a instancia inteira. Os
+> comandos manuais rodam direto: `powershell scripts/{id}.ps1 -Client {id-do-cliente}`.
 
 ## Contrato de 6 elementos por loop (OPP-57)
 
@@ -83,11 +97,12 @@ normal (validador semantico foi cortado por YAGNI - ver OPP-57).
 Os tres sinais que a governanca caca, em ordem de urgencia:
 
 - **Drift de DDD** - entregaveis/codigo se afastando da linguagem e dos bounded contexts do
-  Client. Sinal precoce de erosao de qualidade. Pego por `drift-on-commit` (imediato) e
-  `ddd-drift-scan` (acumulado).
+  Client. Sinal precoce de erosao de qualidade. Pego por `drift-on-commit` (imediato, evento real)
+  e, sob demanda, pelo comando manual `ddd-drift-scan` (acumulado; ver corte acima).
 - **Estagnacao** - projeto sem evolucao no periodo. Sinal de bottleneck que a Alia precisa
-  destravar. Pego por `evolution-scan`.
-- **Debito** - Concerns liberados com ressalva que nunca viraram correcao. Pego por `debt-scan`.
+  destravar. Pego sob demanda pelo comando manual `evolution-scan` (ver corte acima).
+- **Debito** - Concerns liberados com ressalva que nunca viraram correcao. Pego sob demanda pelo
+  comando manual `debt-scan` (ver corte acima).
 
 ## Memoria e RSI
 

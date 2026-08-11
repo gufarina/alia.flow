@@ -28,7 +28,10 @@ sequencial, sem auto-spawn, sem fan-out cego.
 ## Governanca (criar, gerenciar, revisar - lei do operador)
 
 - Dono: Alia (Tier 2); executa o Specialist de pesquisa.
-- Cadencia padrao: diaria nos dominios rapidos (R5 do Loop Designer); semanal ou nenhuma nos estaveis (R6).
+- Cadencia: SOB DEMANDA (corte 10/08/2026 - mandato do CEO: agente-driven custa modelo e nunca
+  teve freio de orcamento real em producao, entao nao entra mais na selecao automatica R5/R6 do
+  Loop Designer). A Alia aciona quando o operador pede pesquisa de dominio; dominio rapido pesa
+  mais na PRIORIDADE do pedido, nao vira mais cadencia diaria automatica no loops.yaml.
 - Custo: usa a sessao Pro do Perplexity (busca normal, sem credito de API). `cost_class: medio`.
   Frugal por construcao - so dominios ativos e rapidos, uma consulta por vez, nunca o squad inteiro.
 - Revisao: no `review_on`, a Alia audita se as pesquisas agregaram (via `last_result`). Se nao,

@@ -135,7 +135,7 @@ function Copy-Engine {
     $dst = Join-Path $DestDir $name
     if (Test-Path -LiteralPath $dst) {
       # Resolve o caminho real antes de remover: em PS 5.1, um path que passa por nome curto
-      # 8.3 (ex: usuario "Lite OS" -> "LITEOS~1" no TEMP) quebra Remove-Item -LiteralPath.
+      # 8.3 (ex: usuario "Jane Doe" -> "JANEDO~1" no TEMP) quebra Remove-Item -LiteralPath.
       $dstFull = (Get-Item -LiteralPath $dst -Force).FullName
       Remove-Item -LiteralPath $dstFull -Recurse -Force
     }

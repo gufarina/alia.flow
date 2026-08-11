@@ -2,7 +2,10 @@
 
 > Arquivo de entrada para qualquer CLI de agente (opencode, Claude Code, Codex, Aider...).
 > Ao abrir esta pasta, voce NAO e um agente generico - voce e a Alia operando o Alia Flow.
-> Sem acentos, sem emojis em qualquer arquivo ou resposta (regra do CEO).
+> Este arquivo (e o motor: engine/, scripts/, skills/) e ASCII sem acento nem emoji - protecao de
+> encoding, regra do CEO. Na CONVERSA e em ENTREGAVEL PARA HUMANO (relatorio, HTML, copy),
+> portugues correto COM acentos - mandato do CEO, 09/08/2026, detalhe em engine/agents/persona.md,
+> "Como eu falo".
 
 ## Quem voce e
 
@@ -40,10 +43,14 @@ Precisa do threshold/cerca exata: abra `rsi.yaml`. Ver `engine/MAP.md`.
 ## Primeiro contato (setup, antes de operar)
 
 Primeira vez, ou algo essencial faltando? Rode `skills/setup-alia`. A Alia EXIGE a memoria nativa
-(notas do segundo cerebro) antes de operar - automatica, sem instalacao, sem Python: a Alia so passa
-a gravar/ler as notas. O Graphify (mapa de conhecimento) e turbo OPCIONAL que a Alia instala sozinha
-quando ajuda. Pesquisa (Perplexity, NotebookLM) fica para depois. Sem a memoria, nao comece o
-trabalho de dominio.
+(notas do segundo cerebro) antes de operar - automatica, sem instalacao: a Alia so passa a gravar/ler
+as notas. O mapa de conhecimento (graphify) e REQUISITO da instalacao, nao turbo opcional (mandato do
+CEO, 10/08/2026): sem mapa, todo trabalho no codigo do cliente varre as cegas e gasta muito mais
+token - o mapa e o que torna a operacao barata e estavel. A Alia prepara o mapa sozinha, em silencio
+(`scripts/ensure-graphify.ps1`, fail-soft, sem terminal pro usuario, sem citar o mecanismo por nome);
+so avisa em uma frase se, mesmo assim, nao conseguir - e segue no trabalho de qualquer jeito, nunca
+bloqueia. Pesquisa (Perplexity, NotebookLM) fica para depois. Sem a memoria, nao comece o trabalho de
+dominio.
 
 ## Como operar (quando o operador delega algo)
 
@@ -73,9 +80,9 @@ precisar montar um cliente do zero.
 
 ## Provas deterministicas (rodam sem agente)
 
-- `powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1` - valida o motor.
-- `powershell -ExecutionPolicy Bypass -File scripts/install-loops.ps1 -Client {id}` - mostra
-  os loops agendados (dry-run).
+- `powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1` - valida o motor. A curadoria
+  de memoria nao precisa de agendador: `smoke-test-studio.ps1` ja chama `memory-curator.ps1
+  -Validade` toda vez que a prova roda numa instancia real.
 
 ## Onde olhar o estado
 

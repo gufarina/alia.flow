@@ -22,7 +22,11 @@ protocolo ja falhou no passo DELEGA.
 > LEI: os 5 passos abaixo sao o ciclo de vida inviolavel de toda Task. Os nomes sao contrato com o
 > estado; pular um passo e desvio que o Gate reprova.
 
-1. **IDENTIFICA** - Client + Project da Task. Ambiguo? faz UMA pergunta cirurgica. *Sem Client = sem Task.*
+1. **IDENTIFICA** - Client + Project da Task. Depois das tres leituras do pedido, MEDE o risco de
+   errar o escopo pela regua de [skills/alinhamento](../skills/alinhamento/SKILL.md) e escolhe:
+   abaixo do piso executa e declara a suposicao; do piso pra cima roda UMA rodada de alinhamento
+   (max 4 perguntas, max 2 rodadas, cada uma com recomendacao) ANTES de registrar e delegar.
+   *Sem Client = sem Task.* *Alinhamento e sub-passo do IDENTIFICA, nunca um sexto passo.*
 2. **REGISTRA** - a Task no estado (`studio/state.json`) **antes** de delegar. *Sem registro = nao aconteceu.*
 3. **DELEGA** - ao Specialist **mais capaz** para a Task (roteamento por capacidade, abaixo). A Alia **nunca** executa dominio.
 4. **MONITORA** - cobra progresso e o **Artifact** (evidencia). Sem avanco em 3 abordagens -> escala.
@@ -67,15 +71,12 @@ o estado e os exemplos dependem deles.
 > e os 5 passos aplicados a dev (Story/AC/TDD); [qa-loop](workflows/qa-loop.md) e o sub-loop do passo
 > MONITORA quando o Gate da Fail. Nao existe um "segundo fluxo" - so este, vestido para o dominio.
 
-> LEI (fonte de verdade do cliente - 07/jul, dia das falhas de copy): antes de produzir QUALQUER
-> Artifact para um Client, quem produz CARREGA as fontes curadas dele (BRAND/PRD/persona/glossario)
-> na hierarquia da [governanca client-truth](governance/client-truth.md) - decisao do Operator >
-> fonte curada > doc interno > README/codigo. Peca publica so afirma claim do registro (numero
-> nunca se fabrica somando fontes; feature so LANCADA; tagline so a vigente, vetos respeitados).
-> Todo briefing de delegacao carrega as travas: nao re-delegar, criterio de encerramento
-> verificavel, fontes a ler antes, o que e proibido inventar. E o coordenador NAO produz artefato
-> de dominio: se existe Specialist da lente, delega - excecao so por ordem explicita do Operator,
-> registrada na Task.
+Fonte de verdade do cliente (07/jul, dia das falhas de copy): antes de produzir QUALQUER Artifact
+para um Client, quem produz carrega as fontes curadas dele. A doutrina completa - hierarquia de
+fonte, claims registry, as travas do briefing de delegacao, a excecao de execucao direta por ordem
+do Operator registrada na Task - vive em [governanca client-truth](governance/client-truth.md)
+(LEI 1 e LEI 2). Este paragrafo so amarra o protocolo de 5 passos a ela (poda 09/08/2026, law-ledger
+L15: era duplicata textual pura de L05+L06 - a lei em si continua viva, so a copia daqui saiu).
 
 ## Roteamento por capacidade (o coracao do DELEGA)
 
@@ -110,6 +111,16 @@ Regras duras do match:
 
 ## Delegacao = isolamento de contexto (doutrina)
 
+O Specialist de squad vira agente INVOCAVEL via `scripts/squad-bridge.ps1`, que gera
+`.claude/agents/{client}-{id}.md` a partir da fonte unica (`clients/*/squad/squad.yaml` +
+`agents/{id}.yaml` + `agents/{id}.md`) - arquivos GERADOS, nunca editados a mao (a proxima geracao
+sobrescreve). Dois modos, mesmo contrato (OPP-42, delegacao portavel): **spawn** (harness com
+sub-agente nativo, ex. Claude Code - o gerador escreve frontmatter YAML valido) e **context-load**
+(harness sem sub-agente nativo, ex. Codex/OpenCode - o coordenador carrega o briefing portavel e
+VESTE o papel, sem depender de spawn). LIMITE CONHECIDO: um agente gerado so fica acionavel em
+SESSAO NOVA (o harness le `.claude/agents/` na abertura da sessao); no meio da sessao, a saida e o
+modo context-load.
+
 Delegar nao e so escolher quem faz - e isolar o contexto. O coordenador despacha uma Task e recebe
 de volta um resultado limpo; ele NUNCA reprocessa o bruto que o sub-agente gerou para chegar la. Tres
 regras cravam esse isolamento:
@@ -132,31 +143,26 @@ regras cravam esse isolamento:
 
    A **folha nao re-delega**. Se um Specialist no nivel 2 percebe que a Task encosta noutro dominio,
    isso e **escalacao** de volta ao nivel 1 (o Owner re-roteia ou quebra em sub-Tasks), nunca uma
-   nova delegacao lateral a partir da folha. O porque: cap fixo evita recursao difusa (delegacao que
-   chama delegacao sem fim) e o estouro de contexto que vem com ela. Materializa **"uma Task, um
-   dono"** - cada Task tem um unico executor responsavel, e a cadeia que chegou ate ele e rastreavel
-   e curta. Casa com a fronteira **"o coordenador nao executa"**: niveis 0 e 1 coordenam, o nivel 2
-   executa, e a fronteira nunca se inverte.
+   delegacao lateral a partir da folha - evita recursao difusa e materializa **"uma Task, um dono"**.
+   Continua **contrato lido** hoje (sem hook que meca a profundidade real da cadeia).
 
-3. **Allow-list de tools por persona.** O que cada papel pode usar ja e limitado pelo campo `tools:`
-   no `.yaml` de cada agente (a allow-list por persona). E o mesmo mecanismo que o trio de disciplina
-   de tool do [Esqueleto de Persona](agents/persona-skeleton.md) invoca: "use apenas as tools
-   declaradas no seu `.yaml`". O cap de profundidade e a allow-list se reforcam - a folha que nao
-   re-delega tambem nao alcanca tools de coordenacao fora da sua lista. O **enforcement duro** (um
-   hook que bloqueia a chamada de uma tool fora da allow-list, ou uma delegacao acima do nivel 2)
-   fica como evolucao futura declarada: hoje a allow-list e contrato lido; o hook que a torna check
-   verificavel ainda nao esta implementado.
+3. **Allow-list de tools por persona (gerada, nao so contrato).** `scripts/squad-bridge.ps1` escreve
+   o campo `tools:` no frontmatter de cada agente a partir do `.yaml` do Specialist e filtra por
+   camada: Specialist B/C (folha) nasce SEM `Agent`/`Task` - "a folha nao re-delega" (item 2) fica
+   CRAVADO no proprio arquivo gerado, nao so na doutrina. No modo **spawn**, e o harness (Claude Code)
+   quem aplica essa allow-list ao rodar o sub-agente - deixou de ser so contrato lido. No modo
+   **context-load** o host nao le frontmatter nenhum: a lista de tools vira PROSA no briefing (mesmo
+   escopo - vestir o chapeu nao amplia acesso) e continua **contrato lido** pelo coordenador, sem
+   maquina. Honestidade: so o modo spawn tem enforcement real hoje.
 
-4. **Modelo (LLM) por papel.** Cada persona declara `model: <tier>` no seu `.yaml` (`strong` /
-   `standard` / `fast`). Ao delegar uma Task a um Specialist em contexto isolado, a Alia le esse tier,
-   resolve o modelo concreto na [matriz](agents/model-matrix.yaml) e roda o sub-agente nele - modelo
-   forte (Opus) para raciocinio de alta alavancagem (orquestracao, arquitetura, julgamento), e modelo
-   barato/rapido (Sonnet/Haiku) para execucao e trabalho mecanico. **Casa com a doutrina de camadas de
-   cerebro** (squad-creator): Camada A (lider que julga) -> `strong`; Camada B (Specialist) ->
-   `standard`; Camada C (suporte/execucao) -> `fast`. Frugalidade: gastar o modelo caro so onde o
-   julgamento paga. Mesmo molde da allow-list - hoje e **contrato lido** pelo coordenador; o hook que
-   casa tier->modelo na chamada fica como evolucao futura declarada. O coordenador (Alia) roda sempre
-   no tier `strong`; papel sem `model:` cai no `default` da matriz.
+4. **Modelo (LLM) por papel (gerado no modo spawn).** Cada persona declara `camada` (A/B/C) no seu
+   `.yaml`; o mesmo gerador resolve `model:` no frontmatter (A -> opus, B -> sonnet, C -> haiku) e o
+   harness roda o sub-agente nesse modelo de verdade - frugalidade aplicada, nao so lida. Casa com a
+   doutrina de camadas de cerebro (squad-creator): Camada A (lider que julga) -> `strong`/opus; B
+   (Specialist) -> `standard`/sonnet; C (suporte/execucao) -> `fast`/haiku. No modo **context-load**
+   nao ha frontmatter (o host nao spawna): o tier fica **contrato lido** pelo coordenador ao vestir o
+   chapeu - mesma honestidade do item 3. O coordenador (Alia) roda sempre no tier `strong`; papel sem
+   `model:` cai no `default` da [matriz](agents/model-matrix.yaml).
 
 5. **Advisor Pattern (conselho no meio da execucao).** Um executor em tier barato (`standard`/`fast`)
    pode CONSULTAR o tier `strong` durante a Task - ate 3 vezes, nos checkpoints certos (apos se
@@ -172,12 +178,18 @@ regras cravam esse isolamento:
 *o que tentei (3x) + por que falhou + recomendacao*. Escalar nunca e transferir a parte dificil sem
 ter atacado a causa.
 
-> LEI: devolver uma pergunta ao Operator E uma escalacao - vale a mesma regra. Antes dela, esgote a
-> escada de investigacao: Memory -> arquivos da instancia/repo (busca local) -> web por pesquisa
-> segura (Perplexity quick primeiro, sequencial e quota-aware, sem fan-out). Termo desconhecido
-> presume-se pesquisavel: pesquise antes de perguntar. So pergunte ao Operator o que for exclusivo
-> dele (preferencia, decisao, contexto privado sem fonte). Pergunta sem investigacao = empurrar
-> trabalho de volta ao Operator, que o Gate reprova.
+Orientacao (elabora a LEI de constitution.md - "perguntar ao operador e o ultimo recurso"; poda
+09/08/2026, law-ledger L16, deixou de ser marcada como LEI propria por ser a mesma regra repetida
+aqui): devolver uma pergunta ao Operator e uma escalacao - vale a mesma regra. Antes dela, esgote a
+escada de investigacao: Memory -> arquivos da instancia/repo (busca local) -> web por pesquisa
+segura (Perplexity quick primeiro, sequencial e quota-aware, sem fan-out). Termo desconhecido
+presume-se pesquisavel: pesquise antes de perguntar. So pergunte ao Operator o que for exclusivo
+dele (preferencia, decisao, contexto privado sem fonte). Pergunta sem investigacao e empurrar
+trabalho de volta ao Operator, que o Gate reprova.
+A rodada de alinhamento NAO e escalacao: escalacao devolve o problema, a rodada devolve uma
+ESCOLHA ja resolvida ate a ultima virgula, com a recomendacao da Alia em cada item e a saida
+"voce decide" sempre aberta. Escalacao vem depois de 3 abordagens falhas; a rodada vem ANTES
+do trabalho comecar, exatamente para nao gastar as 3.
 
 ## Anti-ociosidade (bias for action)
 

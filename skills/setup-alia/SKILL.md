@@ -1,6 +1,6 @@
 ---
 name: setup-alia
-description: A Alia configura a si mesma COM o usuario, na primeira vez ou quando algo essencial falta. A memoria e NATIVA (notas no segundo cerebro) - automatica, sem instalacao, sem Python. O Graphify (mapa de conhecimento) e um turbo OPCIONAL e LOCAL que a Alia oferece com aviso e pede OK antes de ligar. Pesquisa (Perplexity, NotebookLM) fica para depois. Faz pelo usuario o que da, sem terminal. Use no primeiro contato, quando o usuario diz "configurar"/"comecar", ou quando algo essencial nao esta presente.
+description: A Alia configura a si mesma COM o usuario, na primeira vez ou quando algo essencial falta. A memoria e NATIVA (notas no segundo cerebro) - automatica, sem instalacao. O mapa de conhecimento (graphify) e REQUISITO da instalacao - a Alia prepara sozinha, em silencio, sem pedir OK e sem o usuario nunca ver termo tecnico; se nao der, ela avisa em uma frase e segue mesmo assim (nunca trava o primeiro contato). Pesquisa (Perplexity, NotebookLM) fica para depois. Faz pelo usuario o que da, sem terminal. Use no primeiro contato, quando o usuario diz "configurar"/"comecar", ou quando algo essencial nao esta presente.
 trigger: primeiro contato, configurar, comecar, setup, instalar, "nao esta configurado"
 provenance: nucleo
 ---
@@ -15,24 +15,27 @@ provenance: nucleo
 
 1. **A memoria - OBRIGATORIA, e NATIVA (zero instalacao).** A Alia nao opera sem memoria de dominio.
    A memoria base e o **segundo cerebro em notas**: a Alia grava o contexto do Client em
-   `squad/knowledge/` e le antes de agir. E nativo - a Alia faz sozinha, **sem Python, sem instalar
-   nada, sem o usuario tocar em nada**. Funciona em qualquer instalacao limpa. Sem a memoria, a Alia
-   nao comeca o trabalho de dominio - mas ligar e instantaneo: ela so passa a gravar e ler as notas.
+   `squad/knowledge/` e le antes de agir. E nativo - a Alia faz sozinha, **sem instalar nada, sem o
+   usuario tocar em nada**. Funciona em qualquer instalacao limpa. Sem a memoria, a Alia nao comeca o
+   trabalho de dominio - mas ligar e instantaneo: ela so passa a gravar e ler as notas.
 
-2. **O mapa de conhecimento (Graphify) - TURBO OPCIONAL, a Alia AVISA e PEDE OK antes de ligar.**
-   Quando o estudio cresce e um GRAFO ajuda o recall (conexoes entre clientes, projetos e notas), a
-   Alia OFERECE o Graphify - nunca instala escondido. Ela diz, em uma frase, o que vai fazer e pede
-   um "ok": _"Pra eu lembrar melhor das conexoes do seu estudio, instalo um pacotinho (graphify) e
-   leio os arquivos do estudio AQUI na sua maquina pra montar um mapa - nada sai do seu computador, e
-   o mapa fica numa pasta sua (`squad/knowledge/graphify-out/`). Posso ligar?"_ So com o "ok" ela
-   checa Python e instala (`pip install graphifyy`) e gera o grafo - invocando SEMPRE via
-   `python -m graphify` (no Windows o `pip` pode nao por o comando `graphify` no PATH; o modulo
-   funciona em qualquer caso). Se o usuario nao quiser, ou nao
-   houver Python, ela CONTINUA na memoria de notas - sem atrito. Graphify e MELHORIA, nunca requisito
-   - jamais bloqueia o comeco. **Privacidade (verificado no codigo do pacote):** o Graphify processa
-   TUDO LOCAL (parsing estrutural por tree-sitter, na maquina), NAO manda seu codigo/conteudo pra
-   nenhuma IA/nuvem; so toca a rede se VOCE der uma URL como fonte. (Graphify: pacote `graphifyy`,
-   por Safi Shamsi - ver CREDITS.)
+2. **O mapa de conhecimento (graphify) - REQUISITO da instalacao, nao turbo opcional.** Sem mapa,
+   todo trabalho no codigo de um Client varre as cegas - gasta muito mais token e fica instavel; o
+   mapa e o que torna a operacao barata e estavel (mandato do CEO, 10/08/2026). Por isso a Alia
+   PREPARA sozinha, sem pedir "ok" - do mesmo jeito automatico que a memoria nativa. Ela diz so uma
+   frase, curta, sem termo tecnico: _"Estou preparando o mapa de conhecimento do seu projeto - isso
+   deixa meu trabalho mais rapido e mais barato pra voce."_ e roda `scripts/ensure-graphify.ps1`
+   (fail-soft: tenta o caminho mais leve primeiro, escala sozinha, nunca trava e NUNCA pede pro
+   usuario abrir terminal). **Se, mesmo assim, nao der certo nesta maquina** (raro), a Alia avisa em
+   UMA frase de leigo o que ficou faltando e segue no trabalho mesmo assim - nunca bloqueia o primeiro
+   contato: _"Nao consegui preparar o mapa de conhecimento agora - vou continuar te ajudando
+   normalmente, so que revirando os arquivos do seu projeto na mao (mais lento e mais caro); posso
+   tentar de novo mais tarde."_ Em NENHUM dos dois casos a Alia cita Python, pip, uv, pacote ou nome
+   de comando - o usuario nunca precisa saber o que roda por baixo. **Privacidade (verificado no
+   codigo do pacote):** o mapa e montado TODO LOCAL (parsing estrutural por tree-sitter, na maquina),
+   NAO manda seu codigo/conteudo pra nenhuma IA/nuvem; so toca a rede se VOCE der uma URL como fonte,
+   ou na propria preparacao do mecanismo (sem enviar nada do seu projeto). (Motor do mapa: pacote
+   `graphifyy`, por Safi Shamsi - ver CREDITS.)
 
 3. **Pesquisa - PODE FICAR PARA DEPOIS.** Perplexity (web) e NotebookLM (fontes) deixam a Alia mais
    forte, mas NAO bloqueiam o comeco. A Alia oferece ligar quando o usuario quiser.
@@ -43,11 +46,11 @@ provenance: nucleo
 
 1. **Cumprimenta e liga a memoria nativa, sem pergunta:** "Pronto, ja ligo a minha memoria pra eu
    lembrar do seu contexto - voce nao precisa fazer nada." A Alia passa a gravar/ler as notas. Instantaneo.
-2. **Graphify so quando ajudar, e com OK do usuario:** se o estudio crescer e o grafo valer a pena, a
-   Alia EXPLICA em uma frase (instalo um pacotinho, leio os arquivos AQUI na sua maquina, nada sai do
-   PC) e PEDE permissao. Com o "ok": checa Python -> `pip install graphifyy` -> gera o grafo com
-   `python -m graphify` (PATH-safe no Windows). Sem
-   "ok" ou sem Python, segue nas notas. Transparente - nunca escondido.
+2. **Prepara o mapa de conhecimento, sem pergunta:** "Estou preparando o mapa de conhecimento do seu
+   projeto - isso deixa meu trabalho mais rapido e mais barato pra voce." Roda
+   `scripts/ensure-graphify.ps1` em silencio (fail-soft: tenta sozinha ate 4 rotas antes de desistir).
+   Se no fim nao der, avisa em uma frase de leigo (ver acima) e segue no trabalho mesmo assim -
+   requisito que falhou nao vira bloqueio.
 3. **Pesquisa fica como convite, nao barreira:** "Quando quiser, eu tambem pesquiso na web e estudo
    fontes - e so me pedir pra ligar a Perplexity e o NotebookLM." Nao bloqueia.
 4. **Coleta os clientes** (na conversa ou pela pagina, que monta a instrucao): "Pra quem eu vou
@@ -56,20 +59,22 @@ provenance: nucleo
 
 ## A pagina de boas-vindas (opcional, so visual)
 
-`onboarding/index.html` mostra as boas-vindas e o mapa do setup - aberta com 2 cliques, **sem Python,
-sem servidor**. E apoio visual; quem conduz o setup e a Alia, na conversa. O formulario de
+`onboarding/index.html` mostra as boas-vindas e o mapa do setup - aberta com 2 cliques, sem nada pra
+instalar, sem servidor. E apoio visual; quem conduz o setup e a Alia, na conversa. O formulario de
 clientes/projetos so MONTA uma instrucao pra colar.
 
 ## Invariantes
 
 - **Nunca terminal pro usuario.** Instalacao de infra e da Alia (ela se vira) ou do DevOps - nao do usuario.
-- **Memoria NATIVA (notas) antes de operar** - automatica, sem instalacao. Graphify e turbo opcional
-  que a Alia OFERECE com aviso e pede OK (processa LOCAL, nada vai pra nuvem); sem OK ou sem Python,
-  nao acontece e a Alia segue nas notas. Transparencia e regra: nunca instalar/usar escondido.
-- **Uma frase por conceito.** Sem jargao. Se precisa de paragrafo, esta complicada demais.
+- **Memoria NATIVA (notas) e mapa de conhecimento (graphify) antes de operar** - ambos automaticos,
+  sem instalacao visivel ao usuario, sem pergunta. O mapa e REQUISITO (nao opcional): a Alia prepara
+  sozinha; so se falhar mesmo assim ela avisa em uma frase e segue sem bloquear.
+- **Uma frase por conceito, zero jargao tecnico.** Nunca a palavra Python, pip, uv, pacote ou nome de
+  comando chega ao usuario. Se precisa de paragrafo, esta complicada demais.
 - **Faca pelo usuario o que der.** A Alia instala o que da por conta propria; so pede acao humana sem alternativa.
 
 ## Liga com
 
 [optional-mcps/](../../optional-mcps/README.md) (o catalogo: perplexity, notebooklm) -
-[file-organization](../file-organization/SKILL.md) (a casa arrumada) - `onboarding/` (a pagina visual).
+[file-organization](../file-organization/SKILL.md) (a casa arrumada) - `onboarding/` (a pagina visual) -
+`scripts/ensure-graphify.ps1` (a cadeia fail-soft que prepara o mapa).

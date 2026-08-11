@@ -34,14 +34,16 @@ Command Chaining materializa isso. As skills ja carregam `trigger` no frontmatte
 ## Exemplo real do produto: o comando `*loops`
 
 O comando `*loops` encadeia a skill [loop-designer](../../skills/loop-designer/SKILL.md) pelos seus
-tres modos (sugerir -> criar -> revisar), e fecha ligando ao mecanismo `scripts/install-loops.ps1`.
-Cada passo aponta o proximo:
+tres modos (sugerir -> criar -> revisar). CORTE (10/08/2026, mandato do CEO): nao ha mais passo de
+"instalar mecanismo" - o Windows Task Scheduler e o runner que o alimentava (`install-loops.ps1`,
+`run-loops.ps1`) foram removidos por completo (estado escondido na maquina, invisivel, nao viaja com
+o produto). O unico loop agendado sobrevivente (`memory-curator`) ja tem mecanismo automatico sem
+instalacao nenhuma: `scripts/smoke-test-studio.ps1` o chama toda vez que a prova roda.
 
 | Passo | Skill / modo | Entrada | Saida | Sugere o proximo |
 |-------|--------------|---------|-------|------------------|
 | 1. sugerir | loop-designer (modo sugerir) | perfil do projeto (client.md, squad.yaml, state.json) | Plano de Loops + justificativa + custo somado | "Aprovar o Plano? -> passo 2 (criar)" |
-| 2. criar | loop-designer (modo criar) | Plano aprovado | `clients/{id}/loops.yaml` gravado (UTF-8 sem BOM) | "loops.yaml pronto -> passo 3 (instalar mecanismo)" |
-| 3. instalar | scripts/install-loops.ps1 | loops.yaml | tarefas agendadas (dry-run por padrao; -Install para valer) | "dry-run OK? -> rodar com -Install; depois agendar revisao" |
+| 2. criar | loop-designer (modo criar) | Plano aprovado | `clients/{id}/loops.yaml` gravado (UTF-8 sem BOM) | "loops.yaml pronto - memory-curator ja roda via smoke-test-studio.ps1; nada a instalar. Na data de review_on, voltar ao modo revisar" |
 
 ### O fluxo
 
@@ -54,25 +56,23 @@ Cada passo aponta o proximo:
   |
   |- [2] loop-designer:criar            (so apos aprovacao do operador)
   |       grava clients/{id}/loops.yaml com review_on em cada loop
-  |       -> sugere: "loops.yaml gravado. Instalar os agendados? (passo 3)"
-  |
-  |- [3] scripts/install-loops.ps1 -Client {id}
-          le o loops.yaml e cria as tarefas (DRY-RUN por padrao)
-          -> sugere: "dry-run conferido. Rodar -Install para valer;
-                      na data de review_on, voltar ao loop-designer:revisar"
+  |       -> sugere: "loops.yaml gravado. memory-curator ja roda sozinho via
+  |                   smoke-test-studio.ps1 - nada a instalar. Na data de
+  |                   review_on, voltar ao loop-designer:revisar"
 ```
 
-O passo 3 fecha o ciclo apontando de volta para o modo `revisar` da propria skill quando chega o
-`review_on` - o encadeamento e um anel, nao uma linha morta. Nenhum passo avanca sem o veredito do
-anterior: o operador aprova o Plano antes de criar, e confere o dry-run antes do `-Install`.
+O ciclo fecha em 2 passos, nao 3: apontando de volta para o modo `revisar` da propria skill quando
+chega o `review_on` - o encadeamento e um anel, nao uma linha morta. Nenhum passo avanca sem o
+veredito do anterior: o operador aprova o Plano antes de criar.
 
 ### Por que e frugal
 
-O passo 3 e um colapso de pipeline em CLI (tools.md:43-51): em vez de N chamadas tagarelas para
-agendar cada tarefa, `install-loops.ps1` le o yaml e gera a config num passo, e o unico custo de
-contexto e o stdout. Os passos 1 e 2 ramificam por julgamento (precisam de aprovacao), entao ficam
-como passos conversados; o passo 3 e deterministico, entao vira um comando. E a regra do Frugality
-Check passo 4 (mecanico antes de julgamento) aplicada ao encadeamento inteiro.
+A curadoria de memoria e o colapso de pipeline mais barato possivel (tools.md:43-51): em vez de um
+agendador de SO separado (infraestrutura, estado escondido, custo de manutencao), ela anda de
+carona no pipeline que ja roda sempre - `smoke-test-studio.ps1` chama `memory-curator.ps1 -Validade`
+dentro da propria prova, sem passo extra nenhum. O passo 1 ramifica por julgamento (precisa de
+aprovacao), entao fica como passo conversado; o passo 2 e deterministico, entao vira um comando. E a
+regra do Frugality Check passo 4 (mecanico antes de julgamento) aplicada ao encadeamento inteiro.
 
 ## Cuidado: so o padrao, nao o plugin inteiro
 

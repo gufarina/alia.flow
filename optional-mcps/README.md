@@ -67,7 +67,8 @@ o resto entra desligado e o DevOps habilita sob demanda.
 ## Como um instalador mesclaria isso na config de MCP
 
 NAO ha instalador a implementar agora - so a convencao e o ponto de integracao. Quando existir, ele
-segue o ESPIRITO de `scripts/install-loops.ps1` (le yaml e gera config num passo, dry-run por padrao):
+segue o mesmo padrao de qualquer script determinista do motor: le o manifesto e gera a config num
+passo, dry-run por padrao (flag explicita para gravar de verdade):
 
 1. Varrer `optional-mcps/*/manifest.yaml` (presenca = candidato aprovado).
 2. Para cada manifesto: validar o contrato (campos acima; coerencia transport <-> command/url).
@@ -80,7 +81,7 @@ segue o ESPIRITO de `scripts/install-loops.ps1` (le yaml e gera config num passo
    - servidor no catalogo mas fora da config -> adicionar;
    - servidor na config mas SEM diretorio no catalogo -> sinalizar (perdeu a aprovacao);
    - nunca apagar entradas alheias a esmo: o merge e aditivo, nao destrutivo.
-5. Dry-run por padrao (so mostra o diff de config); flag explicita para gravar - igual install-loops.
+5. Dry-run por padrao (so mostra o diff de config); flag explicita para gravar de verdade.
 
 Ponto de integracao: o produto ainda nao tem `.mcp.json` versionado, entao o merge parte do zero. O
 instalador, quando vier, e quem materializa a config; o catalogo e a fonte de verdade curada que ele
@@ -90,4 +91,4 @@ le. A gerencia continua exclusiva do DevOps (engine/tools.md, Governanca de MCP)
 
 [engine/tools.md](../engine/tools.md) (Prioridade de ferramentas + Governanca de MCP) -
 [engine/governance/provenance.md](../engine/governance/provenance.md) (presenca = aprovacao espelha
-proposed/active) - `scripts/install-loops.ps1` (o padrao "le yaml, gera config" que o merge imita).
+proposed/active) - o padrao "le manifesto, gera config, dry-run por padrao" que o merge imita.

@@ -29,14 +29,16 @@ selection_rules:
     terminal: true
     precedence: highest
 
+  # CORTE (10/08/2026, mandato do CEO): health-check, evolution-scan, debt-scan, squad-report,
+  # ddd-drift-scan e deep-research SAIRAM da selecao automatica - medido que nenhum tinha
+  # consumidor do proprio relatorio (deep-research tambem custa modelo, sem freio de orcamento
+  # real). Continuam existindo como COMANDO MANUAL (loops.catalog.yaml -> manual_commands); a Alia
+  # pode sugerir rodar um deles pontualmente, mas nao os instancia mais como loop agendado.
   - id: R1
     name: baseline
     when: "status == active"
     add:
-      - { id: health-check,   cadence: daily }
-      - { id: evolution-scan, cadence: weekly }
-      - { id: debt-scan,      cadence: weekly }
-      - { id: squad-report,   cadence: weekly }
+      - { id: memory-curator, cadence: weekly }   # unico agendado por padrao: consumidor real medido, custo zero
 
   - id: R2
     name: eventos
@@ -55,25 +57,21 @@ selection_rules:
   - id: R4
     name: ddd
     when: "has_ddd == true"
-    add:
-      - { id: ddd-drift-scan, cadence: daily }
+    add: []   # ddd-drift-scan virou comando manual (corte); nada a instanciar como agendado
 
   - id: R5
     name: conhecimento-rapido
     when: "any(domain in knowledge_velocity.fast)"
-    add:
-      - { id: deep-research, cadence: daily, domains: "<dominios rapidos e ativos>" }
+    add: []   # deep-research virou capacidade sob demanda (corte); nao entra mais no loops.yaml
 
   - id: R6
     name: conhecimento-lento
     when: "all(domain in knowledge_velocity.slow)"
-    add:
-      - { id: deep-research, cadence: weekly, optional: true }   # weekly ou nenhum
+    add: []   # idem R5
 
 # Regra de resolucao de conflito quando duas regras pedem o mesmo loop com cadencias diferentes.
 conflict_resolution:
   - "R0 prevalece sobre tudo: fora de active, nenhum agendado entra."
-  - "deep-research: R5 (daily) vence R6 (weekly) se houver qualquer dominio rapido ativo."
   - "cadencia escolhida e sempre a MINIMA que pega o problema (frugalidade)."
 
 # Toda instancia gerada herda o ciclo de vida e nasce com review_on (lei do operador).
@@ -85,6 +83,6 @@ instance_defaults:
 # Frugalidade aplicada na selecao (espelha loop-designer.md).
 frugality:
   - "status != active -> zero agendado (R0)"
-  - "deep-research so nos dominios ativos de velocidade alta"
+  - "deep-research e sob demanda (skill aciona quando o operador pede; nunca agendado - corte 10/08/2026)"
   - "cadencia minima suficiente, nunca a maxima possivel"
   - "custo do plano somado e aprovado antes de instanciar"

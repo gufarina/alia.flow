@@ -8,6 +8,11 @@
   E a materializacao visual da LEI de rastreabilidade (engine/orchestration.md):
   se este painel nao conta a historia da operacao, o registro esta falhando.
 
+  ESTADO DO CLIENT (OPP-77): o painel respeita o estado declarado no registro. Client pontual
+  (ideia tocada uma vez) e arquivado (encerrado) NAO entram na fila de "paradas / prato caindo" -
+  o dia a dia cobra so quem esta ativo -, mas as Tasks deles continuam listadas e rastreaveis, com
+  o estado marcado ao lado do nome. Client sem estado declarado = ativo (compatibilidade).
+
   Uso:  powershell -ExecutionPolicy Bypass -File scripts/mission-control.ps1
         -StateFile <caminho>  (default: state.json na raiz da instancia)
         -OutFile <caminho>    (default: mission-control.html ao lado do state.json)
@@ -20,6 +25,7 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot "_studio.ps1")   # Get-ClientStates: o estado do Client (OPP-77)
 if ([string]::IsNullOrWhiteSpace($StateFile)) { $StateFile = Join-Path $root "state.json" }
 if (-not (Test-Path -LiteralPath $StateFile)) { Write-Host ("[ERRO] state.json nao encontrado: " + $StateFile); exit 1 }
 if ([string]::IsNullOrWhiteSpace($OutFile)) { $OutFile = Join-Path (Split-Path -Parent $StateFile) "mission-control.html" }
@@ -48,13 +54,19 @@ $noProject = @($tasks | Where-Object { (Field $_ 'project') -eq '' }).Count
 # Os olhos da Alia no que EMPACOU (OPP-70): Task nao-done, com data, parada ha mais de StaleDays.
 # Mesma regra do scripts/stale-tasks.ps1 (a fila de cobranca do Owner). Task sem 'created' nao mede.
 $nowDate = (Get-Date)
+$clientStates = Get-ClientStates $StateFile
 $staleList = @()
+$foraCobranca = 0
 foreach ($t in $tasks) {
   if ((Field $t 'status') -eq 'done') { continue }
   $cr = Field $t 'created'
   if ($cr -eq '') { continue }
   $age = ($nowDate - [datetime]::Parse($cr)).Days
-  if ($age -gt $StaleDays) { $staleList += [PSCustomObject]@{ t=$t; age=$age } }
+  if ($age -gt $StaleDays) {
+    # OPP-77: so o Client ATIVO entra na fila de cobranca. Pontual/arquivado conta a parte.
+    if ((Get-ClientStateOf $clientStates (Field $t 'client')) -ne 'ativo') { $foraCobranca++; continue }
+    $staleList += [PSCustomObject]@{ t=$t; age=$age }
+  }
 }
 $stale = $staleList.Count
 
@@ -111,7 +123,11 @@ if ($tasks.Count -eq 0) {
 } else {
   $byClient = $tasks | Group-Object { Field $_ 'client' }
   foreach ($cg in $byClient) {
-    [void]$sb.AppendLine('<div class="cli">' + (Esc $cg.Name) + ' <span style="color:var(--g40);font-size:10px">(' + $cg.Count + ')</span></div>')
+    # OPP-77: o estado do Client aparece ao lado do nome - pontual/arquivado e informacao, nunca alarme.
+    $cSt = Get-ClientStateOf $clientStates $cg.Name
+    $cTag = ''
+    if ($cSt -ne 'ativo') { $cTag = ' <span style="font-size:9px;letter-spacing:.14em;text-transform:uppercase;border:1px solid var(--g60);border-radius:6px;padding:2px 8px;color:var(--g30)">' + (Esc $cSt) + '</span>' }
+    [void]$sb.AppendLine('<div class="cli">' + (Esc $cg.Name) + ' <span style="color:var(--g40);font-size:10px">(' + $cg.Count + ')</span>' + $cTag + '</div>')
     $byProj = $cg.Group | Group-Object { $p = Field $_ 'project'; if ($p -eq '') { '(sem projeto - furo de rastreio)' } else { $p } }
     foreach ($pg in $byProj) {
       [void]$sb.AppendLine('<div class="proj">' + (Esc $pg.Name) + '</div>')
@@ -137,6 +153,6 @@ if ($tasks.Count -eq 0) {
 
 [System.IO.File]::WriteAllText($OutFile, $sb.ToString(), $utf8)
 Write-Host ("=== Mission Control gerado ===")
-Write-Host ("tarefas: " + $tasks.Count + " (" + $done + " done, " + $open + " abertas) | furos de rastreio: " + ($noLineage + $noProject) + " | paradas (> " + $StaleDays + "d): " + $stale)
+Write-Host ("tarefas: " + $tasks.Count + " (" + $done + " done, " + $open + " abertas) | furos de rastreio: " + ($noLineage + $noProject) + " | paradas (> " + $StaleDays + "d): " + $stale + " | fora da cobranca (Client pontual/arquivado): " + $foraCobranca)
 Write-Host ("saida:   " + $OutFile)
 exit 0

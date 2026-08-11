@@ -135,6 +135,18 @@ que custe um passo a mais. O loop existe justamente pra absorver esse passo a ma
 > cirurgica. Devolver "nao sei, me explique" sem ter investigado e empurrar trabalho de volta ao
 > operador - o Gate reprova.
 
+> LEI (a fronteira fato-vs-decisao): a lei acima proibe perguntar FATO - o que a escada de
+> investigacao descobre. Ela nunca proibiu perguntar DECISAO: preferencia, prioridade, criterio
+> de "bom", nivel de risco aceito, rumo de produto e gasto so existem na cabeca do operador, e
+> nenhuma escada os alcanca. O que faltava era o QUANDO. A regua de risco de
+> skills/alinhamento/SKILL.md mede antes: 4 fatores (DESFAZ, REFAZ, LEITURAS, DISTANCIA), 0 a 2
+> cada, e o piso e 5 de 8 - abaixo do piso a Alia NAO pergunta, executa e declara a suposicao;
+> a partir do piso, ou com DESFAZ = 2 (publicado, enviado, apagado, pago), ela faz UMA rodada
+> curta de perguntas de decisao ANTES de trabalhar, cada pergunta com a recomendacao dela e com
+> a saida "voce decide". Teto duro: 4 perguntas por rodada, 2 rodadas. Nao fechou em duas, a
+> Alia decide e declara. Pergunta que a escada responderia continua sendo o que sempre foi:
+> empurrar trabalho de volta ao operador, e o Gate reprova.
+
 Esgotada a escada e ainda falta contexto critico e exclusivo do operador? Faca UMA pergunta
 cirurgica. Da pra avancar com seguranca? Assuma explicitamente e prossiga. Pedido grande demais?
 Reduza pra menor unidade util - a menor volta de loop que ainda gera progresso. Nunca devolva

@@ -31,8 +31,8 @@ Estado - memory-types.md) e aplica a mesma lei de sempre: **propor, nunca deleta
 - **Antes de um handoff grande**: quando um Specialist ou a Alia vai delegar/reprocessar a partir
   do segundo cerebro de um Client e o volume de Memory cresceu desde a ultima auditoria, rodar o
   checklist evita propagar contradicao ou nota morta para a proxima Task.
-- Execucao SOB DEMANDA por padrao, como os demais agendados (loops.md): a skill sugere quando
-  devido, o operador aceita, roda via `scripts/run-loops.ps1`.
+- Execucao sem agendador (CORTE 10/08/2026): `scripts/smoke-test-studio.ps1` ja chama
+  `memory-curator.ps1 -Validade` toda vez que a prova roda - nenhum runner, nenhum Task Scheduler.
 
 ## O checklist
 
@@ -47,6 +47,25 @@ terminam em proposta.
 | 4 | **Drift de linguagem** | A nota usa um termo que nao existe em [glossary.md](../glossary.md)? | Apontar o termo usado e o termo correto do glossario; propor a correcao. |
 | 5 | **Orfa / sem ligacao** | A nota nao e referenciada por nenhuma outra nota nem foi lida/usada em nenhum Loop ou Task recente? | Marcar como candidata a arquivar; decisao final e do operador. |
 | 6 | **Procedencia** | Toda proposta dos itens 1-5 respeita [provenance.md](provenance.md): so toca `agent-authored`, sai como diff, nunca deleta? | Se a proposta tocaria `nucleo` ou aplicaria direto sem diff, a auditoria BLOQUEIA a propria proposta. |
+
+### O que deixou de ser so checklist (OPP-76)
+
+Este checklist era prosa sem script: nada o rodava. `scripts/memory-curator.ps1 -Validade` passou a
+cobrir mecanicamente uma parte dele, sobre os DOIS cofres de notas do operador (que ate entao se
+ignoravam), e o smoke da instancia o executa a cada prova:
+
+| item | o que o `-Validade` cobre de verdade | veredito |
+|---|---|---|
+| 1 Expiracao | le `valido_ate` (novo) e `expires` (legado) e imprime o estado VENCIDO | sinal |
+| 2 Contradicao | `[FATO-MORTO-VIVO]`: o cabecalho diz VIGENTE mas a tarja da nota declara supersessao - a contradicao entre o que a nota AFIRMA e o que ela DECLARA | **REPROVA** |
+| 3 Duplicata | `[ASSUNTO-DUPLO]`: duas notas VIGENTES com assunto sobreposto e sem ligacao, marcando `[CRUZA COFRE]` | sinal |
+| 5 Orfa / sem ligacao | `[LINK-QUEBRADO]` + `[CITA-VENCIDO]`: os `[[wikilinks]]` finalmente sao lidos e resolvidos | sinal |
+
+Continua valendo a regra dura do item 2: **a auditoria NUNCA resolve sozinha qual nota vale.** O
+`[ASSUNTO-DUPLO]` compara NOME DE ARQUIVO, nao significado - ele acha o par, quem decide e gente.
+Detectar contradicao semantica de verdade exigiria uma chamada de LLM por par de notas (105 notas =
+5.460 pares), o que contraria a frugalidade da casa e nao foi feito. Os itens 4 (drift de linguagem)
+e 6 (procedencia) seguem sem script proprio.
 
 ## Saida da auditoria
 

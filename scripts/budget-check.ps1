@@ -5,9 +5,19 @@
   (o que rodou, quanto gastou, onde estourou, recomendacao). Dentro do teto -> exit 0.
 
   Politica de parada (fronteira dura): o teto NUNCA e afrouxado em runtime. Mudar token_cap e
-  edicao de configuracao da instancia (operador ou OPP), nao decisao do agente. Volta que ja
-  nasce estourada NAO roda (run-loops.ps1 chama este check no inicio de cada volta e PULA).
-  rsi.yaml (trigger over-budget-path) aponta este contador como fonte.
+  edicao de configuracao da instancia (operador ou OPP), nao decisao do agente.
+  rsi.yaml (trigger over-budget-path) aponta este contador como fonte executavel do gatilho.
+
+  APLICABILIDADE (corrigido 10/08/2026, corte do agendamento do Windows): o runner que chamava
+  este script a cada volta (`run-loops.ps1`) foi removido - nenhum loop agendado sobrevive fora
+  do smoke (memory-curator roda via `smoke-test-studio.ps1`, sem runner, sem token_cap a medir).
+  Este script fica SEM chamador ativo por enquanto: mantido porque `rsi.yaml` (trigger
+  over-budget-path, OPP-58) documenta ele como o contador executavel por tras do gatilho de
+  estouro de custo do RSI - apagar aqui regrediria esse gatilho a "trigger declarado sem
+  execucao", o problema que o OPP-58 resolveu. Volta a ter chamador de verdade no dia em que um
+  loop agente-driven (ex.: deep-research, hoje capacidade sob demanda) emitir costs[] de verdade
+  e algo (RSI ou uma skill) invocar este contador antes de rodar. Ate la, roda sob demanda /
+  via fixture no smoke - nao precisa de costs[] fake para o smoke provar que a logica funciona.
 
   Semantica (deterministica):
     - gasto diario = soma de costs[].tokens do Id na data (-Date, default hoje);

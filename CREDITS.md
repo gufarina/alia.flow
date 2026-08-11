@@ -48,7 +48,8 @@ A profundidade de cada especialista vem do metodo de um mestre real (ver engine/
 - **Anthropic / Claude** - o runtime de agente (Claude Code) e as praticas de engenharia de prompt,
   incluindo o Model Context Protocol (MCP).
 - **Graphify** (pacote `graphifyy`, por Safi Shamsi - github.com/sponsors/safishamsi) - o mapa de
-  conhecimento opcional que a Alia usa para turbinar a memoria de dominio (grafo de conexoes).
+  conhecimento (requisito da instalacao, desde 10/08/2026) que a Alia usa para turbinar a memoria de
+  dominio (grafo de conexoes).
 
 ---
 

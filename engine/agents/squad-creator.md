@@ -21,8 +21,16 @@ diferenca do Alia Flow: preset-driven + segundo cerebro em camadas.
    necessarios (design, dev, qa, data, content, growth...) e gera cada Specialist. **Comportamento
    herdado, mantido.** Tres arquivos por integrante, sempre os tres:
    - `agents/{name}.md` - persona / fluxo agentico (como pensa e age).
-   - `agents/{name}.yaml` - config (id, role, domain, expert_minds, triggers, tools, outputs).
+   - `agents/{name}.yaml` - config (id, role, domain, **camada**, expert_minds, triggers, tools, outputs).
    - `knowledge/` - segundo cerebro, anexado em camadas (ver passo d).
+
+   O campo que declara a camada em `agents/{name}.yaml` e **`camada`** (A/B/C, flat no topo do
+   arquivo) - o nome que o gerador (`scripts/squad-bridge.ps1`) le primeiro. Sinonimos aceitos:
+   `layer` (mesmo A/B/C) e o tier de modelo (`model`/`tier`: strong=A, standard=B, fast=C).
+   Contrato completo, com a ordem de precedencia, em
+   [`squad-creator.yaml`](squad-creator.yaml#camada_field). O `squad.yaml` do time e a fonte da
+   verdade: quem ele nomeia Gateway nasce camada A, sempre - mesmo se o `agents/{id}.yaml` daquele
+   integrante disser outra coisa.
 3. **Casa com um preset** (c) - escolhe o preset mais proximo da
    [Biblioteca de Squads](../features/squad-templates/README.md) e instancia em cima dele,
    customizando pra atuacao descrita. No texto livre, mapeia pro preset mais proximo e ajusta (ex:
@@ -46,6 +54,10 @@ diferenca do Alia Flow: preset-driven + segundo cerebro em camadas.
 5. **Nomeia o Gateway** (e) - Squad Owner, Tier 1 da governanca, sempre Camada A.
 6. **Escreve o `squad.yaml`** (manifesto: Specialists + Gateway + buracos de dominio rastreaveis)
    e **registra** (f) o cliente/squad no estado.
+7. **Fecha o Squad** (g, fechamento obrigatorio) - escreve a Especificacao de Entrega (contrato de
+   consistencia) no `knowledge/`, gera o indice mestre `knowledge/MAP.md` (`kb-index.ps1`) e GERA o
+   grafo do graphify (`graphify-out/`). Sem os tres, o Squad esta incompleto -
+   `scripts/graph-check.ps1` e o `kb-index` reprovam.
 
 ## Nao faz
 - Trabalho de dominio - isso e dos Specialists que ele cria.

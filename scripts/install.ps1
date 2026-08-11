@@ -168,6 +168,17 @@ if ($backupDir) {
   Write-Host "      nao houve backup (pasta destino estava vazia)."
 }
 
+# Mapa de conhecimento (graphify) - REQUISITO da instalacao (mandato do CEO, 10/08/2026), nao
+# mais turbo opcional: sem mapa, todo trabalho no codigo do cliente varre as cegas e gasta muito
+# mais token. Cadeia fail-soft (scripts/ensure-graphify.ps1): nunca trava esta instalacao, nunca
+# imprime Python/pip/uv/nome de pacote - so a frase abaixo, e se tudo falhar, uma frase honesta.
+Write-Host ""
+Write-Host "Preparando o mapa de conhecimento do seu projeto (deixa meu trabalho mais rapido e mais barato pra voce)..."
+$ensureGraphify = Join-Path $dest "scripts\ensure-graphify.ps1"
+if (Test-Path -LiteralPath $ensureGraphify) {
+  try { & powershell -ExecutionPolicy Bypass -File $ensureGraphify } catch { }
+}
+
 # Estrutura inicial do operador: cria studio/ a partir do modelo (so na primeira vez).
 # Ja deixa pastas + config + um exemplo prontos - zero atrito.
 $studioDir = Join-Path $dest "studio"

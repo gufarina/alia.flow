@@ -25,9 +25,18 @@ $statePath = Join-Path $studioRoot "state.json"
 $utf8  = New-Object System.Text.UTF8Encoding($false)
 $today = (Get-Date).ToString("yyyy-MM-dd")
 
+# ESTADO DO CLIENT (OPP-77): pontual (ideia tocada uma vez) e arquivado (encerrado) nao tem squad
+# cobrado. O relatorio continua saindo - com o estado declarado no topo -, mas a ausencia de time
+# deixa de ser lida como buraco: e o desenho. Client sem estado declarado = ativo.
+$clientStates = Get-ClientStates $statePath
+$clientState = Get-ClientStateOf $clientStates $Client
+
 Write-Host "=== Squad Report Loop ==="
-Write-Host ("client: " + $Client + " | data: " + $today)
+Write-Host ("client: " + $Client + " | data: " + $today + " | estado: " + $clientState)
 Write-Host ("modo: " + $(if ($DryRun) { "DRY-RUN (so compila, nao grava relatorio)" } else { "RUN" }))
+if ($clientState -ne "ativo") {
+  Write-Host ("[INFO] Client '" + $clientState + "': nao cobra squad nem mapa de conhecimento (OPP-77). O que existir e registrado abaixo como informacao.")
+}
 Write-Host ""
 
 if (-not (Test-Path -LiteralPath $clientDir)) {
@@ -112,6 +121,7 @@ if (-not $DryRun) {
   [void]$sb.AppendLine("")
   [void]$sb.AppendLine("> Mecanismo: scripts/squad-report.ps1. Status do squad para o Tier 2 (Alia).")
   [void]$sb.AppendLine("> Gateway: " + $gateway)
+  [void]$sb.AppendLine("> Estado do Client: " + $clientState + $(if ($clientState -ne "ativo") { " (nao cobra squad nem mapa - OPP-77)" } else { "" }))
   [void]$sb.AppendLine("")
   [void]$sb.AppendLine("## Membros")
   [void]$sb.AppendLine("")

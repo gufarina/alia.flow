@@ -1,18 +1,138 @@
 {
-  "generated": "2026-06-14",
-  "source": "clients/acme-saas/squad/knowledge",
+  "directed": true,
+  "multigraph": false,
+  "graph": {
+    "hyperedges": []
+  },
   "nodes": [
-    { "id": "n1", "label": "Acme SaaS", "type": "produto" },
-    { "id": "n2", "label": "Painel Pulse", "type": "conceito" },
-    { "id": "n3", "label": "Cartao", "type": "conceito" },
-    { "id": "n4", "label": "Ativacao", "type": "metrica" },
-    { "id": "n5", "label": "Headline", "type": "copy" },
-    { "id": "n6", "label": "Chamada de acao", "type": "copy" }
+    {
+      "label": "Acme SaaS",
+      "file_type": "document",
+      "source_file": "01-contexto-do-produto.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "acme_saas",
+      "community": 0,
+      "norm_label": "acme saas"
+    },
+    {
+      "label": "Painel Pulse",
+      "file_type": "document",
+      "source_file": "01-contexto-do-produto.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "painel_pulse",
+      "community": 0,
+      "norm_label": "painel pulse"
+    },
+    {
+      "label": "Cartao",
+      "file_type": "document",
+      "source_file": "02-linguagem-ubiqua.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "cartao",
+      "community": 0,
+      "norm_label": "cartao"
+    },
+    {
+      "label": "Ativacao",
+      "file_type": "document",
+      "source_file": "02-linguagem-ubiqua.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "ativacao",
+      "community": 0,
+      "norm_label": "ativacao"
+    },
+    {
+      "label": "Headline",
+      "file_type": "document",
+      "source_file": "03-tom-e-mensagem.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "headline",
+      "community": 1,
+      "norm_label": "headline"
+    },
+    {
+      "label": "Chamada de acao",
+      "file_type": "document",
+      "source_file": "03-tom-e-mensagem.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "chamada_de_acao",
+      "community": 1,
+      "norm_label": "chamada de acao"
+    }
   ],
-  "edges": [
-    { "from": "n1", "to": "n2", "rel": "tem" },
-    { "from": "n2", "to": "n3", "rel": "contem" },
-    { "from": "n2", "to": "n4", "rel": "dirige" },
-    { "from": "n5", "to": "n6", "rel": "precede" }
-  ]
+  "links": [
+    {
+      "relation": "has_component",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "01-contexto-do-produto.md",
+      "source_location": null,
+      "weight": 1.0,
+      "_src": "acme_saas",
+      "_tgt": "painel_pulse",
+      "source": "acme_saas",
+      "target": "painel_pulse"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "02-linguagem-ubiqua.md",
+      "source_location": null,
+      "weight": 1.0,
+      "_src": "painel_pulse",
+      "_tgt": "cartao",
+      "source": "painel_pulse",
+      "target": "cartao"
+    },
+    {
+      "relation": "drives",
+      "confidence": "INFERRED",
+      "confidence_score": 0.7,
+      "source_file": "02-linguagem-ubiqua.md",
+      "source_location": null,
+      "weight": 1.0,
+      "_src": "painel_pulse",
+      "_tgt": "ativacao",
+      "source": "painel_pulse",
+      "target": "ativacao"
+    },
+    {
+      "relation": "precedes",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "03-tom-e-mensagem.md",
+      "source_location": null,
+      "weight": 1.0,
+      "_src": "headline",
+      "_tgt": "chamada_de_acao",
+      "source": "headline",
+      "target": "chamada_de_acao"
+    }
+  ],
+  "hyperedges": []
 }
