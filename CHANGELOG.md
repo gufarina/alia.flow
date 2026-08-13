@@ -20,6 +20,56 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.51.0] - 2026-08-12
+
+MINOR - Densidade de persona (mandato do CEO, 12/08/2026). Mudanca de COMPORTAMENTO do boot e da
+voz da Alia, retrocompativel (nenhum contrato de orquestracao ou constituicao mudou) - reescrita
+profunda de `engine/agents/persona.md`, fast-boot novo em `AGENTS.md` e a secao de voz de
+`docs/BRAND.md` herdando a persona.
+
+**Por que agora.** Pesquisa de embasamento (persona/system prompt em agentes de producao): dar
+personalidade a um agente NAO melhora precisao de dominio (a Alia continua sem executar dominio -
+isso e papel do Specialist), mas melhora CONSISTENCIA de tom entre sessoes e reduz carga cognitiva
+de quem opera, porque a mesma "pessoa" responde sempre do mesmo jeito reconhecivel. Encaixa direto
+com a lei que ja existia: a Alia delega, nunca executa dominio (`engine/orchestration.md`) - a
+densidade de persona reforca COMO ela fala, nunca O QUE ela faz.
+
+**1. Abertura em duas batidas.** `engine/agents/persona.md`, secao "Ritual de presenca": toda
+primeira mensagem de sessao nova responde em DUAS batidas - (a) linha de status leve, com dado
+DERIVADO EM RUNTIME (VERSION do motor + nome do studio + contagem de clientes ativos no
+state.json + confirmacao de memoria carregada + "OBSERVANDO"), nunca um numero cravado no texto;
+(b) saudacao curta e pessoal na sequencia, nunca "como posso ajudar". 3 variantes exatas (operador
+novo / recorrente / estudio vazio) documentadas na propria secao. `AGENTS.md` ganhou o mesmo
+fast-boot: as duas batidas nao exigem carregar o nucleo pesado, so a secao "Ritual de presenca" de
+persona.md - o nucleo completo so carrega quando entra trabalho de dominio de verdade.
+
+**2. Economia como lei de voz.** Persona nova fixa "curto vence completo" como regra dura de
+linguagem: sem preambulo, sem eco do pedido, sem lista onde uma frase resolve. Teste da mae segue
+valendo (se a mae do operador nao entenderia a frase, ela nao sai).
+
+**3. Temperatura de presenca, com cerca dura.** A Alia pode ter calor/humor na voz (nao e robotica),
+mas com cerca EXPLICITA contra flerte e contra gerar conteudo fora do contrato de trabalho - a
+cerca protege o mesmo limite que ja regia a persona anterior, so agora nomeado e exemplificado.
+
+**4. 8 dialogos-exemplo (few-shot).** persona.md ganhou 8 trocas completas mostrando a voz nova em
+situacoes reais (saudacao, delegacao, recusa, bastidor, erro do proprio motor, etc.) - referencia
+que qualquer agente pode ler antes de responder, em vez de so regra em prosa.
+
+**5. Nucleo travado anti-drift.** Bloco explicito no fim de persona.md fixando o que NUNCA muda
+por causa de humor/temperatura (as LEIs de linguagem e comportamento ja existentes) - trava contra
+a persona nova "derivar" pra fora do contrato ao longo de sessoes.
+
+**Intacto, palavra por palavra.** As LEIs assadas em 09/08/2026 - resposta modulada por DECISAO
+(nunca relato de processo) e todo plano/decisao em pagina HTML pronta (nunca parede de texto no
+chat) - NAO mudaram uma virgula nesta entrada; a persona nova e aditiva sobre elas, nao substitui.
+
+**Nucleo protegido.** `engine/agents/persona.md` esta na lista L1 de `scripts/guard-core.ps1`
+(sentinela de hash do nucleo, ver `engine/.core-baseline.sha256`). Mudanca aqui e INTENCIONAL e
+registrada: baseline regenerado via `guard-core.ps1 -AllowCore` nesta mesma Task (mecanismo
+oficial, nunca hash escrito a mao). `AGENTS.md` e `docs/BRAND.md` nao estao na lista de nucleo.
+
+Prova: `scripts/smoke-test.ps1` ALL GREEN (placar no corpo desta Task).
+
 ## [1.50.8] - 2026-08-11
 
 PATCH - Os 4 consertos de REDACAO do veredito de lancamento do NEXUS (LIBERAR COM RESSALVAS,
