@@ -25,6 +25,20 @@
   deste script, so vale NO ATO do registro - edicao direta do state.json continua fora do alcance,
   o guarda dessa janela e o smoke, nao este script.
 
+  AGENT ID (TASK-123, mandato do CEO - "todo agente tem que ter um id registro e um ledger que
+  capta isso, todos sao unicos por essencia"): apos validar -Specialist, o script deriva o campo
+  "agent_id" e grava na Task, tres ramos: -Specialist "alia" -> agent_id "alia"; -Specialist bate
+  id valido do squad.yaml do Client -> agent_id "{client}-{specialist}" (minusculo) - a MESMA
+  formula que scripts/squad-bridge.ps1 usa pra nomear o Specialist GERADO (.claude/agents/
+  {client}-{id}.md), reuse-first, nao inventa segundo esquema de id; qualquer outro caso (Client
+  sem squad.yaml, ou -Specialist nao validavel) -> agent_id "" (string vazia, nunca inventado).
+  LIMITACAO HONESTA: este campo prova que -Specialist foi DECLARADO e (quando validavel) que bate
+  com um id real do squad - o script NAO tem como confirmar que o -Specialist informado e de fato
+  o subagent_type que o harness invocou no turno (isso exigiria ler o transcript, fora do escopo
+  deste script). A prova sai de ZERO-MECANISMO (nenhum ledger citava id de agente antes) pra
+  UM-PONTO-DE-DISCIPLINA (o registro grava o id certo SE quem registrou disse a verdade) - nao esta
+  fechada, e nao finge estar.
+
   Adiciona uma entrada ao array "tasks" (preservando clients/ e o resto do estado intactos) e
   carimba "updated". Le e grava JSON UTF-8 sem BOM. Forca "tasks" a permanecer um ARRAY mesmo
   com um unico item (contorna o bug do ConvertTo-Json no PowerShell 5.1). -DryRun so mostra. exit 0.
@@ -156,12 +170,23 @@ if ($Specialist -eq "alia") {
   }
 }
 
+# AGENT ID (TASK-123): tres ramos, nunca inventado. "alia" -> "alia"; -Specialist valido do squad
+# do Client -> "{client}-{specialist}" (mesma formula de squad-bridge.ps1, linha 459: ToLower());
+# qualquer outro caso -> "" (Client sem squad.yaml, ou id nao confirmado contra o squad).
+$agentId = ""
+if ($Specialist -eq "alia") {
+  $agentId = "alia"
+} elseif ($squadIds -contains $Specialist) {
+  $agentId = ("$Client-$Specialist").ToLower()
+}
+
 $task = [PSCustomObject][ordered]@{
   id             = $id
   client         = $Client
   project        = $Project
   title          = $Title
   specialist     = $Specialist
+  agent_id       = $agentId
   type           = $Type
   status         = $Status
   artifact       = $Artifact

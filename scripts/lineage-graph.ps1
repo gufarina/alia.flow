@@ -337,14 +337,17 @@ function Get-HealthData() {
   $h.total = $nodes.Count
   $h.completa = 0; $h.orfas = 0; $h.semEntrega = 0; $h.semBase = 0; $h.semSessao = 0; $h.semProjeto = 0; $h.semGate = 0
   foreach ($n in $nodes) {
-    $a = Field $n.t 'artifact'; $b = Field $n.t 'base_artifact'; $s = Field $n.t 'session'; $p = Field $n.t 'project'; $g = Field $n.t 'gate_verdict'
+    $a = Field $n.t 'artifact'; $b = Field $n.t 'base_artifact'; $s = Field $n.t 'session'; $p = Field $n.t 'project'; $g = Field $n.t 'gate_verdict'; $stt = Field $n.t 'status'
     if ($a -ne '' -and $b -ne '' -and $s -ne '' -and $p -ne '') { $h.completa++ }
     if ($a -ne '' -and $b -eq '') { $h.orfas++ }
     if ($a -eq '') { $h.semEntrega++ }
     if ($b -eq '') { $h.semBase++ }
     if ($s -eq '') { $h.semSessao++ }
     if ($p -eq '') { $h.semProjeto++ }
-    if ($g -eq '') { $h.semGate++ }
+    # CONSERTO (varredura zero-erro, achado ARCHIVE): L11 exige veredito de Gate no FECHA - Task
+    # ABERTA sem veredito ainda nao chegou la, nao e divida. Contar sobre TODAS as Tasks inflava o
+    # numero (42->47 mesmo com 0 done sem veredito, medido). Escopo agora e so 'done'.
+    if ($g -eq '' -and $stt -eq 'done') { $h.semGate++ }
   }
   # base GROSSA: declarou uma pasta inteira ("clients/alia-flow-lab") em vez do arquivo que usou.
   # Nao da pra responder impacto a partir disso - o rastro existe, mas nao aponta pra nada.

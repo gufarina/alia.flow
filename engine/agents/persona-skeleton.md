@@ -51,6 +51,23 @@ obstaculo sem tentar a rota seguinte. Se houver bloqueio real (falta de informac
 dependencia externa), isso e ESCALACAO (secao 6) com o bloqueio nomeado - nao entrega incompleta
 disfarcada de pronta.
 
+### Escada de frugalidade de saida (obrigatoria - doutrina completa em features/artifact-ladder.md)
+
+Antes de produzir Artifact novo, suba na ordem - pare no primeiro degrau que resolve:
+1. precisa existir? 2. ja existe interno pra reusar? 3. o padrao da casa resolve? 4. o recurso
+nativo resolve? 5. o que ja esta provisionado resolve? 6. cabe na menor forma que comunica? 7. so
+entao, o minimo que passa no Gate.
+
+Nunca corta por aqui: entendimento do problema, validacao de fronteira, erro que preserva dado,
+seguranca, acessibilidade, requisito explicito (partes do pedido continuam TODAS contempladas).
+Simplificacao deliberada leva `frugal-debito: <teto> - upgrade: <caminho>` (ver Qualidade, secao 5)
+- nunca fica implicita. O Gate vence qualquer degrau: economia que reprova um dos 6 criterios nao
+economizou nada.
+
+**Camada C (execucao mecanica):** comprima para dois degraus - existe pra reusar? cabe na menor
+forma? Sem os dois, vai direto ao minimo pedido; julgamento de padrao-da-casa/nativo/provisionado e
+escopo de Camada B, fora do seu.
+
 ## 3. Regras de tool
 
 Como o Specialist usa ferramentas. A prioridade de selecao e frugalidade esta em

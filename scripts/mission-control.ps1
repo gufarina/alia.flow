@@ -70,6 +70,37 @@ foreach ($t in $tasks) {
 }
 $stale = $staleList.Count
 
+# --- Pendencias do motor (TASK-159, fecho) - SO EXIBICAO: le memory/_proposals/ (contagem+idade
+# por tipo, mesma classificacao de reflect-check.ps1/promote-memory.ps1 - reusada, nao duplicada
+# de outra forma) e a ULTIMA linha de studio/smoke-log.jsonl (placar do smoke). Zero logica de
+# ratchet aqui (o que reprova ou nao e decidido no smoke/reflect-check; este painel so mostra o
+# que ELES ja decidiram) e zero escrita (nunca grava _proposals/ nem smoke-log.jsonl).
+$propDirMc = Join-Path $root "memory\_proposals"
+$mcStaging = @{
+  "reflection-inbox-*.md" = @()
+  "friction-*.md"         = @()
+  "patterns-*.md"         = @()
+}
+$mcUnknown = @()
+if (Test-Path -LiteralPath $propDirMc) {
+  $mcAllMd = @(Get-ChildItem -LiteralPath $propDirMc -Filter "*.md" -File -ErrorAction SilentlyContinue)
+  $mcStaging["reflection-inbox-*.md"] = @($mcAllMd | Where-Object { $_.Name -like "reflection-inbox-*" })
+  $mcStaging["friction-*.md"]         = @($mcAllMd | Where-Object { $_.Name -like "friction-*" })
+  $mcStaging["patterns-*.md"]         = @($mcAllMd | Where-Object { $_.Name -like "patterns-*" })
+  $mcUnknown = @($mcAllMd | Where-Object {
+    $_.Name -notlike "prop-*" -and $_.Name -notlike "reflection-inbox-*" -and
+    $_.Name -notlike "friction-*" -and $_.Name -notlike "patterns-*"
+  })
+}
+$mcSmokeLast = $null
+$smokeLogPathMc = Join-Path $root "studio\smoke-log.jsonl"
+if (Test-Path -LiteralPath $smokeLogPathMc) {
+  $mcLines = @([System.IO.File]::ReadAllLines($smokeLogPathMc) | Where-Object { $_.Trim() -ne "" })
+  if ($mcLines.Count -gt 0) {
+    try { $mcSmokeLast = $mcLines[-1] | ConvertFrom-Json } catch { $mcSmokeLast = $null }
+  }
+}
+
 $sb = New-Object System.Text.StringBuilder
 [void]$sb.AppendLine('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">')
 [void]$sb.AppendLine('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
@@ -98,6 +129,10 @@ $sb = New-Object System.Text.StringBuilder
 [void]$sb.AppendLine('.tk__meta{font-size:10.5px;color:var(--g40);line-height:1.7}.tk__meta b{color:var(--g30);font-weight:400}')
 [void]$sb.AppendLine('.tk__meta .miss{color:#e0b13f}')
 [void]$sb.AppendLine('.ft{margin-top:44px;border-top:1px solid var(--g60);padding-top:14px;font-size:10px;letter-spacing:.1em;color:var(--g40)}')
+[void]$sb.AppendLine('.eng{border:1px solid var(--g60);border-radius:12px;padding:14px 18px;margin:0 0 26px}')
+[void]$sb.AppendLine('.eng__h{color:var(--g30);font-size:12px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:10px}')
+[void]$sb.AppendLine('.eng__row{font-size:12px;color:var(--g20);line-height:1.9;border-top:1px solid var(--g70);padding-top:6px}')
+[void]$sb.AppendLine('.eng__row:first-of-type{border-top:0}.eng__ok{color:var(--rose)}.eng__bad{color:#e0b13f}')
 [void]$sb.AppendLine('</style></head><body>')
 [void]$sb.AppendLine('<div class="hd"><h1>Mission <b>Control</b></h1><span class="m">' + (Esc $studioName) + ' - motor v' + (Esc $ver) + ' - gerado ' + $stamp + ' - fonte: state.json</span></div>')
 [void]$sb.AppendLine('<div class="kpis">')
@@ -117,6 +152,42 @@ if ($stale -gt 0) {
   }
   [void]$sb.AppendLine('</div>')
 }
+
+# --- Pendencias do motor (TASK-159) - staging RSI + ultimo placar do smoke. SO EXIBICAO. ---
+[void]$sb.AppendLine('<div class="eng"><div class="eng__h">// PENDENCIAS DO MOTOR (staging RSI + ultimo smoke)</div>')
+$mcAnyStaging = $false
+foreach ($mcKey in @("reflection-inbox-*.md", "friction-*.md", "patterns-*.md")) {
+  $mcFiles = $mcStaging[$mcKey]
+  if ($mcFiles.Count -eq 0) { continue }
+  $mcAnyStaging = $true
+  $mcOldest = ($mcFiles | Sort-Object LastWriteTime | Select-Object -First 1)
+  $mcAge = [math]::Floor(((Get-Date) - $mcOldest.LastWriteTime).TotalDays)
+  [void]$sb.AppendLine('<div class="eng__row"><b>' + $mcFiles.Count + '</b> ' + (Esc $mcKey) + ' &nbsp;|&nbsp; mais antigo: <span class="' + $(if ($mcAge -gt 2) { 'eng__bad' } else { '' }) + '">' + $mcAge + 'd</span> (' + (Esc $mcOldest.Name) + ')</div>')
+}
+if ($mcUnknown.Count -gt 0) {
+  $mcAnyStaging = $true
+  [void]$sb.AppendLine('<div class="eng__row eng__bad">' + $mcUnknown.Count + ' arquivo(s) FORMATO-DESCONHECIDO em _proposals/: ' + (Esc (($mcUnknown | ForEach-Object { $_.Name }) -join ", ")) + '</div>')
+}
+if (-not $mcAnyStaging) {
+  [void]$sb.AppendLine('<div class="eng__row">memory/_proposals/ vazio - nada pendente.</div>')
+}
+if ($null -eq $mcSmokeLast) {
+  [void]$sb.AppendLine('<div class="eng__row">studio/smoke-log.jsonl ausente ou vazio - smoke ainda nao rodou nesta instancia (ou versao do motor anterior ao log).</div>')
+} else {
+  $mcSmFail = 0; try { $mcSmFail = [int]$mcSmokeLast.fail } catch { }
+  $mcSmPass = 0; try { $mcSmPass = [int]$mcSmokeLast.pass } catch { }
+  $mcSmTs = ""; try { $mcSmTs = [string]$mcSmokeLast.timestamp } catch { }
+  $mcCls = if ($mcSmFail -gt 0) { 'eng__bad' } else { '' }
+  [void]$sb.AppendLine('<div class="eng__row">ultimo smoke (' + (Esc $mcSmTs) + '): <span class="' + $mcCls + '"><b>' + $mcSmPass + ' PASS, ' + $mcSmFail + ' FAIL</b></span></div>')
+  if ($mcSmFail -gt 0) {
+    $mcFailList = @(); try { $mcFailList = @($mcSmokeLast.failures) } catch { }
+    foreach ($mcF in ($mcFailList | Select-Object -First 5)) {
+      [void]$sb.AppendLine('<div class="eng__row eng__bad">&nbsp;&nbsp;- ' + (Esc ([string]$mcF)) + '</div>')
+    }
+    if ($mcFailList.Count -gt 5) { [void]$sb.AppendLine('<div class="eng__row">&nbsp;&nbsp;... e mais ' + ($mcFailList.Count - 5) + '</div>') }
+  }
+}
+[void]$sb.AppendLine('</div>')
 
 if ($tasks.Count -eq 0) {
   [void]$sb.AppendLine('<p style="color:var(--g30)">Nenhuma tarefa registrada ainda. A primeira demanda vira TASK-001.</p>')

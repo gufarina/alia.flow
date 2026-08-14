@@ -33,11 +33,14 @@ degrau que ja resolve - so desce pro proximo quando o de cima nao serve:
 
 Regra de corte: nenhuma abstracao que nao foi pedida; deletar antes de adicionar.
 
-Quando a simplificacao for DELIBERADA, marque com um comentario `ponytail:` declarando o teto da
-escolha e o caminho de upgrade. Ex.: `// ponytail: lista linear; teto ~1k itens; trocar por indice
-se crescer`. Assim a simplificacao fica visivel e revisavel - parece uma decisao, nao um buraco.
+Quando a simplificacao for DELIBERADA, marque com um comentario `frugal-debito:` declarando o teto
+da escolha e o caminho de upgrade. Ex.: `// frugal-debito: lista linear; teto ~1k itens; trocar por
+indice se crescer`. Assim a simplificacao fica visivel e revisavel - parece uma decisao, nao um
+buraco.
 
-> Escada e convencao adaptadas do skill ponytail (Dietrich Gebert, MIT) - ver CREDITS. O motor ja
+> Escada e convencao adaptadas do skill ponytail (Dietrich Gebert, MIT) - ver CREDITS; o marcador de
+> comentario chama-se `frugal-debito:` no nosso motor (nao `ponytail:`). Versao generalizada para
+> qualquer Artifact (nao so codigo): [artifact-ladder.md](features/artifact-ladder.md). O motor ja
 > vivia o principio (REUSE>ADAPT>CREATE, modulos profundos, criterio 5 do Gate); isto so o torna
 > operacional, sem peso novo.
 

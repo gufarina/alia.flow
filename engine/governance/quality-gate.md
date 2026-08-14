@@ -33,6 +33,14 @@ Seis perguntas, todas inegociaveis. Reprovar uma e reprovar o Artifact.
 > passa. Mais profundidade vai para a biblioteca sob demanda (ver `engine/MAP.md`), nunca para o peso
 > sempre-carregado.
 
+> Criterio 5 (Atrito) - evidencia de saida: o Artifact segue a escada de
+> [artifact-ladder.md](../features/artifact-ladder.md) - ou o resultado E o minimo que passa no Gate
+> (nenhum degrau pulado), ou a simplificacao deliberada carrega `frugal-debito: <teto> - upgrade:
+> <caminho>`. Marcador ausente onde a saida claramente simplificou = Concerns, nao Fail automatico
+> (o avaliador julga se a simplificacao era mesmo necessaria); marcador sem teto+upgrade = Fail. O
+> Gate vence qualquer degrau da escada: economia que reprova um dos 6 criterios minimos nao
+> economizou nada.
+
 > Tipos de Artifact (imagem, texto, codigo, site) podem ter criterios extras - por exemplo, um
 > contrato de formato deterministico (Validated Artifacts). Mas os 6 minimos acima sao a base que
 > nenhum squad pode rebaixar.

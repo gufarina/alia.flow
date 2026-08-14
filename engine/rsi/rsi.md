@@ -121,6 +121,23 @@ real que a casa ja registrava em memoria solta. "numero-publico-fossil" apareceu
 visivel no relatorio como "abaixo do minimo", nao escondido, honesto sobre nao ter batido o teto
 de 3 ainda com o volume de digests disponivel.
 
+**Cobertura completa dos 3 tipos de staging (TASK-159, 13/08/2026 - NAO e peca nova, e o
+fechamento de lacuna nas pecas ja existentes):** `memory/_proposals/` guarda 3 classes vivas
+(`reflection-inbox-*.md` da PECA 1/COLETA, `friction-*.md` da PECA 2, `patterns-*.md` da PECA 3)
+e, ate esta correcao, so a primeira classe tinha ciclo de vida completo (visivel no boot, com
+staleness travada no smoke, arquivavel). Auditoria mediu o furo: `scripts/promote-memory.ps1`
+tratava `friction-*.md`/`patterns-*.md` como `[ORFAO]` (nome desconhecido, nunca promovido, aviso
+que morre so impresso); o cadeado de vivacidade do smoke so olhava `reflection-inbox-*.md`.
+Consertado sem inventar peca nova - as 4 pontas que ja existiam passaram a cobrir as 3 classes:
+`scripts/reflect-check.ps1` (boot) conta as 3 e sinaliza `.md` de formato desconhecido a parte;
+`scripts/promote-memory.ps1` reclassifica friction/patterns como `[STAGING]` (nunca promovidas -
+insumo de OUTRO fluxo, nao proposta de memoria) e so arquiva `friction-*.md` quando ele ja foi
+CONSUMIDO por esta PECA 3 (citado como `Fonte` num `patterns-*.md` escrito) - `patterns-*.md`
+nunca arquiva sozinho, e relatorio de decisao humana pendente, nao processo automatico;
+`scripts/smoke-test-studio.ps1` secao (i) trava staleness > 3 dias nas 3 classes, nao so na
+primeira; `scripts/mission-control.ps1` mostra contagem+idade das 3 no painel ("Pendencias do
+motor"). Prova pelo negativo de cada ponta na Task que fechou este cluster.
+
 ### PECA 4 - O held-out (`scripts/rsi-heldout.ps1`)
 
 Conjunto FIXO de 6 assercoes deterministicas que representam decisoes JA TOMADAS pelo dono, lidas

@@ -20,6 +20,525 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.58.1] - 2026-08-14
+
+PATCH - Ultima milha antes do repo publico: `check-public-surface.ps1` reprovou o pacote 1.58.0
+por identidade de Client real vazada em prosa da oficina (registros das proprias rodadas de
+trabalho, nao dado de producao). Anonimizado, escopo cirurgico, superficie que SHIPA:
+
+1. `CHANGELOG.md` - varios trechos historicos citando Clients reais (nome de arquivo real, caminho
+   com id real de Client, referencia a layout real citando dois ids) trocados por descricao
+   generica ("um Client real da instancia", "clients/<id>/squad/agents", "o Client-casa
+   do proprio estudio") - sentido historico preservado, identidade fora.
+2. `scripts/graph-usage-sensor.ps1:370` - comentario que citava o id real do Client medido -> generico.
+3. `scripts/smoke-test.ps1` - descricao dos cenarios 9 e 10 (nome de Client real citado como
+   exemplo de layout) -> "layout real de um Client da instancia" / "codebase real de produto".
+4. `scripts/smoke-test-studio.ps1` - 2 comentarios (secao g, secao o) que citavam nome de Client
+   real ou caminho de artifacts com id real -> genericos.
+5. `skills/file-organization/SKILL.md` - a ancora do incidente de roteamento (material do produto
+   arquivado no Client errado) trocou o nome real do Client-casa por descricao generica; a licao
+   (roteamento por ASSUNTO, nao por squad executor) fica intacta.
+6. `release-reviews/1.58.0.md` - prosa citava `grep aiox` (o termo do proprio guard "zero aiox"),
+   o que fazia o guard se auto-flagar em releases futuras que legitimamente narrem o resultado
+   desse check. Menor degrau escolhido: reescrever a prosa ("grep do termo banido"), nao isentar
+   `release-reviews/` por nome - uma isencao de pasta inteira cegaria o guard pra um vazamento REAL
+   futuro dentro de uma release review; reescrever a prosa fecha so o caso do proprio guard se
+   auto-citar, sem abrir mao de cobertura.
+
+**Prova pelo negativo** (contra o pacote real, `scripts/package-release.ps1` +
+`check-public-surface.ps1 -Repo release/alia-flow`): pacote 1.58.0 reprovava com 2 identidades
+vazadas (uma no `CHANGELOG.md`, outra em `scripts/smoke-test.ps1`); apos os consertos acima,
+mais 2 rodadas de repackagem revelaram mais 2 vazamentos residuais (outros dois ids, um deles num
+segundo trecho do CHANGELOG) ate SUPERFICIE LIMPA. Negativo controlado: plantei uma linha de
+teste citando de proposito o id real de um Client da instancia em `release/alia-flow/CHANGELOG.md`
+-> FAIL ("identidade de cliente vazou"); repackagem limpa -> SUPERFICIE LIMPA de novo
+(256 arquivos, 0 aviso). Nota: a primeira redacao deste paragrafo citava o token de teste
+LITERALMENTE e o proprio guard reprovou o pacote seguinte por causa dela - reescrita generica,
+mesmo remedio do item 6.
+
+**Provas.** Smoke da oficina: 242 checks, ALL GREEN (nenhum check novo - so anonimizacao de
+prosa/comentario, conteudo tecnico preservado). `check-public-surface.ps1 -Repo release/alia-flow`:
+SUPERFICIE LIMPA (257 arquivo(s) conferido(s), 0 identidade vazada, 0 aviso) - pacote construido a
+partir do FONTE ja corrigido (`package-release.ps1` rodado 3x nesta rodada: reprova -> conserto ->
+reprova residual -> conserto -> LIMPA). Repackagem final rotulada 1.58.1 fica pendente de
+release-review aprovada (`release-reviews/1.58.1.md`, gate de `package-release.ps1` passo 0/3) -
+fora do escopo do WARDEN, dono e quem faz release review; a superficie do CONTEUDO (o que importa
+pra este conserto) ja esta confirmada limpa.
+
+## [1.58.0] - 2026-08-14
+
+MINOR - WARDEN aplica e prova 3 frentes aprovadas pelo CEO (CANON + ARCHIVE), reportadas como
+prontas na oficina. Rebase medido contra a versao real do dia (1.57.1, nao 1.56.1 como o pedido
+original citava) - nada duplicado, checado item a item antes de aplicar.
+
+**TASK-127 (a clausula que resolve L30 x L33), L39 no law-ledger:**
+1. `engine/orchestration.md`: nova LEI - clausula do relatorio de coordenacao. L33 (especialista
+   obrigatorio) rege ARTEFATO DE DOMINIO; nao rege o RELATORIO DE COORDENACAO que a propria Alia
+   produz sobre o que ela mesma orquestrou. So existe em `clients/<id>/artifacts/coordination/*.html`;
+   conteudo restrito a sintese de Tasks, citacao de Artifact de Specialist e decisao de
+   roteamento/prioridade/risco/proximo-passo; escrever ali NUNCA desarma L33 pro resto do turno.
+2. `engine/agents/persona.md`: nota de fronteira ao final da LEI do formato de plano, apontando pra
+   clausula acima. Nucleo protegido - regenerado com `guard-core.ps1 -AllowCore`.
+3. `engine/governance/law-ledger.md`: L39 registrada, COBERTA (comportamento real). Placar
+   recontado: 38->39 leis, COBERTA-comportamento-real 24->25.
+4. `scripts/response-guard.ps1`: REGRA 1 (`excludeSubstrings`) ganha `artifacts/coordination/`
+   (exclusao POR ARQUIVO dentro do loop, nao por turno); REGRA 2 ESTENDIDA (grounding em HTML)
+   aceita zero ou um nivel de subpasta (`clients/*/artifacts/([^/]+/)?*.html`).
+5. `engine/governance/quality-gate.yaml`: comentario do criterio 6 atualizado pra
+   `clients/*/artifacts/**/*.html`.
+6. Prova pelo negativo (3 casos, `scripts/smoke-test.ps1`): (a) Write em
+   `artifacts/coordination/x.html` sem Agent/Task -> LIBERA; (b) HTML de coordenacao com claim sem
+   rotulo -> REPROVA (REGRA 2 estendida); (c) turno que tambem escreve dominio fora da subpasta ->
+   REGRA 1 dispara mesmo assim. FAIL confirmado com o codigo pre-conserto revertido temporariamente,
+   PASS depois de restaurar - os 3 casos.
+
+**TASK-123 (id unico de agente no registro):**
+1. `scripts/register-task.ps1`: apos validar `-Specialist`, deriva `agent_id` (tres ramos: "alia"
+   -> "alia"; id valido do squad.yaml do Client -> "{client}-{specialist}" minusculo, mesma formula
+   de `squad-bridge.ps1`; qualquer outro caso -> "" nunca inventado). Campo gravado logo apos
+   `specialist` na Task. Cabecalho documenta a limitacao honesta: o script nao confirma que
+   `-Specialist` e de fato o `subagent_type` invocado no turno - prova sai de zero-mecanismo pra
+   um-ponto-de-disciplina, nao fechada.
+2. Backfill do `state.json` da instancia (168 Tasks): 59 `alia`, 64 `{client}-{specialist}`
+   casadas contra o squad real, 45 vazias (Client sem squad ou id nao validavel) - nenhuma
+   inventada, backup em `_backups/pre-agent-id-backfill-TASK-123-20260814/`.
+3. Check anti-regressao em `scripts/smoke-test.ps1` (secao "Ledger: agent_id derivado no registro"),
+   3 ramos, prova pelo negativo: com a derivacao removida, ramo 1 e ramo 2 -> FAIL confirmado;
+   restaurado -> PASS confirmado (ramo 3, negativo, ja passava - especialista invalido continua
+   reprovando antes de gravar).
+
+**Carimbo das 19 Tasks aprovadas pelo CEO ("as 19 da ok"):** 17 vereditos aplicados palavra por
+palavra em `state.json` (TASK-034, 040, 077, 079, 085, 087, 092, 093, 100, 101, 103, 104, 105, 106,
+110, 114, 119 - 8 mudaram status pra `done`). TASK-035 e TASK-041 NAO aplicadas: outra sessao ja as
+tinha marcado `retired` com motivo substantivo DIFERENTE (certificado ja implementado em produto;
+auditoria superada por rodadas de hardening posteriores) - conflito real, nao cosmetico, reportado
+em vez de sobrescrito.
+
+**Fechamento:** smoke da oficina 242/0 ALL GREEN (241/1 antes de reatualizar o baseline do nucleo
+apos o ultimo ajuste em `orchestration.md`). Drift de versao vs release/produto e AVISO conhecido
+(so o CEO resolve, publicando). `release-reviews/1.58.0.md` registra o veredito.
+
+## [1.57.1] - 2026-08-14
+
+PATCH - Rescaldo da TASK-171. O guard "zero aiox" (secao g de `smoke-test-studio.ps1`) fazia match
+de SUBSTRING case-insensitive; `studio/artifacts-baseline.txt` (gerado pela v1.57.0) lista nomes
+reais de arquivo de um Client real da instancia com "raiox" (raio-x) - "r" + "aiox" colide com o
+padrao solto e reprova por engano. Mesma familia do falso-positivo de CSS ja resolvido no response-guard
+(v1.53.0-era).
+
+**Conserto (menor degrau, o mais robusto contra recorrencia):** `"(?i)aiox"` -> `"(?i)\baiox\b"`
+(word boundary). Preferido a isentar so `artifacts-baseline.txt` (mesma classe de
+`mission-control.html`) porque uma exclusao de arquivo fecha SO este caso; boundary fecha a classe
+inteira - qualquer "xaiox"/"aioxy"/"raiox" futuro, em qualquer arquivo, para de colidir sem
+precisar de nova excecao.
+
+**Prova pelo negativo:** `'raiox' -match '(?i)\baiox\b'` -> False (passa); `'aiox' -match
+'(?i)\baiox\b'` -> True (continua reprovando). Contra dado real (copia temporaria em
+`scripts/smoke-test-studio.ps1` da instancia, revertida depois): "grep aiox = 0" voltou a PASS com
+`studio/artifacts-baseline.txt` no lugar (antes do conserto reprovava).
+
+**Provas.** Smoke da oficina: 236 checks, ALL GREEN antes e depois (este conserto nao mexeu em
+check do proprio `smoke-test.ps1`, so em `smoke-test-studio.ps1`).
+
+## [1.57.0] - 2026-08-14
+
+MINOR - TASK-171 (OPP-26 capitulo 2, desenho do LATTICE). Faltava dentro de
+`clients/{id}/artifacts/` o mesmo rigor que a raiz da instalacao ja tinha (OPP-26 capitulo 1):
+acervo medido (6 Clients, 386 arquivos) 100% solto - direto em `artifacts/` sem pasta de projeto,
+ou em subpasta sem data no nome. Achado do CEO durante o desenho: o defeito e tambem de
+ROTEAMENTO - material do PRODUTO Alia Flow (LP, copy da LP, icones, motor de dither de fundo) foi
+arquivado no Client-casa do proprio estudio porque o squad de marketing que produziu mora la,
+quando o ASSUNTO era o produto (deveria estar em `clients/alia-flow-lab`).
+
+1. `skills/file-organization/SKILL.md`: nova secao "Layout canonico de clients/{id}/artifacts/" -
+   lei de roteamento por ASSUNTO (nao pelo squad que executou), com o caso real do Client-casa/LP
+   como ancora e a lista de exemplos pendentes de migracao; pasta por projeto
+   (`clients/{id}/artifacts/{project-slug}/`); naming `{tipo}-{descricao}-{AAAA-MM-DD}.{ext}` com
+   vocabulario fechado (relatorio, painel, auditoria, plano, copy, prova - medido no uso real);
+   retirada para `_retired/` no mesmo FECHA que cria o substituto (reusa `provenance.md`,
+   `retired_on`/`retired_reason`); `_provas/` do projeto para screenshot/evidencia; README aos 5+
+   arquivos.
+2. `scripts/smoke-test-studio.ps1`, secao (e2) - irma de "raiz limpa" (e): arquivo NOVO solto
+   direto em `clients/{id}/artifacts/` reprova; arquivo NOVO em pasta de projeto sem sufixo
+   `-AAAA-MM-DD` reprova. Acervo existente protegido por ratchet datado -
+   `studio/artifacts-baseline.txt` (386 entradas, 6 Clients, gerado 14/08/2026) - so o que aparecer
+   ALEM da baseline falha. O check nao policia ASSUNTO (isso e julgamento, a lei fica escrita na
+   skill), so ESTRUTURA.
+3. Nenhum arquivo do acervo foi movido nesta rodada - migracao e ORGANICA (Boy-Scout no FECHA de
+   cada Task futura), nunca em lote; havia sessao concorrente usando os 3 HTMLs de LP no
+   Client-casa do proprio estudio no momento desta implementacao.
+
+**Prova pelo negativo** (contra a instancia real, copia temporaria depois revertida
+byte-a-byte): plantei arquivo solto (`clients/_wardentest/artifacts/flat-solto.md`) -> FAIL;
+plantei arquivo de projeto sem data (`.../proj1/relatorio-sem-data.md`) -> FAIL (arquivo datado no
+mesmo projeto NAO foi flagged); removi os dois -> FAIL some para eles. Bonus: a mesma rodada
+pegou, sem eu plantar nada, 2 arquivos genuinos novos criados por sessao concorrente num Client
+real da instancia - confirma que o check reage a violacao real, nao so a fixture controlada.
+
+**Provas.** Smoke da oficina: 236 checks, ALL GREEN (secao e2 e teste da instancia, nao do
+`smoke-test.ps1` da oficina - este item nao mexeu em check do proprio `smoke-test.ps1`, so em
+`smoke-test-studio.ps1`; contagem do `smoke-test.ps1` da oficina permanece 236, confirmado ANTES e
+DEPOIS desta rodada).
+
+## [1.56.1] - 2026-08-14
+
+PATCH - Achado do COURIER contra dado real (um Client real da instancia, par fresco): scan em
+`clients/<id>/squad/agents` gravou `kind=scan` sem `map-injected` nenhum. Hipotese levantada: o
+mapa do Client (`squad/knowledge/graphify-out`) e IRMAO do alvo tipico de varredura
+(`squad/agents`, `squad/artifacts`...), nunca ancestral - a subida de arvore (Find-AncestorMap)
+nunca acharia.
+
+**CONFIRMACAO ANTES DO CONSERTO (pedida explicitamente):** reproduzi o cenario exato (`Bash grep`
+em `clients/<id>/squad/agents`, relativo e absoluto) em sandbox isolada - a injecao FUNCIONOU nos
+dois casos. Causa: a ramificacao `scope -like 'clients/*'` NUNCA dependeu da subida de arvore -
+ja resolvia o mapa direto por 2 candidatos (`graphify-out` na raiz do Client OU
+`squad/knowledge/graphify-out`), a subida de arvore so roda pro caso EXTERNO (fora do studio). A
+hipotese do COURIER sobre o MECANISMO estava invertida, mas a evidencia de campo (o par real sem
+injecao) e genuina - explicacao mais provavel: o hook que gerou aquele ledger era o sensor ANTIGO
+ainda implantado na raiz da instancia (pre-TASK-169), nao a versao nova da oficina, que so
+propaga via COURIER. Nao inventei conserto pra um bug que nao reproduziu.
+
+**CONSERTO aplicado mesmo assim (defensivo, barato, pedido explicitamente):** ordem dos 2
+candidatos em `scripts/graph-usage-sensor.ps1` alinhada a `scripts/graph-check.ps1:248`
+(`squad/knowledge/graphify-out` PRIMEIRO, `graphify-out` na raiz como fallback) - mesma fonte de
+verdade reusada, nao uma 3a logica. Efeito pratico nulo no caso normal (os 2 candidatos ja eram
+checados, so a prioridade mudou), mas fecha qualquer ambiguidade de leitura do codigo.
+
+**Provas novas** (cenarios 9 e 10, mesmo bloco de `smoke-test.ps1`): cenario 9 - scan em
+`clients/<id>/squad/agents/...` (layout real de um Client da instancia, mapa em `squad/knowledge/`,
+IRMAO do alvo) INJETA corretamente; cenario 10 - codebase EXTERNO (fora do studio, tipo codebase
+real de produto) continua achando o mapa por subida de arvore, sem regressao. Os 2 cenarios PASSAM com o codigo como
+estava, antes mesmo do reordenamento - confirma que o mecanismo ja cobria o caso descrito.
+
+**Provas.** Smoke da oficina: 234 -> 236 checks (cenarios 9 e 10), ALL GREEN, exit 0. GUARD-NUM em
+`docs/CLAIMS.md` atualizado para 236.
+
+## [1.56.0] - 2026-08-14
+
+MINOR - TASK-169, mandato do CEO ("nada abaixo de 99%"). A adocao do mapa (14,8% gateavel) nao se
+conserta com disciplina, se conserta com ESTRUTURA - o contrato do gate mudou: de "recusar e
+esperar que o modelo lembre de ler" para "entregar o mapa junto com a liberacao". Escada aplicada:
+reuso total do sensor existente (zero servico novo, zero campo novo no schema do ledger).
+
+**1) `scripts/graph-usage-sensor.ps1` - injecao estrutural substitui a recusa.** No PRIMEIRO
+toque de cada par (sessao, escopo gateavel) com mapa em disco e ainda nao lido, o hook devolve via
+`additionalContext` o CONTEUDO das secoes "God Nodes" + "Community Hubs" do `GRAPH_REPORT.md`
+(teto 2500 caracteres, trunca com aviso citando o arquivo completo se passar) - JUNTO com a
+liberacao da varredura, nunca depois. **A recusa (deny) e o escape da 3a tentativa SAIRAM**: numa
+frase, a injecao entrega o mapa no MESMO turno sem depender de ninguem lembrar de agir depois, e
+por isso a recusa - que so fazia sentido enquanto a leitura dependia de habito - virou codigo
+morto (removido, nao so desativado). `[SEM-MAPA]` (client sem mapa nenhum) e o killswitch
+(env var + arquivo-sentinela) ficam INTACTOS, sem mudanca de contrato.
+
+**2) Ledger distingue leitura INJETADA de leitura AUTONOMA.** A linha de injecao reusa o schema
+existente (`kind=map`, campo `match=map-injected`) - nao inventa campo novo. Gravada com o MESMO
+timestamp da linha `scan` que a originou (achado ao provar pelo negativo: timestamps sequenciais
+fariam a propria injecao contar como furo em `graph-usage.ps1`, ja que "mapa depois do scan"
+sinalizaria nao-adocao). `scripts/graph-usage.ps1` agora mostra, em toda saida, quantos pares
+adotaram por injecao vs por leitura autonoma - a medida continua honesta, nunca esconde que a
+adocao virou maquina.
+
+**3) Meta de 70% vira PISO REAL.** Com a injecao ligada, um par gateavel que aparece como furo daqui
+pra frente nao e mais falta de habito - e killswitch ligado, erro no gate, ou par anterior a esta
+versao do sensor. Texto do veredito em `graph-usage.ps1` (AVISO e PASS) atualizado pra refletir
+isso.
+
+**Provas** (molde dos 8 cenarios existentes, no mesmo bloco de `scripts/smoke-test.ps1`): cenario 3
+reescrito (era RECUSA em 4 ferramentas, agora INJECAO em 4 ferramentas - fixture do
+`GRAPH_REPORT.md` ganhou secoes reais de God Nodes/Community Hubs pra ter o que injetar); cenario
+3b novo (2o toque da mesma sessao+escopo NAO reinjeta, silencioso); prova 8b nova (timestamp da
+injecao bate com o do scan); cenarios 1/2 (SEM-MAPA), 4 (depois de Read manual), 5 (Read unico
+nunca bloqueia), 6/7 (killswitch) e 8 (contagem PowerShell) rodados sem alteracao de assercao -
+**nao regrediram**. Tamanho tipico injetado, medido contra mapas reais do parque: ~1000-1300
+caracteres pra Client medio (~250-330 tokens, estimativa 4 chars/token) - o mapa maior do parque
+(oficina, 1054 nos) trunca em 2500 caracteres (~625 tokens, o teto).
+
+**Provas.** Smoke da oficina: 232 -> 234 checks (2 novos: cenario 3b + prova 8b), ALL GREEN, exit
+0. GUARD-NUM em `docs/CLAIMS.md` atualizado para 234.
+
+## [1.55.1] - 2026-08-13
+
+PATCH - Varredura "zero erro no parque" (ordem do CEO). Rodadas todas as provas deterministicas
+da oficina e da instancia; consertados os vermelhos consertaveis com diff minimo (escada: nada
+especulativo, para no primeiro degrau que resolve). O ARCHIVE fechou em paralelo a divida de
+DADO na instancia (memoria sem validade, Tasks done sem veredito) - fora desta versao, que so
+mexe em MOTOR na oficina.
+
+**1) `scripts/lineage-graph.ps1` - escopo do contador "sem veredito de Gate" corrigido.** Contava
+sobre TODAS as Tasks; a LEI L11 exige veredito no FECHA, entao Task ABERTA sem veredito nao e
+divida. Inflava o numero (medido 46, com ZERO Task done sem veredito). Escopo agora e so
+`status: done`. Medido antes/depois contra o ledger real: 46 -> 0. Ratchet em
+`scripts/smoke-test-studio.ps1` realinhado: baseline 42 -> 0 (o melhor ratchet possivel).
+
+**2) `scripts/smoke-test-studio.ps1` - isencao do grep de higiene "aiox" cobre arquivo GERADO.**
+`mission-control.html` (dashboard gerado por `scripts/mission-control.ps1`) cita a palavra em
+titulo/descricao de Task historica (dado vivo do operador) - a isencao ja cobria
+`clients/*/artifacts/*` (mesma classe: gerado, nao codigo-fonte) mas nao esse arquivo na raiz.
+Isencao adicionada por NOME (mesmo padrao ja usado pro proprio script), conteudo intocado.
+
+**3) Anonimizacao de 2 comentarios que vazavam identidade de Client real em script que SHIPA**
+(achado ao rodar `check-public-surface.ps1` contra a oficina - medida honesta: o alvo real de
+publicacao, `release/alia-flow/`, ja estava e continua "SUPERFICIE LIMPA", mas os 2 comentarios
+abaixo teriam vazado na PROXIMA repackagem): `scripts/response-guard.ps1` (comentario da TASK-157
+citava o caminho de artifacts de um Client real como exemplo) e `scripts/smoke-test-studio.ps1`
+(comentario de baseline citava o nome de um Client real). Os dois viram descricao generica -
+conteudo tecnico preservado, identidade fora.
+
+**4) Adocao do mapa alinhada ao padrao de ratchet do harness (decisao de engenharia, nao
+decreto).** O Check em `smoke-test-studio.ps1` exigia `VEREDITO: [PASS]` literal de
+`graph-usage.ps1` - colapsava `[AVISO]` (que o proprio script ja trata como sinal mais brando)
+na MESMA bandeira dura de `[FAIL]` (ledger ausente - a unica condicao que devia travar de
+verdade). Adocao e divida COMPORTAMENTAL, mesma classe que map FALTA/STALE (que ja usam baseline
+datada, so encolhe) - alinhado ao mesmo padrao: `studio/graph-adoption-baseline.txt` (camada do
+OPERADOR, criado na instancia, nao no motor) guarda a % medida (14.8%, 13/08/2026); FAIL so em
+`[FAIL]` real ou regressao ABAIXO da baseline; `[AVISO]` informativo pra divida herdada abaixo da
+meta de 70% sem regredir. Provado pelo negativo: baseline real (14.8) -> PASS; baseline quebrada
+de proposito pra 50.0 -> FAIL (regressao detectada); restaurada -> PASS.
+
+**Divida NOMEADA, nao consertada (fora do escopo de diff minimo desta rodada):**
+`scripts/migrate-to-studio.ps1` tem o nome do estudio (forma longa e curta) como dado de exemplo hardcoded -
+script utilitario de migracao, precisa de julgamento sobre se e generico (deveria usar
+placeholder) ou intencionalmente especifico desta operacao (historico, nunca ship). Nao
+investigado a fundo nesta rodada; dono: proxima Task que tocar `check-public-surface.ps1` ou o
+proprio script.
+
+**Provas.** Smoke da oficina: 232 checks (sem check novo aqui - os 4 consertos vivem em
+`lineage-graph.ps1`/`smoke-test-studio.ps1`/`response-guard.ps1`, sem mudar a CONTAGEM de checks
+do smoke da oficina), ALL GREEN, exit 0. `law-ledger-check.ps1` limpo nas duas raizes (oficina e
+instancia). `guard-core.ps1` intacto nas duas (nenhum arquivo do nucleo tocado nesta rodada).
+`graph-check.ps1` na instancia sem divida NOVA (5 FALTA + 1 STALE, todos ja na baseline
+existente). Hooks (`settings.json`) identicos entre oficina e instancia, todos os scripts citados
+existem nas duas. Agentes gerados (`.claude/agents/`) conferidos por CONTAGEM contra a fonte (47
+pares de squad = 47 `.md` gerados) - coerentes, NAO regenerados (sem necessidade medida).
+
+## [1.55.0] - 2026-08-13
+
+MINOR - Fecho da TASK-159. Cluster com 3 autorias no mesmo incremento: o "cobrador" desenhado pelo
+LATTICE (cobertura completa do staging de RSI - nada mais cai no esquecimento), os 3 consertos do
+WARDEN que alimentaram o desenho (pipeline orfao, secao C do law-ledger-check, mira do gate do
+mapa - ver v1.54.0), e a emenda "formato executivo" do WEAVER em `persona.md` (L30). Onde o
+desenho do LATTICE colidiu com contrato MEDIDO, o contrato venceu - divergencia documentada item
+por item abaixo, nunca escondida.
+
+**1) `scripts/promote-memory.ps1` - reclassificacao virou `[STAGING]` + decisao sobre
+`-ArchiveInbox`.** `friction-*.md`/`patterns-*.md` (antes `[ORFAO]`) agora `[STAGING]`, roteados
+pro fluxo certo (RSI, nao promocao de memoria). DIVERGENCIA do desenho: o LATTICE pediu
+`-ArchiveInbox` varrendo os 3 padroes; MEDIDO que `rsi-patterns.ps1` (PECA 3) le staging E
+`_archive` pros dois primeiros (arquivar nao mata deteccao), mas `patterns-*.md` e relatorio de
+DECISAO HUMANA pendente - arquivar sozinho esconderia decisao aberta, o mesmo esquecimento que
+este cluster existe pra fechar. Contrato adotado: `reflection-inbox-*.md` arquiva sempre (como
+antes); `friction-*.md` arquiva SO quando ja citado como Fonte num `patterns-*.md` escrito (sinal
+de que a PECA 3 ja consumiu); `patterns-*.md` nunca arquiva sozinho. Provado pelo negativo em
+sandbox: friction citado arquiva, friction nao-citado fica em staging, patterns nunca arquiva.
+
+**2) `scripts/reflect-check.ps1`** conta os 3 tipos de staging (nao so digest+atrito) e emite
+`[FORMATO-DESCONHECIDO]` pra `.md` que nao bate nenhum padrao conhecido - sinal cedo, no boot,
+antes do smoke ou do promote-memory rodarem. Provado pelo negativo: arquivo velho + formato
+desconhecido plantados -> avisos corretos; removidos -> silencio total (exit 0 mudo).
+
+**3) `scripts/smoke-test-studio.ps1`** - 3 mudancas: (a) secao (i) trava staleness > 3 dias nas 3
+classes de staging, nao so `reflection-inbox-*.md` - provado plantando friction+patterns de 5
+dias, FAIL confirmado, removidos, PASS de volta; (b) todo fim de rodada grava uma linha
+append-only em `studio/smoke-log.jsonl` ({timestamp, pass, fail, failures[]}), SEMPRE, inclusive
+em FAIL - mesmo molde dos jsonl existentes; (c) marcador de L30 na secao (n) reajustado pro texto
+pos-emenda do WEAVER (quebrou com a insercao de "(entregavel INTERNO ao operador)" no meio da
+frase - achado ao rodar as provas deste cluster, consertado junto).
+
+**4) `scripts/mission-control.ps1`** ganhou o bloco "Pendencias do motor": contagem+idade por
+tipo de staging + ultima linha de `studio/smoke-log.jsonl` (placar + ate 5 FAILs). SO EXIBICAO -
+zero logica de ratchet nova (o que reprova ou nao continua decidido no smoke/reflect-check), zero
+escrita. Provado plantando friction de 4 dias: aparece no painel com idade correta; removido:
+painel volta a "vazio - nada pendente".
+
+**5) Auto-refresh de grafo de CODIGO antes de reprovar STALE.** `scripts/graph-check.ps1` ja
+tinha `-Refresh` (tenta `graphify update <base>`, sem custo de modelo - so re-extrai codigo);
+smoke-test-studio.ps1 secao (l) passou a chama-lo com `-Refresh` ligado. Conserto de UMA linha
+porque o mecanismo ja distinguia os 2 mapas por Client (`Build-GraphRow` roda pro "codigo
+(codebase externo)" E pro "segundo cerebro (docs do squad)", mas `update` so sabe re-extrair
+codigo - docs falha-suave por CONSTRUCAO, nunca por logica nova). Provado end-to-end com o
+graphify real instalado: fixture com mapa de CODIGO stale -> `-Refresh` regenerou sozinho, virou
+OK; fixture com mapa de DOCS stale -> `-Refresh` tentou, "No code files found", continuou STALE
+(nenhum custo de modelo em nenhum dos dois casos).
+
+**6) `engine/rsi/rsi.md`** ganhou nota curta (dentro da PECA 3, nao peca nova) registrando a
+cobertura completa dos 3 tipos de staging pelas 4 pontas acima.
+
+**MINTAGEM.** `law-ledger.md` L30: marcador `ponytail:` de fato ja tinha virado `frugal-debito:`
+no ciclo anterior (v1.54.0); nesta versao o ponteiro moveu de `persona.md:290-293` pra
+`:290-321` (a emenda do WEAVER expandiu o bloco - formato executivo: desktop-so + teto de 5
+secoes pra entregavel interno, peca publica fora da emenda) e o resumo da lei ganhou a clausula
+nova. L13 (Linhagem): ponteiro em `smoke-test-studio.ps1` corrigido de novo (:641 -> :666, drift
+introduzido pelas proprias insercoes desta Task - `law-ledger-check.ps1` pegou o proprio autor
+antes do fechamento). Nucleo: `guard-core.ps1` confirmou que SO `agents/persona.md` mudou
+(constitution.md/glossary.md/orchestration.md intactos) antes de `-AllowCore` registrar o novo
+baseline.
+
+**Provas.** Smoke da oficina: 232 checks (sem checks novos aqui - os consertos deste cluster
+vivem em `promote-memory.ps1`/`reflect-check.ps1`/`mission-control.ps1`/`graph-check.ps1`, fora
+da contagem do smoke da oficina), ALL GREEN, exit 0. `law-ledger-check.ps1` limpo (FAIL: 0,
+AVISO: 0). Cada peca com prova pelo negativo isolada em sandbox (plantar -> quebrar -> conferir
+FAIL -> desfazer -> conferir PASS), nunca tocando o Client-casa do proprio estudio nem o pacote do
+WEAVER diretamente.
+
+## [1.54.0] - 2026-08-13
+
+MINOR - OPP-79, pacote "escada de frugalidade de saida" do WEAVER + a versao propria que faltava
+(furo pego pelo Gate: os 8 arquivos ja estavam em disco na oficina quando a entrada 1.53.0 fechou,
+mas foram excluidos DO REGISTRO daquela versao - engine incrementado sem versao propria e sem
+smoke cobrindo, violando o esquema da casa "uma mudanca isolavel por versao"). Este incremento
+FECHA o registro que faltava: bump proprio, checks novos, veredito honesto no ledger.
+
+**O pacote (8 arquivos, autoria WEAVER, ja em disco antes desta versao):**
+`engine/features/artifact-ladder.md` (novo - a escada de 7 degraus generalizada pra qualquer
+Artifact, nao so codigo), `engine/engineering.md`, `engine/tools.md`, `engine/orchestration.md`,
+`engine/MAP.md`, `engine/governance/quality-gate.md`, `CREDITS.md`,
+`engine/agents/persona-skeleton.md`. **Rename do marcador:** `ponytail:` -> `frugal-debito:` em
+todo o motor - `ponytail` (sem dois-pontos) continua vivo SO como credito de origem em CREDITS.md
+("skill ponytail, Dietrich Gebert, MIT"), nunca mais como sintaxe de marcador.
+
+**5 checks novos em `scripts/smoke-test.ps1` (secao "Artifact Ladder"), autoria WARDEN, provados
+pelo negativo (mutacao em sandbox - quebrado sempre FAIL, real sempre PASS, nunca editei os 8
+arquivos do WEAVER):**
+- (a) `artifact-ladder.md` existe, declara `frugal-debito:` e a Clausula de precedencia.
+- (b) `quality-gate.md` criterio 5 (Atrito) cita `artifact-ladder.md` como evidencia de saida.
+- (c) `persona-skeleton.md` carrega o bloco "Escada de frugalidade de saida".
+- (d) `engineering.md` usa `frugal-debito:` como marcador vigente e NAO ensina mais `// ponytail:`
+  como exemplo de comentario (distingue do disclaimer legitimo "nao `ponytail:`" no proprio texto).
+- (e) COMPORTAMENTO: reusa o regex REAL de `scripts/debt-scan.ps1` (extraido do arquivo, nunca
+  reescrito a mao) contra uma linha de exemplo - prova que a DETECCAO casa `frugal-debito:` aberto
+  e fecha com `RESOLVIDO`, sem mudar uma linha do script (o regex ja casava `debito` dentro de
+  `frugal-debito` desde antes).
+
+**law-ledger.md, L36 atualizada:** nome do marcador `ponytail:` -> `frugal-debito:`; "onde vive"
+ganhou `artifact-ladder.md` ao lado de `engineering.md`; veredito honesto **COBERTA (so formato)**
+- os 5 checks provam doutrina consistente + deteccao funcional, nenhum mede ADOCAO real (nenhum
+Artifact de producao usa o marcador ainda - achado original da auditoria WARDEN/TASK-146 continua
+de pe, so a maquina de doutrina+deteccao entrou). Placar: COBERTA-so-formato 6->7,
+SEM-TESTE-comportamento 4->3.
+
+**Nucleo:** conferido via `guard-core.ps1` - `orchestration.md` ja estava registrado no baseline
+(mudanca do WEAVER capturada e aprovada na v1.53.0); nenhum dos 4 arquivos do nucleo mudou desde
+entao. Baseline nao precisou de novo `-AllowCore`.
+
+**Provas.** Smoke da oficina: 227 -> 232 checks (as 5 novas do Artifact Ladder), ALL GREEN, exit 0.
+`law-ledger-check.ps1` confirma os ponteiros novos. GUARD-NUM em `docs/CLAIMS.md` atualizado para
+232.
+
+## [1.53.0] - 2026-08-13
+
+MINOR - OPP-79, consertos da auditoria WARDEN/TASK-146 (TASK-157). O CEO pediu o levantamento de
+"o que mais esta desligado como a escada do ponytail" - a auditoria (TASK-146) mediu 6 furos reais
+no proprio motor de prova; esta versao conserta os que cabem na oficina sem tocar o pacote
+"escada da simplicidade" do WEAVER (engine/engineering.md, tools.md, orchestration.md, MAP.md,
+quality-gate.md, CREDITS.md, persona-skeleton.md, engine/features/ - fora do escopo desta Task de
+proposito, cluster separado em paralelo).
+
+**1) Response Guard ganhou prova de comportamento (nao so config).** `scripts/smoke-test.ps1`
+tinha 3 checks que so confirmavam "o script existe, o hook Stop esta ligado, o yaml tem mode
+valido" - nunca rodava a LOGICA real (REGRA 1 DELEGA, REGRA 2 GROUNDING), ao contrario do gate do
+mapa (que ja tinha 8 provas). 4 fixtures novas (mesmo molde: JSON de transcript sintetico via
+stdin, `-LogPath`/`-ConfigPath` isolados - `scripts/response-guard.ps1` ganhou os dois params so
+pra teste, nunca usados pelo hook de producao): Write em `clients/` sem `Agent`/`Task` BLOQUEIA;
+a mesma escrita COM `Task` antes PASSA; 3 referencias `arquivo:linha` sem rotulo BLOQUEIA; as
+mesmas COM `[MEDIDO]` PASSA.
+
+**2) `guard-core.ps1` agora tambem protege o engine/ da INSTANCIA, nao so o da oficina.**
+`scripts/smoke-test-studio.ps1` ganhou a mesma invocacao real que `smoke-test.ps1` ja tinha
+(secao a2) - roda o sentinela de hash contra o `engine/` de quem quer que rode o smoke, bootstrap
+incluido (1a execucao cria o baseline sem falhar; dali em diante, mudanca sem `-AllowCore`
+reprova). Fecha o furo medido na auditoria: a LEI "nunca editar o engine da instancia direto"
+(`CLAUDE.md`) nunca tinha maquina rodando contra o alvo que ela protege de verdade.
+
+**3) `law-ledger-check.ps1` ganhou 3 capacidades novas.** (a) Secao A2: confere se o NUMERO DA
+LINHA citado em "onde vive" bate com um marcador real (tolerancia +-3), nao so se o ARQUIVO
+aparece - achou e consertou 8 ponteiros podres (L09, L10, L17, L21, L26, L27, L30, L31; alguns
+tinham derivado dezenas de linhas). (b) Secao B agora aceita `Check (...)` (posicional, o molde
+de `smoke-test-studio.ps1`) alem de `Check "..."` - descobriu mais 4 ponteiros podres em
+`smoke-test-studio.ps1` (L13, L21, L23, L32) que ficavam invisiveis pro checker antigo. (c) Secao
+A passou a reconhecer `Invariante:` e `lei dura` como marcador FRACO de lei (AVISO, nao FAIL) -
+achou `examples-driven.md:56` sem entrada nenhuma no ledger. Prova pelo negativo de tudo: cada
+capacidade nova foi rodada ANTES do conserto (reprovando de verdade) e DEPOIS (voltando a passar).
+
+**4) 4 leis que so existiam em prosa entraram no law-ledger.md.** L35 (Frugalidade dos loops,
+`loops.md` "lei dura") - `cost_class` ganhou MEDIDA por cliente em `smoke-test-studio.ps1`
+(AVISO, nunca FAIL: `loops.catalog.yaml` trata como `recommended`, nao `required` - a
+CONTRADICAO entre a prosa "lei dura" e o proprio schema fica registrada, nao escondida atras de
+um FAIL que o schema nao autoriza). L36 (Escada da simplicidade, `engineering.md`) - nasce SEM
+TESTE de proposito, apontando pro pacote do WEAVER que vai ligar o mecanismo. L37 (Invariante do
+REUSE, `examples-driven.md`) - SEM TESTE, honesto. L38 (Invariantes do Squad System,
+`squad-system.md`) - COBERTA parcial, reusando o check que L18 ja tinha pra "Gateway=Camada A"
+(nao duplicado). Placar corrigido: total 33->38 (L34 nunca tinha sido somada desde 11/08 - o
+mesmo padrao "projetado, ligado por lembrete" que motivou a auditoria inteira, agora consertado
+junto), COBERTA-comportamento-real 22->24.
+
+**5) Achada e consertada a causa raiz do "artefato que saiu errado mesmo com o guard em modo
+bloqueio".** MEDIDO: um artifact HTML real (`ide-alia-viabilidade-2026-08-12.html`) foi flagado
+com "82 referencias tecnicas sem rotulo" sob `mode:bloqueio` - as 85 (recontadas) eram TODAS CSS
+(`font-size:16`, `margin-top:9`, `border-radius:4`...) dentro do `<style>` do proprio HTML. Todo
+Artifact de plano tem CSS embutido (LEI L30 exige HTML pronto) e o regex de REGRA 2 ESTENDIDA
+(`[\w\-./\\]+:\d+`) batia "propriedade:valor" igual a "arquivo:linha" - falso-positivo sistemico,
+nao furo de enforcement. CONSERTO em `response-guard.ps1`: `<style>...</style>` e `style="..."`
+sao removidos ANTES de contar (o rotulo continua sendo procurado no texto INTEIRO - nunca
+escondemos rotulo real, so tiramos ruido da contagem). Prova pelo negativo completa: script
+simulado sem o conserto REPETE o falso-positivo; com o conserto, o mesmo HTML passa limpo; um
+HTML com claim tecnico REAL fora do `<style>` continua bloqueando (verdadeiro-positivo intacto).
+Alem do conserto, `smoke-test-studio.ps1` ganhou o RATCHET pedido: cruza
+`studio/response-guard-log.jsonl` (violacoes reais em `mode:bloqueio`) contra o disco HOJE,
+re-aplicando a mesma logica ja corrigida - se um artifact flagado no passado ainda tem referencia
+REAL sem rotulo, reprova; se o problema era so CSS, o proprio recalculo zera e passa.
+
+**Nucleo:** `orchestration.md` mudou (pacote do WEAVER, intencional) - baseline de
+`guard-core.ps1` atualizado com `-AllowCore` apos confirmar que so esse arquivo mudou (os outros 3
+do nucleo - `constitution.md`, `glossary.md`, `agents/persona.md` - continuam intactos).
+
+**Provas.** Smoke da oficina: 223 -> 227 checks (as 4 fixtures do Response Guard), ALL GREEN, exit
+0. `law-ledger-check.ps1` rodado antes/depois de cada conserto (FAIL -> corrige -> PASS, por
+capacidade). GUARD-NUM em `docs/CLAIMS.md` atualizado para 227.
+
+## [1.52.0] - 2026-08-12
+
+MINOR - Contrato do Launcher (TASK-133/134). O instalador desktop deixa de ser um app que copia
+arquivos por conta propria e passa a ser um CLIENTE dos scripts transacionais do motor. Duas
+mudancas retrocompativeis em `scripts/install.ps1` e `scripts/update-online.ps1`; nenhum contrato
+de orquestracao ou constituicao mudou. `update-engine.ps1` intocado (segue so o fluxo lab-local).
+
+**Por que agora.** A revisao de arquitetura da TASK-132 mediu dois furos reais na garantia
+"nunca apaga dado do operador": (1) `install.ps1` protegia os dados so por OMISSAO - confiava
+que `package-release.ps1` nunca empacotaria `clients/`, `studio/`, `state.json`, sem nenhuma
+linha de codigo que travasse; (2) NENHUM dos dois scripts confirmava que o destino era mesmo uma
+instalacao Alia antes de aplicar o copyset. Nenhum dos dois ameacava dado no uso normal, mas
+protecao implicita nao e protecao.
+
+**install.ps1**
+- `-Dest <path>` (default `(Get-Location).Path`): o one-liner `iwr|iex` continua identico; o
+  launcher passa a apontar a pasta escolhida pelo usuario sem trocar o diretorio do processo.
+- `-EventLog <path>`: emite JSONL append-only (fases `download|extract|guard|backup|copy|smoke|
+  rollback|done`; `result`+`detail` so na linha `done`) para a UI mostrar progresso nativo em vez
+  de terminal visivel. Fail-soft: falha ao escrever evento nunca quebra a instalacao.
+- `Test-UnsafeDestPath`: recusa raiz de drive e pasta de sistema ANTES de baixar qualquer coisa.
+- `Assert-SafeInstallSet` + `$protected`: aborta antes de copiar se algo do pacote colidir com
+  dado do operador ja existente no destino (fecha o furo 1).
+- Chama `verify-manifest.ps1` no pacote extraido quando ha `MANIFEST.sha256` (defesa contra
+  pacote corrompido, reusando ferramenta que ja e distribuida).
+
+**update-online.ps1**
+- `-EventLog <path>` com o mesmo schema; a linha `done` reusa literalmente o objeto do `-Json`.
+- `Test-ValidAliaRoot`: exige `VERSION`+`alia.config.json` ou `engine\constitution.md` no destino
+  antes de baixar/aplicar (fecha o furo 2).
+- Mesmo `verify-manifest.ps1` no pacote baixado.
+
+**Provas.** Smoke da oficina: 214 -> 223 checks, ALL GREEN, exit 0. As 9 verificacoes novas
+foram provadas pelo negativo (quebrar o arquivo e conferir o FAIL). Conferencia independente
+rodada fora do agente que escreveu: `update-online.ps1` numa pasta que nao e instancia ABORTA com
+exit 1, deixa o dado do operador intacto e nao cria `engine/`; `install.ps1 -Dest C:\Windows`
+recusa antes de baixar. GUARD-NUM em `docs/CLAIMS.md` atualizado para 223.
+
+**Divida conhecida.** Quando a guarda aborta, o script emite o evento `guard` e sai sem a linha
+`done` - hoje quem fecha o log e o processo que o launcher dispara (ele sempre escreve a linha
+final). Consumidor futuro que leia o EventLog direto precisa desse cuidado.
+
+---
+
 ## [1.51.0] - 2026-08-12
 
 MINOR - Densidade de persona (mandato do CEO, 12/08/2026). Mudanca de COMPORTAMENTO do boot e da

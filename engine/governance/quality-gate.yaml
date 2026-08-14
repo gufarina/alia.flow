@@ -46,7 +46,7 @@ minimum_criteria:
       check: grounding-label-present       # check PARCIAL (honesto, revisao 11/08/2026): rotulo no
                                             # TEXTO DO TURNO (scripts/response-guard.ps1 REGRA 2,
                                             # + REGRA 2 estendida pra Artifact html em
-                                            # clients/*/artifacts/*.html); nenhum script varre
+                                            # clients/*/artifacts/**/*.html); nenhum script varre
                                             # DENTRO do Artifact fora desse escopo (ex.: outros
                                             # tipos de artifact, ou html fora de clients/*/artifacts/)
       fail_when: "afirmacao de peso sem rotulo de proveniencia"

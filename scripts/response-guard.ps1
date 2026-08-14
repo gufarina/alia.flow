@@ -68,8 +68,15 @@
   bloqueante trava instancia viva"). Teto de leitura: so as ultimas ~2000 linhas do jsonl
   (transcript pode ser grande; timeout do hook e 15s).
 
+  PARAMETROS DE TESTE (WARDEN, TASK-157): -LogPath e -ConfigPath sao overrides OPCIONAIS, so para
+  fixture isolada de smoke test (mesmo padrao ja usado em graph-usage-sensor.ps1 com -LedgerPath/
+  -Root - reuse-first, nao inventa mecanismo novo). O hook de producao NUNCA passa esses params -
+  o default (studio/response-guard-log.jsonl e engine/governance/response-guard.yaml relativos a
+  $root) e o comportamento de sempre, sem mudanca de contrato.
+
   Sem acentos, sem emojis. Escrita .NET UTF-8 sem BOM.
 #>
+param([string]$LogPath = "", [string]$ConfigPath = "")
 
 function Get-TextFromContent {
   param($content)
@@ -180,7 +187,8 @@ try {
   if (-not (Test-Path -LiteralPath $transcriptPath)) { exit 0 }
 
   $root = Split-Path -Parent $PSScriptRoot
-  $cfg = Get-ResponseGuardConfig (Join-Path $root "engine\governance\response-guard.yaml")
+  $cfgPathReal = if (-not [string]::IsNullOrWhiteSpace($ConfigPath)) { $ConfigPath } else { Join-Path $root "engine\governance\response-guard.yaml" }
+  $cfg = Get-ResponseGuardConfig $cfgPathReal
 
   # (1) Le so o TETO de linhas (perf: transcript pode ser grande, timeout do hook e 15s).
   # -Encoding UTF8 explicito (CONSERTO achado ao provar a VALVULA pelo negativo, 09/08/2026): sem
@@ -274,7 +282,7 @@ try {
   # Escopo agora e "qualquer escrita que NAO esteja numa exclusao legitima" - cobre clients/,
   # engine/, docs/, skills/, scripts/, AGENTS.md, CLAUDE.md e raiz. As exclusoes legitimas
   # (memoria/estado/backup/scratchpad - nunca sao "execucao de dominio") continuam de fora.
-  $excludeSubstrings = @('memory/', '_proposals/', '_backups/', 'scratchpad', 'state.json')
+  $excludeSubstrings = @('memory/', '_proposals/', '_backups/', 'scratchpad', 'state.json', 'artifacts/coordination/')
   $sinalDominio = $false
   $houveDelegacao = $false
   foreach ($tu in $allToolUses) {
@@ -432,12 +440,26 @@ try {
     try { $fp = [string]$tu.input.file_path } catch { }
     if ([string]::IsNullOrWhiteSpace($fp)) { continue }
     $norm = $fp.Replace('\', '/')
-    if ($norm -notmatch '(?i)(^|/)clients/[^/]+/artifacts/[^/]+\.html?$') { continue }
+    if ($norm -notmatch '(?i)(^|/)clients/[^/]+/artifacts/([^/]+/)?[^/]+\.html?$') { continue }
     if (-not (Test-Path -LiteralPath $fp)) { continue }
     $htmlTxt = ""
     try { $htmlTxt = [System.IO.File]::ReadAllText($fp) } catch { continue }
-    $extM = [regex]::Matches($htmlTxt, '\.(ps1|md|ya?ml|json|js|ts|py)\b', 'IgnoreCase').Count
-    $lineM = [regex]::Matches($htmlTxt, '[\w\-./\\]+:\d+').Count
+    # CONSERTO TASK-157 (causa raiz medida, item 5 do ranking WARDEN/TASK-146): CSS ("propriedade:
+    # valor", ex. "font-size:16", "margin-top:9") bate LITERAL o padrao arquivo:linha
+    # ('[\w\-./\\]+:\d+') - todo Artifact HTML tem <style> (L30 exige HTML pronto com CSS embutido
+    # pra toda entrega de plano) e por isso ERA sistematicamente falso-positivado. Medido num
+    # Artifact real do operador (identidade fora do motor publico - ver historico da Task): 85
+    # ocorrencias do padrao, as 85 CSS (font-size:16, margin:0, border-radius:4, ...), ZERO
+    # referencia tecnica real - o Artifact nunca precisou de rotulo, o guard e que contava errado.
+    # $htmlScan (copia, so pra CONTAGEM) remove <style>...</style> e o valor de atributos
+    # style="..." antes de contar; $htmlTxt (original, intacto) continua sendo usado pro rotulo
+    # ($temLabelHtml abaixo) - um rotulo dentro de <style> seria bizarro, mas nunca escondemos
+    # rotulo real por engano, so tiramos RUIDO da contagem.
+    $htmlScan = [regex]::Replace($htmlTxt, '(?is)<style\b[^>]*>.*?</style>', ' ')
+    $htmlScan = [regex]::Replace($htmlScan, '(?i)style\s*=\s*"[^"]*"', ' ')
+    $htmlScan = [regex]::Replace($htmlScan, "(?i)style\s*=\s*'[^']*'", ' ')
+    $extM = [regex]::Matches($htmlScan, '\.(ps1|md|ya?ml|json|js|ts|py)\b', 'IgnoreCase').Count
+    $lineM = [regex]::Matches($htmlScan, '[\w\-./\\]+:\d+').Count
     $qtdHtml = $extM + $lineM
     $temLabelHtml = $htmlTxt.Contains('[MEDIDO') -or $htmlTxt.Contains('[INFERIDO') -or $htmlTxt.Contains('[LIDO')
     if ($qtdHtml -ge $cfg.min_claims -and (-not $temLabelHtml)) {
@@ -452,9 +474,9 @@ try {
 
   # (6) LOG: uma linha JSON por turno, sempre - independente do modo (e o entregavel principal
   # do M1: mede aderencia antes de virar bloqueio).
-  $studioDir = Join-Path $root "studio"
-  New-Item -ItemType Directory -Force -Path $studioDir -ErrorAction SilentlyContinue | Out-Null
-  $logFile = Join-Path $studioDir "response-guard-log.jsonl"
+  $logFile = if (-not [string]::IsNullOrWhiteSpace($LogPath)) { $LogPath } else { Join-Path (Join-Path $root "studio") "response-guard-log.jsonl" }
+  $logDir = Split-Path -Parent $logFile
+  if (-not [string]::IsNullOrWhiteSpace($logDir)) { New-Item -ItemType Directory -Force -Path $logDir -ErrorAction SilentlyContinue | Out-Null }
   $logEntry = [ordered]@{
     timestamp        = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
     session_id       = $sessionId

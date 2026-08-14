@@ -54,16 +54,40 @@ Write-Host ""
 # (A) LEI SEM REGISTRO: todo arquivo com marcador de lei precisa aparecer na coluna "onde vive".
 # ---------------------------------------------------------------------------
 Write-Host "--- (A) Lei sem registro no ledger ---"
+# MARCADOR FORTE (reprova de verdade, FAIL): "> LEI:" e "> LEI (..." (bracket - CONSERTO TASK-157:
+# o regex antigo so pegava "LEI:", perdendo "> LEI (olhos da Alia - OPP-70):" - L17 inteiro ficava
+# invisivel pra este proprio scan) + "## LEI"/"# LEI" (cabecalho).
+# MARCADOR FRACO (TASK-157, pedido do CEO via Alia apos a auditoria WARDEN): "Invariante:" e
+# "lei dura" sao peso de lei em prosa que NAO usa o marcador `> LEI` - ate agora INVISIVEIS pra
+# este scan (foi assim que loops.md "Frugalidade (lei dura)", examples-driven.md "Invariante:" e
+# squad-system.md "## Invariantes" ficaram fora do ledger sem ninguem notar). Marcador fraco
+# reprova como AVISO (nao FAIL) - pesa menos que o marcador `> LEI` explicito, mas nao fica mais
+# invisivel: lei nova nao nasce sem ninguem ver.
 $leiFiles = New-Object System.Collections.Generic.List[object]
+$weakLeiFiles = New-Object System.Collections.Generic.List[object]
 if (Test-Path -LiteralPath $EngineDir) {
+    # CONSERTO TASK-157 (achado ao provar o marcador FRACO pelo negativo): o proprio law-ledger.md
+    # mora dentro de engine/governance/**.md e CITA "lei dura"/"Invariante:" na sua propria prosa
+    # explicativa (ex.: a linha do L35 que descreve a lei de loops.md) - sem excluir, o scan
+    # apontava o ledger como fonte-sem-registro de si mesmo. O ledger e o REGISTRO, nunca uma fonte
+    # de marcador a registrar.
     $mdFiles = Get-ChildItem -LiteralPath $EngineDir -Recurse -Filter "*.md" -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -notmatch "[\\/](_retired)[\\/]" }
+        Where-Object { $_.FullName -notmatch "[\\/](_retired)[\\/]" -and $_.FullName -ne $LedgerPath }
     foreach ($f in $mdFiles) {
         $relPath = $f.FullName.Substring($root.Length + 1).Replace('\', '/')
         $lines = [System.IO.File]::ReadAllLines($f.FullName)
         for ($i = 0; $i -lt $lines.Count; $i++) {
-            if ($lines[$i] -match '^\s*>\s*LEI\s*:' -or $lines[$i] -match '^\s*#{1,3}\s*LEI\b') {
-                $leiFiles.Add([pscustomobject]@{ rel = $relPath; line = ($i + 1); text = $lines[$i].Trim() })
+            # -cmatch (case-sensitive): a convencao da casa e SEMPRE "LEI" maiusculo como marcador
+            # formal ("> LEI:", "> LEI (...)"). CONSERTO TASK-157 (achado ao ligar este proprio
+            # check): -match do PowerShell e case-INSENSITIVE por padrao - sem -cmatch, prosa
+            # incidental como "este documento e a lei do update" (engine/versioning.md) virava
+            # falso-positivo de marcador forte. "Invariante"/"lei dura" (fraco) mantem -match
+            # normal (case-insensitive tolerado de proposito - marcador fraco, risco menor).
+            $ln = $lines[$i]
+            if ($ln -cmatch '^\s*>\s*LEI\b' -or $ln -cmatch '^\s*#{1,3}\s*LEI\b') {
+                $leiFiles.Add([pscustomobject]@{ rel = $relPath; line = ($i + 1); text = $ln.Trim() })
+            } elseif ($ln -match '^\s*Invariante\s*:' -or $ln -match '^\s*#{1,3}\s*Invariantes\b' -or $ln -match '(?i)\blei dura\b') {
+                $weakLeiFiles.Add([pscustomobject]@{ rel = $relPath; line = ($i + 1); text = $ln.Trim() })
             }
         }
     }
@@ -83,6 +107,76 @@ if ($semRegistro.Count -eq 0) {
         }
     }
 }
+
+$semRegistroFraco = @($weakLeiFiles | Where-Object { $ledgerFilesCited -notcontains $_.rel } | Select-Object -Property rel -Unique)
+if ($semRegistroFraco.Count -eq 0) {
+    Ok ("Todo arquivo com marcador FRACO de lei (Invariante:/lei dura, " + (@($weakLeiFiles | Select-Object -Property rel -Unique).Count) + " arquivo(s), " + $weakLeiFiles.Count + " marcador(es)) aparece na coluna 'onde vive' do ledger")
+} else {
+    foreach ($sr in $semRegistroFraco) {
+        $marcadores = @($weakLeiFiles | Where-Object { $_.rel -eq $sr.rel })
+        foreach ($m in $marcadores) {
+            Warn2 ($sr.rel + ":" + $m.line + " tem marcador FRACO de lei (" + $m.text + ") sem entrada correspondente na coluna 'onde vive' do ledger - lei nova em prosa nao nasce invisivel, registre com id novo (ou SEM TESTE explicito)")
+        }
+    }
+}
+Write-Host ""
+
+# ---------------------------------------------------------------------------
+# (A2) PONTEIRO PODRE em "onde vive": a coluna 3 do ledger cita `arquivo.md:NNN` (as vezes
+# `NNN-MMM`) - confere se existe um marcador de lei (forte OU fraco) DENTRO de +-3 linhas do
+# numero citado. TOLERANCIA CURTA porque o marcador raramente e a linha exata do cabecalho da
+# secao (o texto normativo comeca 1-2 linhas abaixo do titulo) - mas 3 linhas nao escondem um
+# ponteiro que apodreceu de verdade (edicao empurrou o bloco dezenas de linhas pra baixo).
+# ---------------------------------------------------------------------------
+Write-Host "--- (A2) Ponteiros 'onde vive' (arquivo:linha) contra o disco ---"
+# [array] em vez de @(...) + @(...): concatenar array vazio com List[object] via @() causa
+# "Argument types do not match" nesta versao do PowerShell (medido ao provar este check pelo
+# negativo) - [array] converte de forma estavel mesmo com uma das listas vazia.
+$allMarkers = [array]$leiFiles + [array]$weakLeiFiles
+$TOLERANCIA = 3
+$rowPattern = '(?m)^\|\s*(L\d+)\s*\|([^\|]*)\|([^\|]*)\|(.*)$'
+$rowMatches = [regex]::Matches($ledgerTxt, $rowPattern)
+$a2Checked = 0
+$a2Bad = 0
+foreach ($rm in $rowMatches) {
+    $lawId = $rm.Groups[1].Value.Trim()
+    $ondeVive = $rm.Groups[3].Value
+    $restoDaLinha = $rm.Groups[4].Value
+
+    # PODADA/HISTORICA: linha que "SAIU" ou "VIRA ORIENTACAO" (L15, L16, L22) mantem a citacao de
+    # onde o texto MORAVA por registro historico, mas o marcador `> LEI`/fraco foi REMOVIDO de
+    # proposito na poda - nao ha nada pra bater tolerancia contra, e isso e o esperado, nao um
+    # ponteiro podre. Pular estas linhas evita falso-positivo (achado ao provar este check pelo
+    # negativo, TASK-157).
+    if ($restoDaLinha -match '\bVIRA ORIENTACAO\b' -or $restoDaLinha -match '\|\s*SAIU\b') { continue }
+
+    $citPattern = '(engine/[A-Za-z0-9_./\-]+\.md):(\d+)(?:-(\d+))?'
+    foreach ($cm in [regex]::Matches($ondeVive, $citPattern)) {
+        $citFile = $cm.Groups[1].Value
+        $citStart = [int]$cm.Groups[2].Value
+        $citEnd = if ($cm.Groups[3].Success) { [int]$cm.Groups[3].Value } else { $citStart }
+
+        $markersHere = @($allMarkers | Where-Object { $_.rel -eq $citFile })
+        if ($markersHere.Count -eq 0) {
+            # Arquivo sem NENHUM marcador conhecido (forte ou fraco) - nao da pra validar tolerancia
+            # contra nada; nao e culpa do ponteiro, e limite deste scan (marcador em formato novo).
+            continue
+        }
+        $a2Checked++
+        $windowLo = $citStart - $TOLERANCIA
+        $windowHi = $citEnd + $TOLERANCIA
+        $hit = @($markersHere | Where-Object { $_.line -ge $windowLo -and $_.line -le $windowHi })
+        if ($hit.Count -eq 0) {
+            $a2Bad++
+            $nearest = ($markersHere | Sort-Object { [Math]::Abs($_.line - $citStart) } | Select-Object -First 1)
+            Bad ($lawId + ": onde-vive cita " + $citFile + ":" + $cm.Groups[2].Value + $(if ($cm.Groups[3].Success) { "-" + $cm.Groups[3].Value } else { "" }) + " mas o marcador real mais proximo esta em :" + $nearest.line + " (" + $nearest.text.Substring(0, [Math]::Min(60, $nearest.text.Length)) + "...) - corrija o ledger")
+        }
+    }
+}
+if ($a2Bad -eq 0) {
+    Ok ("Todos os " + $a2Checked + " ponteiro(s) 'onde vive' verificaveis batem com um marcador real (tolerancia +-" + $TOLERANCIA + " linhas)")
+}
+Write-Host ("resumo (A2): " + ($a2Checked - $a2Bad) + " ponteiro(s) OK | " + $a2Bad + " podre(s) | citacoes sem marcador conhecido no arquivo nao contam (limite do scan, nao erro de ponteiro)")
 Write-Host ""
 
 # ---------------------------------------------------------------------------
@@ -98,7 +192,12 @@ $semMaquinaAqui = @{
     "scripts/smoke-test.ps1" = "espera studio.example/ na raiz (Studio-modelo do produto) - ausente nesta instancia aplicada; o script comeca mas MORRE antes do fim (Push-Location: Cannot find path), medido 09/08/2026"
 }
 
-$refPattern = '([A-Za-z0-9_./\\-]+\.ps1):(\d+)\s*`(Check\s+"[^"]*")'
+# CONSERTO TASK-157: aceita as 2 formas de chamada do helper Check(...) usadas no motor -
+# `Check "texto"` (nome direto) E `Check ("texto" + $var + ...)` (posicional, string concatenada -
+# o molde de smoke-test-studio.ps1). So a PRIMEIRA string entre aspas apos "Check" vira o needle
+# (mesma logica de antes: prefixo, ate 30 chars, casado literal no disco) - o resto da concatenacao
+# (variavel, mais texto) nunca precisa bater, so o prefixo fixo que identifica a linha.
+$refPattern = '([A-Za-z0-9_./\\-]+\.ps1):(\d+)\s*`Check\s*\(?\s*"([^"]*)"'
 $refs = [regex]::Matches($ledgerTxt, $refPattern)
 Write-Host ("citacoes encontradas: " + $refs.Count)
 Write-Host ""
@@ -136,9 +235,9 @@ foreach ($m in $refs) {
     $content = $scriptCache[$scriptPath]
 
     # a citacao traz so o INICIO do texto entre aspas (pode estar truncada por "..."); casa o
-    # prefixo ate 40 chars sem as aspas externas.
-    $needle = $snippet -replace '^Check\s+"', '' -replace '"$', ''
-    $needle = $needle.Substring(0, [Math]::Min(30, $needle.Length))
+    # prefixo ate 30 chars. $snippet ja e o texto puro (grupo 3 do regex, sem "Check"/parenteses/
+    # aspas ao redor - CONSERTO TASK-157, cobre as 2 formas Check "..." e Check ("..." + $var)).
+    $needle = $snippet.Substring(0, [Math]::Min(30, $snippet.Length))
     $idx = $content.IndexOf($needle)
     if ($idx -lt 0) {
         Bad ($scriptRel + ":" + $lineCited + " - texto citado (" + $snippet.Substring(0, [Math]::Min(50, $snippet.Length)) + "...) NAO encontrado no script - ponteiro morto ou texto mudou")
@@ -210,8 +309,29 @@ if (Test-Path -LiteralPath $clientTruthPath) {
 # L31 - LEI da resposta por decisao (mandato do CEO, 09/08/2026): marcador + anti-padrao presentes
 # nas 2 copias de persona.md (raiz + oficina), mesmo molde de L30 - CHECK DE FORMATO, nao confere
 # se a Alia de fato responde por decisao+porque em vez de narrar a cadeia de especialistas.
+#
+# CONSERTO (TASK-159): $personaLabPath assumia SEMPRE que $root era a raiz do STUDIO (onde
+# "clients/alia-flow-lab" e subpasta valida da instancia aplicada) - rodando este script de
+# DENTRO da propria oficina, $root JA E a oficina, e o Join-Path virava um caminho fantasma
+# duplicado (".../alia-flow-lab/clients/alia-flow-lab/..."), sempre [FAIL] "nao encontrado".
+# Bug pre-existente reportado pela auditoria WARDEN (TASK-146) e nunca corrigido ate agora.
+# Resolucao: detecta ONDE $root esta ANTES de montar o caminho da "copia oficina".
+#   - $root E a propria oficina (tem engine/constitution.md E o nome da pasta e "alia-flow-lab"):
+#     nao ha copia aninhada pra comparar - raiz e oficina sao o MESMO arquivo local (a oficina
+#     e a fonte quando rodada standalone). Reusa o mesmo caminho, nao inventa um 2o arquivo.
+#   - $root e a raiz do studio (instancia aplicada, a oficina fica aninhada em clients/): mantem
+#     o comportamento original, a copia aninhada existe de verdade e e comparada de forma
+#     independente (pode ter driftado da raiz - e o caso que este check protege).
 $personaRootPath = Join-Path $EngineDir "agents\persona.md"
-$personaLabPath = Join-Path $root "clients\alia-flow-lab\engine\agents\persona.md"
+$rootIsOficina = (Test-Path -LiteralPath (Join-Path $root "engine\constitution.md")) -and
+                 ((Split-Path -Leaf $root) -eq "alia-flow-lab")
+if ($rootIsOficina) {
+    $personaLabPath = $personaRootPath
+    $personaLabLabel = "L31 formato: persona.md (oficina == raiz nesta execucao, rodando de dentro de clients/alia-flow-lab - so 1 copia local, sem aninhada pra comparar) declara o mesmo marcador de LEI da resposta por decisao + o anti-padrao"
+} else {
+    $personaLabPath = Join-Path $root "clients\alia-flow-lab\engine\agents\persona.md"
+    $personaLabLabel = "L31 formato: persona.md (oficina) declara o mesmo marcador de LEI da resposta por decisao + o anti-padrao"
+}
 $l31Marcador = "> LEI: a resposta padrao e DECISAO TOMADA + POR QUE"
 $l31AntiPadrao = "Anti-padrao (nunca faco):"
 if (Test-Path -LiteralPath $personaRootPath) {
@@ -222,7 +342,7 @@ if (Test-Path -LiteralPath $personaRootPath) {
 }
 if (Test-Path -LiteralPath $personaLabPath) {
     $personaLabTxt = [System.IO.File]::ReadAllText($personaLabPath)
-    Check "L31 formato: persona.md (oficina) declara o mesmo marcador de LEI da resposta por decisao + o anti-padrao" ($personaLabTxt.Contains($l31Marcador) -and $personaLabTxt.Contains($l31AntiPadrao))
+    Check $personaLabLabel ($personaLabTxt.Contains($l31Marcador) -and $personaLabTxt.Contains($l31AntiPadrao))
 } else {
     Bad ("persona.md (oficina) nao encontrado em " + $personaLabPath + " - L31 sem como conferir formato")
 }

@@ -274,6 +274,28 @@ try {
     return $null
   }
 
+  # (3z) INJECAO ESTRUTURAL (TASK-169, 14/08/2026): em vez de so RECUSAR e esperar que alguem
+  # lembre de ler o mapa, o gate agora ENTREGA o conteudo (God Nodes + Community Hubs) via
+  # additionalContext no PRIMEIRO toque - o mapa chega ao modelo sem depender de habito. Escada
+  # aplicada: menor mecanismo que garante isso e reusar o MESMO hook/ledger (zero servico novo,
+  # zero campo novo no schema - so um novo valor de $match). Teto de tamanho evita pesar o turno.
+  $INJECT_TETO = 2500
+  function Get-MapInjection([string]$MapFile) {
+    try { $txt = [System.IO.File]::ReadAllText($MapFile) } catch { return $null }
+    $sections = ""
+    foreach ($hdr in @('## God Nodes', '## Community Hubs')) {
+      $m = [regex]::Match($txt, [regex]::Escape($hdr) + '.*?(?=\r?\n## |\z)', 'Singleline')
+      if ($m.Success) { $sections += $m.Value.Trim() + "`n`n" }
+    }
+    $sections = $sections.Trim()
+    if ([string]::IsNullOrWhiteSpace($sections)) { return $null }
+    if ($sections.Length -gt $script:INJECT_TETO) {
+      $cortado = $sections.Length - $script:INJECT_TETO
+      $sections = $sections.Substring(0, $script:INJECT_TETO) + "`n`n[...TRUNCADO - " + $cortado + " caractere(s) cortado(s) pelo teto de tamanho da injecao; leia o arquivo completo: " + $MapFile + "]"
+    }
+    return $sections
+  }
+
   $scope = ""
   $externalMapFile = $null
   $reScope = '(^|[^A-Za-z0-9_.-])clients/([A-Za-z0-9_.-]+)'
@@ -316,10 +338,10 @@ try {
   }
 
   # (4) GATE - so entra aqui para kind=scan. Tudo dentro de try/catch proprio: erro aqui
-  # NUNCA deve gerar recusa (2c) - so desiste de bloquear e segue para a medida normal.
-  $denyReason = $null
-  $escapeMsg  = $null
+  # NUNCA deve travar nada (2c) - so desiste da injecao e segue para a medida normal.
   $noMapMsg   = $null
+  $injectMsg  = $null
+  $needsInjectLedgerLine = $false
   if ($kind -eq 'scan') {
     try {
       # (4.0) Interruptor de emergencia (2d).
@@ -345,9 +367,16 @@ try {
         $clientId = $null
         $mapFile = $null
         if ($scope -like 'clients/*') {
+          # CONSERTO (v1.56.1, achado do COURIER medido num Client real da instancia): o mapa do Client dentro
+          # do studio mora em squad/knowledge/graphify-out (IRMAO de squad/agents, squad/artifacts
+          # etc - nunca ancestral deles) - so cai pro walk-up de arvore quando o escopo NAO casa
+          # "clients/<id>" (caso EXTERNAL, intocado). Esta ramificacao ja resolvia direto pelos 2
+          # candidatos (nunca dependeu de subir arvore), mas a ORDEM foi alinhada aqui pra bater
+          # com scripts/graph-check.ps1:248 ($cands, squad/knowledge/graphify-out PRIMEIRO) -
+          # mesma fonte de verdade, reusada, nao uma 3a logica de resolucao.
           $clientId = $scope.Substring(8)
-          $cand1 = Join-Path $root ($scope + "/graphify-out/GRAPH_REPORT.md")
-          $cand2 = Join-Path $root ($scope + "/squad/knowledge/graphify-out/GRAPH_REPORT.md")
+          $cand1 = Join-Path $root ($scope + "/squad/knowledge/graphify-out/GRAPH_REPORT.md")
+          $cand2 = Join-Path $root ($scope + "/graphify-out/GRAPH_REPORT.md")
           if (Test-Path -LiteralPath $cand1) { $mapFile = $cand1 }
           elseif (Test-Path -LiteralPath $cand2) { $mapFile = $cand2 }
         } else {
@@ -356,7 +385,7 @@ try {
         }
 
         if ($null -ne $mapFile) {
-          # (4.3) Ja leu o mapa (ou ja teve escape) nesta sessao+escopo? Le o ledger existente
+          # (4.3) Ja leu o mapa (ou ja recebeu injecao) nesta sessao+escopo? Le o ledger existente
           # (linhas gravadas em chamadas ANTERIORES desta mesma sessao - a linha desta
           # chamada ainda nao foi escrita).
           # Le com ReadAllLines (nao ReadLines+break) de proposito: ReadLines devolve um
@@ -366,32 +395,30 @@ try {
           # propria chamada - medido durante a prova pelo negativo desta mudanca.
           # ReadAllLines fecha o handle antes de devolver o array: sem essa corrida.
           $alreadyOk = $false
-          $priorScanCount = 0
           if (Test-Path -LiteralPath $LedgerPath) {
             $needMap = '"session":"' + $sessionId + '"'
             foreach ($ln in [System.IO.File]::ReadAllLines($LedgerPath)) {
               if ($ln.IndexOf($needMap, [StringComparison]::Ordinal) -lt 0) { continue }
               if ($ln.IndexOf('"scope":"' + $scope + '"', [StringComparison]::Ordinal) -lt 0) { continue }
               if ($ln.IndexOf('"kind":"map"', [StringComparison]::Ordinal) -ge 0) { $alreadyOk = $true; break }
-              if ($ln.IndexOf('"kind":"scan"', [StringComparison]::Ordinal) -ge 0) { $priorScanCount++ }
             }
           }
 
           if (-not $alreadyOk) {
-            if ($priorScanCount -ge 2) {
-              # (4.4) Escape na 3a tentativa seguida (2a) - libera com aviso, nunca trava em loop.
-              $escapeMsg = "[GRAPH-GATE] liberado por escape: " + $priorScanCount +
-                " recusa(s) seguida(s) em " + $scope + " sem leitura do mapa. Leia " +
-                $mapFile + " quando puder - a partir de agora esta sessao nao bloqueia mais " +
-                "varreduras neste client (regra anti-loop)."
-            } else {
-              # (4.5) Recusa - ensina o caminho exato, nao so proibe.
-              $tentativa = $priorScanCount + 1
-              $denyReason = "LEI DO MAPA: antes de varrer " + $clientId + " com " + $tool +
-                ", leia primeiro " + $mapFile + " (secoes God Nodes e Community Hubs). " +
-                "Esta e a tentativa " + $tentativa + " de 2 sem ler o mapa; a 3a libera " +
-                "automaticamente para nao travar o trabalho. Depois de ler o mapa, toda " +
-                "varredura neste client libera sem atrito nesta sessao."
+            # (4.4) INJECAO ESTRUTURAL (TASK-169): primeiro toque desta sessao+escopo com mapa em
+            # disco - entrega o conteudo (God Nodes + Community Hubs) via additionalContext JUNTO
+            # com a liberacao da varredura. A RECUSA (deny/escape das 2 tentativas) SAIU: ela
+            # dependia do modelo lembrar de agir depois de ser barrado; a injecao nao depende de
+            # nada, o mapa so chega no mesmo turno. $needsInjectLedgerLine sinaliza o passo (5) a
+            # gravar uma 2a linha kind=map/match=map-injected pra este evento - reusa o MESMO
+            # $alreadyOk (nao inventa campo novo): a proxima chamada acha essa linha e nao
+            # reinjeta (anti-ruido, uma vez por par sessao+escopo).
+            $mapContent = Get-MapInjection $mapFile
+            if ($null -ne $mapContent) {
+              $injectMsg = "[MAPA INJETADO] " + $clientId + " - God Nodes + Community Hubs de " +
+                $mapFile + " (injecao automatica no 1o toque desta sessao+escopo, TASK-169):`n`n" +
+                $mapContent
+              $needsInjectLedgerLine = $true
             }
           }
         } elseif ($scope -like 'clients/*') {
@@ -420,7 +447,7 @@ try {
           }
         }
       }
-    } catch { $denyReason = $null; $escapeMsg = $null; $noMapMsg = $null }
+    } catch { $noMapMsg = $null; $injectMsg = $null; $needsInjectLedgerLine = $false }
   }
 
   # (5) Escreve a linha no ledger - MEDE sempre, independente da decisao do gate (a tentativa
@@ -431,8 +458,14 @@ try {
     if ($pathOut.Length -gt 200) { $pathOut = $pathOut.Substring(0, 200) }
   }
 
+  # $tsNow capturado UMA vez e reusado na linha de injecao (5b) abaixo: se cada linha chamasse
+  # Get-Date de novo, a linha map-injected sairia sempre ALGUNS MS DEPOIS da linha scan (I/O
+  # sequencial), e a comparacao "firstMap -le firstScan" de graph-usage.ps1 marcaria a propria
+  # injecao como FURO (mapa "depois" do scan) - o oposto do que a injecao entrega de verdade (o
+  # mapa chega JUNTO com a liberacao do mesmo toque). Mesmo instante = mesmo evento.
+  $tsNow = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
   $entry = [ordered]@{
-    ts      = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+    ts      = $tsNow
     session = $sessionId
     tool    = $tool
     kind    = $kind
@@ -459,26 +492,41 @@ try {
     }
   }
 
-  # (6) Decisao final. RECUSA imprime o JSON de deny (contrato do PreToolUse). ESCAPE e AVISO
-  # (SEM-MAPA) tambem imprimem JSON - "additionalContext" dentro de hookSpecificOutput -, NUNCA
-  # Write-Host: em PreToolUse (diferente de UserPromptSubmit), texto solto em stdout e IGNORADO
-  # pelo Claude Code, so o JSON chega ao modelo (CONSERTO 10/08/2026, furo 1 - ver cabecalho).
-  if ($null -ne $denyReason) {
-    $out = [ordered]@{
-      hookSpecificOutput = [ordered]@{
-        hookEventName            = "PreToolUse"
-        permissionDecision       = "deny"
-        permissionDecisionReason = $denyReason
+  # (5b) INJECAO: grava uma 2a linha kind=map/match=map-injected pro MESMO evento (TASK-169) -
+  # reusa o campo $match existente (nao inventa schema novo) pra marcar "leitura injetada",
+  # distinta de "leu sozinho" (match=graph-report/graph-json/graphify-out/graphify-query). E
+  # essa linha que faz $alreadyOk achar TRUE na proxima chamada (anti-reinjecao, passo 4.3).
+  if ($needsInjectLedgerLine) {
+    $injectEntry = [ordered]@{
+      ts      = $tsNow
+      session = $sessionId
+      tool    = $tool
+      kind    = "map"
+      scope   = $scope
+      match   = "map-injected"
+      path    = ""
+    }
+    $injectLine = ($injectEntry | ConvertTo-Json -Compress)
+    for ($i = 0; $i -lt 3; $i++) {
+      try {
+        [System.IO.File]::AppendAllText($LedgerPath, $injectLine + "`n", $utf8NoBom)
+        break
+      } catch {
+        Start-Sleep -Milliseconds 40
       }
     }
-    Write-Output ($out | ConvertTo-Json -Depth 5 -Compress)
-    exit 0
   }
-  if ($null -ne $escapeMsg) {
+
+  # (6) Decisao final. INJECAO e AVISO (SEM-MAPA) imprimem JSON - "additionalContext" dentro de
+  # hookSpecificOutput -, NUNCA Write-Host: em PreToolUse (diferente de UserPromptSubmit), texto
+  # solto em stdout e IGNORADO pelo Claude Code, so o JSON chega ao modelo (CONSERTO 10/08/2026,
+  # furo 1 - ver cabecalho). RECUSA/ESCAPE saem daqui (TASK-169): a injecao entrega o mapa no
+  # mesmo turno, sem depender de ninguem lembrar de agir - nao ha mais nada pra "recusar".
+  if ($null -ne $injectMsg) {
     $out = [ordered]@{
       hookSpecificOutput = [ordered]@{
         hookEventName     = "PreToolUse"
-        additionalContext = $escapeMsg
+        additionalContext = $injectMsg
       }
     }
     Write-Output ($out | ConvertTo-Json -Depth 5 -Compress)

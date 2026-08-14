@@ -38,9 +38,13 @@ resposta longa), passe por estes cinco filtros. E o Principio VIII tornado prati
    em vez de acionar um Specialist? (ver [Frugal Skills](features/frugal-skills.md))
 5. **Compactar antes de entregar** - comprimir o handoff antes de delegar; em resposta grande,
    extrair so o essencial e descartar ruido.
+6. **Escada antes de produzir (PASSO OBRIGATORIO NA SAIDA)** - antes de escrever Artifact novo,
+   suba a escada de [features/artifact-ladder.md](features/artifact-ladder.md) e pare no primeiro
+   degrau que resolve. Espelho do passo 2 (grafo), do lado da SAIDA em vez da ENTRADA.
 
 > Ordem importa: recall (1) e grafo (2) evitam o gasto; forca (3) e mecanico (4) escolhem a rota
-> barata; compactacao (5) corta o que sobra. Pare no primeiro filtro que resolve.
+> barata; compactacao (5) corta o que sobra; a escada (6) decide quanto se produz do que sobrou.
+> Pare no primeiro filtro que resolve.
 
 ## Grafo obrigatorio (consulta antes de varredura cega)
 
@@ -148,6 +152,19 @@ que descreve a evolucao - assim o segundo cerebro tem historia auditavel (o que 
 que), nao um diff anonimo. O commit respeita a fronteira da [governanca de ferramentas](#governanca-de-mcp):
 `git push` continua **exclusivo do DevOps** (engineering.md). Commitar localmente com mensagem real
 e do agente; publicar e do DevOps.
+
+## Escada obrigatoria (saida)
+
+Espelho do "Grafo obrigatorio" acima, do lado da SAIDA: antes de produzir Artifact novo (codigo,
+config, doc), suba a escada de [features/artifact-ladder.md](features/artifact-ladder.md) e pare no
+primeiro degrau que resolve. O passo 4 (mecanico antes de julgamento) decide SE cabe uma Frugal
+Skill; esta escada decide, dentro do que exige julgamento, QUANTO se produz de novo.
+
+Simplificacao deliberada leva o marcador `frugal-debito: <teto> - upgrade: <caminho>` (doutrina e
+exemplos completos em artifact-ladder.md). Contrato lido hoje - mesma honestidade do "Grafo
+obrigatorio": sem hook que bloqueie Write/Edit antes da producao, a adesao depende do agente. O
+marcador e grep-avel pelo `debt-scan.ps1` sem mudanca de codigo (o regex existente ja casa
+`debito`).
 
 ## Pipeline em CLI, nao sequencia tagarela (PTC)
 

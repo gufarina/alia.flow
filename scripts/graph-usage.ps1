@@ -111,6 +111,7 @@ foreach ($line in [System.IO.File]::ReadAllLines($Path)) {
     tool    = [string]$o.tool
     kind    = [string]$o.kind
     scope   = [string]$o.scope
+    match   = [string]$o.match
   })
 }
 
@@ -124,6 +125,35 @@ if ($Days -gt 0) {
 # A janela da trava - o corte que importa para o veredito.
 $janelaEvents = @($allEvents | Where-Object { $_.ts -ge $GateLigadoUtc })
 
+# CONSERTO (TASK-159, MEDIDO antes de mexer - ver relatorio da Task): o denominador antigo contava
+# TODO par (sessao, escopo) que varreu, inclusive escopo sem mapa nenhum em disco (fallback
+# "studio-farina", Client sem squad como "clients/brax") - ler o mapa ali e IMPOSSIVEL, entao esses
+# pares estavam matematicamente condenados a "furo" por um motivo que nao tem nada a ver com o
+# gate falhar. Medido em 13/08/2026 contra o ledger real: 23 dos 49 pares da janela da trava
+# (47%) eram nao-gateaveis; removendo-os, a adocao sobe de 12.2% pra 15.4% - real, mas nao explica
+# o buraco todo (a causa dominante, medida e REPORTADA mas NAO consertada aqui por decisao
+# conservadora, esta no relatorio da Task: a metrica de hoje nao da credito a correcao rapida
+# depois do 1o bloqueio - o proprio desenho do gate espera 1-2 tentativas antes de ensinar).
+# Has-Map espelha EXATAMENTE a mesma logica de gateabilidade de graph-usage-sensor.ps1 (4.2): so
+# "clients/<id>" com GRAPH_REPORT.md em disco, ou "external:*" (que so existe quando um mapa JA
+# foi achado subindo a arvore - sempre gateavel por construcao).
+$hasMapCache = @{}
+function Has-Map([string]$Scope) {
+  if ($hasMapCache.ContainsKey($Scope)) { return $hasMapCache[$Scope] }
+  $result = $false
+  if ($Scope -like "external:*") {
+    $result = $true
+  } elseif ($Scope -like "clients/*") {
+    $cand1 = Join-Path $root ($Scope + "/graphify-out/GRAPH_REPORT.md")
+    $cand2 = Join-Path $root ($Scope + "/squad/knowledge/graphify-out/GRAPH_REPORT.md")
+    $result = (Test-Path -LiteralPath $cand1) -or (Test-Path -LiteralPath $cand2)
+  }
+  $hasMapCache[$Scope] = $result
+  return $result
+}
+$histEventsGateavel   = @($histEvents   | Where-Object { Has-Map $_.scope })
+$janelaEventsGateavel = @($janelaEvents | Where-Object { Has-Map $_.scope })
+
 function Measure-Adocao([object[]]$events) {
   $pairs = @{}
   foreach ($e in $events) {
@@ -133,12 +163,13 @@ function Measure-Adocao([object[]]$events) {
         session   = $e.session
         scope     = $e.scope
         firstMap  = $null
+        firstMapMatch = ""
         firstScan = $null
         scanTool  = ""
       }
     }
     $p = $pairs[$key]
-    if ($e.kind -eq 'map'  -and ($null -eq $p.firstMap  -or $e.ts -lt $p.firstMap))  { $p.firstMap  = $e.ts }
+    if ($e.kind -eq 'map'  -and ($null -eq $p.firstMap  -or $e.ts -lt $p.firstMap))  { $p.firstMap  = $e.ts; $p.firstMapMatch = $e.match }
     if ($e.kind -eq 'scan' -and ($null -eq $p.firstScan -or $e.ts -lt $p.firstScan)) { $p.firstScan = $e.ts; $p.scanTool = $e.tool }
   }
   $comVarredura = @($pairs.Values | Where-Object { $null -ne $_.firstScan })
@@ -148,10 +179,18 @@ function Measure-Adocao([object[]]$events) {
   $total = $comVarredura.Count
   $pct = 0
   if ($total -gt 0) { $pct = [math]::Round((100.0 * $adotaram.Count / $total), 1) }
+  # TASK-169: distingue ADOCAO por INJECAO (o gate entregou o mapa sozinho, match=map-injected)
+  # de ADOCAO AUTONOMA (leitura genuina do agente antes de qualquer injecao - Read/graphify query
+  # no GRAPH_REPORT.md/graph.json, match != map-injected). A medida continua honesta: nao
+  # esconde que a maior parte da adocao agora vem de MAQUINA, nao de habito.
+  $injetados = @($adotaram | Where-Object { $_.firstMapMatch -eq 'map-injected' })
+  $autonomos = @($adotaram | Where-Object { $_.firstMapMatch -ne 'map-injected' })
   return [pscustomobject]@{
     pares         = $pairs
     comVarredura  = $comVarredura
     adotaram      = $adotaram
+    injetados     = $injetados
+    autonomos     = $autonomos
     furos         = $furos
     soMapa        = $soMapa
     total         = $total
@@ -161,6 +200,8 @@ function Measure-Adocao([object[]]$events) {
 
 $mHist   = Measure-Adocao $histEvents
 $mJanela = Measure-Adocao $janelaEvents
+$mHistG   = Measure-Adocao $histEventsGateavel
+$mJanelaG = Measure-Adocao $janelaEventsGateavel
 
 $nMap  = @($allEvents | Where-Object { $_.kind -eq 'map' }).Count
 $nScan = @($allEvents | Where-Object { $_.kind -eq 'scan' }).Count
@@ -169,15 +210,30 @@ Write-Host ("[OK] eventos no ledger: " + $totalLines + " | total lido: " + $allE
 Write-Host ("[OK] pares (sessao, escopo) que varreram - janela da trava: " + $mJanela.total +
   " (so leram o mapa e nao varreram: " + $mJanela.soMapa + ", fora da conta) | historico completo: " +
   $mHist.total + " (so leram o mapa e nao varreram: " + $mHist.soMapa + ", fora da conta)")
+Write-Host ("[OK] dos pares acima, GATEAVEIS DE VERDADE (escopo com mapa em disco - so onde ler o" +
+  " mapa era POSSIVEL): " + $mJanelaG.total + " na janela da trava (de " + $mJanela.total +
+  " totais) | " + $mHistG.total + " no historico completo (de " + $mHist.total + " totais). O" +
+  " resto e escopo sem mapa nenhum (fallback, Client sem squad) - contava como furo garantido" +
+  " antes do conserto de 13/08/2026 (TASK-159), por um motivo que nao e culpa do gate.")
 Write-Host ""
 
-Write-Host ("ADOCAO (janela da trava, desde " + $GateLigadoUtc.ToString("yyyy-MM-dd") + "): " +
+Write-Host ("ADOCAO SO GATEAVEIS (janela da trava, o VEREDITO, desde " + $GateLigadoUtc.ToString("yyyy-MM-dd") + "): " +
+  $mJanelaG.adotaram.Count + "/" + $mJanelaG.total + " = " +
+  ([string]::Format($inv, "{0:0.0}", $mJanelaG.pct)) + "%   (alvo >= " + $ALVO_PCT + "%)")
+Write-Host ("  DESTES, injetados pelo gate (TASK-169, match=map-injected): " + $mJanelaG.injetados.Count +
+  " | leitura autonoma (agente leu sozinho antes de qualquer injecao): " + $mJanelaG.autonomos.Count)
+Write-Host ("ADOCAO SO GATEAVEIS (historico completo): " +
+  $mHistG.adotaram.Count + "/" + $mHistG.total + " = " +
+  ([string]::Format($inv, "{0:0.0}", $mHistG.pct)) + "%")
+Write-Host ("  DESTES, injetados: " + $mHistG.injetados.Count + " | autonomos: " + $mHistG.autonomos.Count)
+Write-Host ("  (referencia, NAO e mais o veredito - todos os pares, gateaveis ou nao) ADOCAO (janela da trava): " +
   $mJanela.adotaram.Count + "/" + $mJanela.total + " = " +
-  ([string]::Format($inv, "{0:0.0}", $mJanela.pct)) + "%   (alvo >= " + $ALVO_PCT + "%)")
+  ([string]::Format($inv, "{0:0.0}", $mJanela.pct)) + "%")
 Write-Host ("ADOCAO (historico completo, desde o inicio do ledger): " +
   $mHist.adotaram.Count + "/" + $mHist.total + " = " +
   ([string]::Format($inv, "{0:0.0}", $mHist.pct)) + "%")
-Write-Host ("FUROS (janela da trava): " + $mJanela.furos.Count + " par(es) varreram sem consultar o mapa antes.")
+Write-Host ("FUROS SO GATEAVEIS (janela da trava): " + $mJanelaG.furos.Count + " par(es) varreram sem consultar o mapa antes, em escopo QUE TINHA mapa pra ler.")
+Write-Host ("FUROS (janela da trava): " + $mJanela.furos.Count + " par(es) varreram sem consultar o mapa antes. (todos os pares, gateaveis ou nao - referencia, nao e mais o veredito)")
 Write-Host ("FUROS (historico completo): " + $mHist.furos.Count + " par(es) varreram sem consultar o mapa antes.")
 Write-Host ""
 
@@ -194,9 +250,9 @@ if ($mHist.total -gt 0) {
   Write-Host ""
 }
 
-if ($mJanela.furos.Count -gt 0) {
-  Write-Host ("Ultimos furos na janela da trava (ate " + $Top + "):")
-  foreach ($f in @($mJanela.furos | Sort-Object firstScan -Descending | Select-Object -First $Top)) {
+if ($mJanelaG.furos.Count -gt 0) {
+  Write-Host ("Ultimos furos GATEAVEIS na janela da trava (ate " + $Top + " - so escopo que TINHA mapa pra ler):")
+  foreach ($f in @($mJanelaG.furos | Sort-Object firstScan -Descending | Select-Object -First $Top)) {
     $sid = $f.session
     if ($sid.Length -gt 8) { $sid = $sid.Substring(0, 8) }
     if ([string]::IsNullOrWhiteSpace($sid)) { $sid = "(sem id)" }
@@ -207,26 +263,42 @@ if ($mJanela.furos.Count -gt 0) {
   Write-Host ""
 }
 
-# VEREDITO - a linha que o smoke le. Julgado SOBRE A JANELA DA TRAVA (nao sobre o historico
-# completo, que mistura era-sem-lei com era-com-lei). Proibido afrouxar o alvo para passar: se a
-# janela reprovar, o veredito reprova com o numero real.
-if ($mJanela.total -ge $MIN_AMOSTRA -and $mJanela.pct -lt $ALVO_PCT) {
-  Write-Host ("VEREDITO: [AVISO] adocao " + ([string]::Format($inv, "{0:0.0}", $mJanela.pct)) + "% em " +
-    $mJanela.total + " par(es) desde " + $GateLigadoUtc.ToString("yyyy-MM-dd") +
-    " (quando a trava entrou) - abaixo do alvo de " + $ALVO_PCT +
-    "%. historico completo: " + ([string]::Format($inv, "{0:0.0}", $mHist.pct)) + "% em " + $mHist.total +
-    " par(es). A lei do grafo nao esta pegando no ponto de decisao.")
+# VEREDITO - a linha que o smoke le. Julgado SOBRE A JANELA DA TRAVA, SO PARES GATEAVEIS (CONSERTO
+# TASK-159): antes, o denominador incluia par sem mapa nenhum em disco - ler o impossivel nunca
+# aconteceria, entao esses pares eram furo garantido por um motivo que nao mede o gate, so infla o
+# numero de furos. Escopo sem mapa fica de fora do veredito (nao pode ser cobrado por algo que nao
+# existe), mas continua contado e mostrado acima ("dos pares acima, GATEAVEIS DE VERDADE...") -
+# nada some, so para de contaminar o alvo de 70%. Proibido afrouxar o alvo pra passar: se a janela
+# gateavel reprovar, o veredito reprova com o numero real.
+# TASK-169 (14/08/2026): o gate deixou de so RECUSAR e passou a INJETAR o mapa (God Nodes +
+# Community Hubs) via additionalContext no 1o toque de todo par gateavel - a leitura deixou de
+# depender de habito/lembranca. Por isso o alvo de 70% agora e PISO REAL, nao aspiracao: um par
+# gateavel que aparece como FURO daqui pra frente nao e mais "o agente esqueceu de ler" - e
+# "a injecao nao aconteceu" (killswitch ligado, erro no gate, ou o toque aconteceu ANTES desta
+# versao do sensor). O texto abaixo reflete isso: abaixo do alvo com o mecanismo ligado e sinal
+# de MAQUINA, nao de disciplina.
+if ($mJanelaG.total -ge $MIN_AMOSTRA -and $mJanelaG.pct -lt $ALVO_PCT) {
+  Write-Host ("VEREDITO: [AVISO] adocao (so gateaveis) " + ([string]::Format($inv, "{0:0.0}", $mJanelaG.pct)) + "% em " +
+    $mJanelaG.total + " par(es) gateaveis desde " + $GateLigadoUtc.ToString("yyyy-MM-dd") +
+    " (quando a trava entrou; " + $mJanela.total + " pares TOTAIS, incluindo " + ($mJanela.total - $mJanelaG.total) +
+    " sem mapa nenhum em disco, fora desta conta) - abaixo do alvo de " + $ALVO_PCT +
+    "%. historico completo (so gateaveis): " + ([string]::Format($inv, "{0:0.0}", $mHistG.pct)) + "% em " + $mHistG.total +
+    " par(es), sendo " + $mHistG.injetados.Count + " por injecao automatica (TASK-169) e " + $mHistG.autonomos.Count +
+    " por leitura autonoma. Com a injecao ligada, par gateavel sem mapa no contexto e DEFEITO DE MAQUINA" +
+    " (killswitch, erro no gate, ou pares anteriores a esta versao do sensor) - nao mais falta de habito.")
   exit 0
 }
-if ($mJanela.total -lt $MIN_AMOSTRA) {
-  Write-Host ("VEREDITO: [PASS] amostra insuficiente na janela da trava para julgar (" + $mJanela.total +
+if ($mJanelaG.total -lt $MIN_AMOSTRA) {
+  Write-Host ("VEREDITO: [PASS] amostra gateavel insuficiente na janela da trava para julgar (" + $mJanelaG.total +
     " de " + $MIN_AMOSTRA + " pares minimos, desde " + $GateLigadoUtc.ToString("yyyy-MM-dd") +
-    ") - sensor vivo, medindo. historico completo: " +
-    ([string]::Format($inv, "{0:0.0}", $mHist.pct)) + "% em " + $mHist.total + " par(es).")
+    ") - sensor vivo, medindo. historico completo (so gateaveis): " +
+    ([string]::Format($inv, "{0:0.0}", $mHistG.pct)) + "% em " + $mHistG.total + " par(es).")
   exit 0
 }
-Write-Host ("VEREDITO: [PASS] adocao " + ([string]::Format($inv, "{0:0.0}", $mJanela.pct)) + "% em " +
-  $mJanela.total + " par(es) desde " + $GateLigadoUtc.ToString("yyyy-MM-dd") +
-  " (quando a trava entrou) - no alvo (>= " + $ALVO_PCT + "%). historico completo: " +
-  ([string]::Format($inv, "{0:0.0}", $mHist.pct)) + "% em " + $mHist.total + " par(es).")
+Write-Host ("VEREDITO: [PASS] adocao (so gateaveis) " + ([string]::Format($inv, "{0:0.0}", $mJanelaG.pct)) + "% em " +
+  $mJanelaG.total + " par(es) gateaveis desde " + $GateLigadoUtc.ToString("yyyy-MM-dd") +
+  " (quando a trava entrou) - no alvo (>= " + $ALVO_PCT + "%), sendo " + $mJanelaG.injetados.Count +
+  " por injecao automatica (TASK-169) e " + $mJanelaG.autonomos.Count + " por leitura autonoma." +
+  " historico completo (so gateaveis): " +
+  ([string]::Format($inv, "{0:0.0}", $mHistG.pct)) + "% em " + $mHistG.total + " par(es).")
 exit 0

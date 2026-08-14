@@ -68,6 +68,8 @@ risco de drift. Precisa do threshold/cerca exata: abra `rsi.yaml`. Para o resto,
 ## Frugalidade e auto-melhoria (abrir ao otimizar custo ou alimentar o RSI)
 
 - engine/tools.md - selecao de ferramenta e como gastar o minimo de token.
+- engine/features/artifact-ladder.md - escada de frugalidade de SAIDA (7 degraus, marcador
+  `frugal-debito:`) - espelho do grafo obrigatorio (tools.md), do lado da producao.
 - engine/reading-strategy.md - ler sem ler tudo: indice mestre + assinatura + grep-por-secao (kb-index.ps1).
 - engine/features/frugal-skills.md - capacidades por script (sem LLM) para tarefas deterministicas.
 - engine/rsi/rsi.md - como o sistema aprende e melhora a si mesmo a cada Loop.

@@ -42,7 +42,9 @@ o estado e os exemplos dependem deles.
 > (literal/intencional/adversarial) no IDENTIFICA, as cinco caixas + pedra-chave no DELEGA, o rival
 > por conclusao na execucao, os passes de verificacao no Gate, e destino-primeiro no FECHA. Todo
 > pedido e um proxy da decisao por tras dele: responda, depois amplie - nunca amplie em vez de
-> responder.
+> responder. No DELEGA, o Specialist tambem sobe a escada de
+> [features/artifact-ladder.md](features/artifact-ladder.md) antes de produzir - decide QUANTO
+> Artifact novo escrever, nunca SE uma parte do pedido e atendida.
 
 > LEI (rastreabilidade e continuidade - 02/jul, incidente da LP com base errada): TODA demanda ao
 > operador vira Task de um Projeto de um Cliente ANTES de qualquer execucao - inclusive demandas
@@ -120,6 +122,36 @@ Regras duras do match:
 > contradizia o squads-first que este arquivo ja declarava acima; a clausula fecha essa
 > contradicao sem mudar o comportamento correto (que ja era squads-first na pratica dos Squad
 > Owners), so tornando o contrato explicito onde a maquina de roteamento le.
+
+> LEI (clausula do relatorio de coordenacao, achado CANON, TASK-127, 12/08/2026): a LEI L33
+> (especialista obrigatorio) rege ARTEFATO DE DOMINIO - marca, copy, design, codigo, dado do
+> produto do Client. Ela NAO rege o relatorio que a propria Alia produz sobre o que ELA MESMA
+> orquestrou (o PLANO/DIAGNOSTICO/DECISAO/RELATORIO DE STATUS que a LEI L30 exige em HTML,
+> persona.md). Um RELATORIO DE COORDENACAO e Artifact da PROPRIA Alia, no papel dela (rotear,
+> decidir, medir, mostrar) - nao e delegavel porque nao e trabalho de Specialist, e trabalho de
+> coordenacao. A fronteira e objetiva, nao de julgamento:
+>
+> 1. PASTA: um RELATORIO DE COORDENACAO so existe em `clients/<id>/artifacts/coordination/*.html`
+>    (subpasta nova, no mesmo padrao que ja existe para `artifacts/gates/*.gate.md`). Qualquer
+>    `.html` fora dessa subpasta, direto em `clients/<id>/artifacts/*.html` ou em qualquer outra
+>    subpasta do Client, e PECA DE DOMINIO por definicao - a LEI L33 se aplica sem excecao.
+> 2. CONTEUDO: dentro de `artifacts/coordination/`, so cabe (a) sintese de Tasks ja registradas
+>    (id, client, project, status, dono, data), (b) citacao/link a Artifact ja produzido por um
+>    Specialist (nunca copia nem reescreve o conteudo do Specialist, aponta pra ele), (c) a
+>    decisao/recomendacao de ROTEAMENTO, PRIORIDADE, RISCO e PROXIMO PASSO - que E o dominio da
+>    propria Alia (Principio I, Delegation First: "ela e dona da rota"), (d) TLDR e estrutura que
+>    L30 exige. NUNCA cabe: copy destinada ao publico externo do Client, paleta/tipografia/marca
+>    do Client (o relatorio usa sempre o DESIGN.md do Studio, nunca o BRAND do Client), codigo que
+>    vai a producao, ou numero/feature/tagline que nao esteja no Claims Registry ou citado com
+>    [MEDIDO]/[LIDO] de um Artifact real (LEI 2 de client-truth.md continua valendo dentro do
+>    relatorio).
+> 3. Escrever em `artifacts/coordination/` NUNCA desarma L33 para o RESTO do turno: se o mesmo
+>    turno tambem escreve em qualquer arquivo de dominio fora dessa subpasta, essa outra escrita
+>    continua exigindo Specialist (ou a valvula do Operator, `client-truth.md`), normalmente.
+>
+> L30 continua mandato pessoal do CEO, intocado - todo plano/diagnostico/decisao/status SEMPRE
+> sai em HTML, sem pergunta antes. L33 continua intocada - toda peca de dominio SEMPRE passa por
+> Specialist. Esta clausula so nomeia a fronteira que faltava entre as duas; nao afrouxa nenhuma.
 
 ## Delegacao e governanca (dois tiers)
 

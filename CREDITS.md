@@ -28,8 +28,9 @@ A linhagem completa, para registro: **BMad Method -> aiox-core -> Alia Flow**.
   engine/engineering.md.
 - **ponytail** (Dietrich Gebert, github.com/DietrichGebert/ponytail, MIT) - o mindset do "senior
   preguicoso": a escada da simplicidade (YAGNI -> stdlib -> nativo -> dep existente -> one-liner ->
-  minimo) e a convencao de comentario `ponytail:` (teto + caminho de upgrade) em
-  engine/engineering.md. Adaptado, nao copiado - o motor ja vivia o principio.
+  minimo) e a convencao de comentario, batizada `frugal-debito:` no nosso motor (teto + caminho de
+  upgrade), em engine/engineering.md e generalizada para qualquer Artifact em
+  engine/features/artifact-ladder.md. Adaptado, nao copiado - o motor ja vivia o principio.
 - **Jobs To Be Done** (Clayton Christensen) e **The Effective Executive** (Peter Drucker) - os filtros
   de pensamento da constituicao: contribuir acima de parecer, causa-raiz, a forca certa para cada job.
 

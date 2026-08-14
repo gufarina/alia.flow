@@ -77,6 +77,53 @@ Qualquer outro arquivo solto na raiz e bagunca - ele tem uma pasta-tema certa: s
 doc -> `docs/`, dado de cliente -> `clients/{id}/`, MCP -> `optional-mcps/`. Pensar antes de criar
 (auto-check acima); o smoke reprova o vazamento.
 
+## Layout canonico de clients/{id}/artifacts/ (OPP-26 capitulo 2)
+
+O artifact mora no client de quem e o ASSUNTO, nunca no client do squad que executou. Trabalho
+sobre o produto Alia Flow mora na oficina (`clients/alia-flow-lab` - marca em `brand/`, o resto em
+`artifacts/`); trabalho sobre o Studio em si mora no Client-casa do proprio estudio. Ancora
+medida: material do PRODUTO Alia Flow (LP, copy da LP, icones, motor de dither de fundo) foi
+arquivado no Client-casa porque o squad de marketing que produziu mora la - o ASSUNTO era o
+produto, o client certo era `alia-flow-lab`. Exemplos medidos em ago/2026 (migracao organica, nao
+mover agora): `lp-*`, `copy-lp-*`, `icones-*`, `alia-icone.svg`, `eye-engine.js`,
+`ascii-dither-field/`, `alia-desktop-prototipo*`, `deck-launcher*`, `briefing-marketing-alia-flow*`
+- material do produto arquivado no Client errado. O smoke nao policia ASSUNTO (e julgamento); so
+policia a ESTRUTURA abaixo.
+
+Dentro do client certo, `clients/{id}/artifacts/` segue este layout:
+
+### Pasta por projeto
+
+`clients/{id}/artifacts/{project-slug}/` - um artifact solto direto em `artifacts/` (fora de uma
+pasta de projeto) e vazamento, igual a raiz da instalacao.
+
+### Nome do arquivo
+
+`{tipo}-{descricao}-{AAAA-MM-DD}.{ext}`, com vocabulario de `{tipo}` FECHADO (os que dominam o uso
+real, medido no acervo): `relatorio`, `painel`, `auditoria`, `plano`, `copy`, `prova`.
+
+### Superado - retirar no mesmo FECHA que cria o novo
+
+Quando um artifact e substituido, MOVER para `_retired/` do mesmo projeto no mesmo passo (FECHA)
+que cria o substituto - nunca deixar os dois "vivos" lado a lado. Reusa a convencao de
+`provenance.md` ("nunca deletar, so arquivar"): o arquivo movido ganha cabecalho com
+`retired_on:` (data ISO) e `retired_reason:`.
+
+### Prova/screenshot
+
+Sempre em `_provas/` do projeto (`clients/{id}/artifacts/{project-slug}/_provas/`), nunca solto
+junto dos artifacts finais.
+
+### Indice
+
+`README.md` do projeto quando o projeto chega a 5+ arquivos (mesma regra 2 do topo desta skill,
+aplicada por projeto).
+
+### Migracao
+
+E ORGANICA (Boy-Scout Rule): cada FECHA que tocar um artifact existente o move para o layout novo.
+Nao ha migracao em lote agendada - acervo pre-existente e ratchet (baseline datada), nao bloqueio.
+
 ## Aplica a
 
 Engine (o motor), studio (os dados do operador), skills, scripts e docs - **toda** a estrutura
