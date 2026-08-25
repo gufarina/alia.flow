@@ -10,7 +10,7 @@
 # script inspeciona por CAMINHO/CONTEUDO em disco quando nao ha git (sem "tudo certo" as cegas);
 # so sai com erro se nao conseguir nem enumerar arquivos (pasta inexistente).
 [CmdletBinding()]
-param([string]$Repo = ".")
+param([string]$Repo = ".", [string[]]$OnlyPaths = @())
 
 $ErrorActionPreference = "Stop"
 $fail = 0
@@ -98,6 +98,21 @@ try {
             Write-Host "[FAIL] Nao consegui enumerar nenhum arquivo em $repoRaiz - nao consigo conferir a superficie publica." -ForegroundColor Red
             exit 1
         }
+    }
+
+    # CONSERTO (TASK-285, ultima volta): -OnlyPaths restringe a varredura a um subconjunto de
+    # arquivos (prefixos relativos), pensado para rodar CEDO - dentro do smoke da OFICINA, contra
+    # os proprios arquivos vivos (CHANGELOG.md, release-reviews/), antes de qualquer empacotamento.
+    # Sem isto o unico jeito de flagar vazamento de identidade era escanear o pacote JA GERADO
+    # (release/alia-flow) ou o repo git publico - tarde demais pra pegar no ATO de escrever o
+    # CHANGELOG, e escanear a oficina INTEIRA sem filtro da 300+ falso-positivo (doc interno,
+    # squad/, opportunities/, release-reviews historico - todos citam Client real legitimamente).
+    if ($OnlyPaths.Count -gt 0) {
+        $arquivos = @($arquivos | Where-Object {
+            $rel = $_
+            [bool]($OnlyPaths | Where-Object { $rel -eq $_ -or $rel.StartsWith($_ + '/') })
+        })
+        Write-Host ("[INFO] Escopo restrito a -OnlyPaths (" + ($OnlyPaths -join ", ") + "): " + $arquivos.Count + " arquivo(s) na varredura")
     }
 
     # ---- (1) categorias proibidas no git ----

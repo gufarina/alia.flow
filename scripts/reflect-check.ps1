@@ -24,6 +24,31 @@ try {
   if ([string]::IsNullOrWhiteSpace($ProposalsDir)) { $ProposalsDir = Join-Path $root "memory\_proposals" }
   if (-not (Test-Path -LiteralPath $ProposalsDir)) { exit 0 }
 
+  # CONSERTO (TASK-285, auditoria RSI TASK-284): rsi-patterns.ps1 (PECA 3, DETECTA) so roda se
+  # alguem lembra de digitar o comando - nao havia lembrete de TEMPO DECORRIDO, so de relatorio
+  # ja pronto esperando julgamento (bloco abaixo, que so dispara quando ALGO esta pendente). Fica
+  # ANTES do early-exit "nada pendente" de proposito: e justo quando nada esta pendente que
+  # ninguem rodou a varredura ha muito tempo - o caso que mais importa avisar. A janela real
+  # medida em disco entre varreduras e ~7 dias (patterns-2026-08-10, -08-17, -08-24). Fail-soft,
+  # uma linha, so quando passa da janela - nunca dispara o script sozinho (isso promoveria
+  # DETECTA a automatico, fora do escopo desta correcao; a decisao de rodar continua de quem le).
+  try {
+    $SCAN_WINDOW_DIAS = 7
+    $allPatterns = New-Object System.Collections.Generic.List[object]
+    $allPatterns.AddRange(@(Get-ChildItem -LiteralPath $ProposalsDir -Filter "patterns-*.md" -File -ErrorAction SilentlyContinue))
+    $patternsArchiveDir = Join-Path $ProposalsDir "_archive"
+    if (Test-Path -LiteralPath $patternsArchiveDir) {
+      $allPatterns.AddRange(@(Get-ChildItem -LiteralPath $patternsArchiveDir -Filter "patterns-*.md" -File -ErrorAction SilentlyContinue))
+    }
+    if ($allPatterns.Count -gt 0) {
+      $lastScan = ($allPatterns | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+      $diasDesde = [math]::Floor(((Get-Date) - $lastScan.LastWriteTime).TotalDays)
+      if ($diasDesde -gt $SCAN_WINDOW_DIAS) {
+        Write-Host ("[ALIA - bastidor] " + $diasDesde + " dias desde a ultima varredura de padrao (" + $lastScan.Name + ") - janela observada ~" + $SCAN_WINDOW_DIAS + "d. scripts/rsi-patterns.ps1 -Write pode achar algo novo.")
+      }
+    }
+  } catch {}
+
   $pending = @(Get-ChildItem -LiteralPath $ProposalsDir -Filter "reflection-inbox-*.md" -File -ErrorAction SilentlyContinue)
   # PECA 2 (RSI, canal do dono): friction-*.md conta junto - atrito parado e tao pendencia quanto
   # digest parado (os dois esperam o mesmo julgamento no inicio da sessao).

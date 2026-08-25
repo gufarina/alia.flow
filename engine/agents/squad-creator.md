@@ -55,9 +55,13 @@ diferenca do Alia Flow: preset-driven + segundo cerebro em camadas.
 6. **Escreve o `squad.yaml`** (manifesto: Specialists + Gateway + buracos de dominio rastreaveis)
    e **registra** (f) o cliente/squad no estado.
 7. **Fecha o Squad** (g, fechamento obrigatorio) - escreve a Especificacao de Entrega (contrato de
-   consistencia) no `knowledge/`, gera o indice mestre `knowledge/MAP.md` (`kb-index.ps1`) e GERA o
-   grafo do graphify (`graphify-out/`). Sem os tres, o Squad esta incompleto -
-   `scripts/graph-check.ps1` e o `kb-index` reprovam.
+   consistencia) no `knowledge/`, gera o indice mestre `knowledge/MAP.md` (`kb-index.ps1`), GERA o
+   grafo do graphify (`graphify-out/`) e CONFIRMA que nenhum EXEMPLO RESIDUAL do preset (nome
+   generico, texto de placeholder, dominio do preset nao trocado pelo do cliente real) sobreviveu
+   em nenhum `agents/{name}.md` - exemplo residual e Specialist generico, nao um Specialist novo
+   (atrito real do operador, ver `memory/_proposals/patterns-2026-08-24.md`). Sem os quatro, o
+   Squad esta incompleto - `scripts/graph-check.ps1` e o `kb-index` reprovam o formal; a checagem
+   de exemplo residual e manual, do proprio Squad Creator, antes de devolver a bola pra Alia.
 
 ## Nao faz
 - Trabalho de dominio - isso e dos Specialists que ele cria.

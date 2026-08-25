@@ -1927,6 +1927,24 @@ Check "Docs-gate: law-ledger-check.ps1 presente" (Test-Path -LiteralPath $llcScr
 $llcOut = if (Test-Path -LiteralPath $llcScript) { (& $llcScript 6>&1) -join "`n" } else { "" }
 Check "Docs-gate: law-ledger-check.ps1 casa 'FAIL: 0' e NUNCA 'LEDGER PODRE' (ponteiros do ledger batem com o disco)" (($llcOut -match 'FAIL:\s*0') -and ($llcOut -notmatch 'LEDGER PODRE'))
 
+# --- Identidade de Client vazada no CHANGELOG, CEDO (TASK-285, ultima volta): a 1.61.0 vazou
+# o nome real de um Client na propria entrada nova do CHANGELOG.md, e o unico guard que pegou isso rodava
+# so no estagio de propagacao (release/alia-flow, secao (h) de smoke-test-studio.ps1) - tarde
+# demais pra pegar no ATO de escrever o CHANGELOG, e so pega quem lembrar de re-empacotar antes
+# de fechar a Task. Pergunta que motivou o conserto: por que 1.60.0 passou e 1.61.0 nao, se o
+# guard ja existia? Resposta medida: sorte do redator (o texto da 1.60.0 por acaso nao citou
+# Client), nao mecanismo. Fecha a causa raiz aqui: scripts/check-public-surface.ps1 ganhou
+# -OnlyPaths (reuso do mesmo scan de identidade, so restringe o escopo) e roda direto contra o
+# CHANGELOG.md DA OFICINA - o unico arquivo desta classe de incidente (14/08 e 25/08, os dois
+# vieram de CHANGELOG/nota de prova) que de fato viaja pro pacote (scripts/package-release.ps1
+# `$shipFiles`). release-reviews/ fica DE FORA de proposito: nunca ship (so gate de leitura em
+# package-release.ps1), e o historico la already cita Client real legitimamente (doc interno).
+Write-Host ""
+Write-Host "-- Identidade de Client no CHANGELOG.md, cedo (TASK-285) --"
+$cpsScriptEarly = Join-Path $root "scripts\check-public-surface.ps1"
+$cpsEarlyOut = if (Test-Path -LiteralPath $cpsScriptEarly) { (& $cpsScriptEarly -Repo $root -OnlyPaths "CHANGELOG.md" 6>&1) -join "`n" } else { "" }
+Check "CHANGELOG.md (oficina): nenhuma identidade de Client real vazada (check roda ANTES do empacotamento, nao so depois)" ($cpsEarlyOut -match "SUPERFICIE LIMPA")
+
 # --- TASK-213 (item 4): o "SEM MAQUINA NESTA INSTANCIA" de smoke-test.ps1 deixou de ser tabela
 # hardcoded (sempre a mesma resposta, em toda instancia) e virou Test-Path (Join-Path $root
 # "studio.example") medido no ato. (a) esta instancia (a oficina) TEM studio.example/ de verdade

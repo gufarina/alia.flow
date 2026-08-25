@@ -20,6 +20,124 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.61.0] - 2026-08-25
+
+PATCH-shaped MINOR - WARDEN fecha o furo de PIPELINE que o proprio ARCHIVE cometeu ao entregar os
+4 itens do conserto RSI da TASK-284/285 (mandato do CEO): 3 dos 4 consertos nasceram SO na
+instancia operacional (`C:\...\studio-farina\scripts\`), nunca na oficina - o padrao exato
+"mecanismo escrito nao e mecanismo ligado" / "espelho de sincronia tem dois lados" ja pago caro
+antes (ver memoria). O proximo `update-engine.ps1` apagaria os 3 em silencio. O 4o item (promocao
+`sq-residual` via `rsi-apply.ps1`, editando `engine/agents/squad-creator.md` na oficina de
+verdade, com held-out PASS e linha em LINEAGE.md) estava correto e foi preservado sem alteracao -
+primeira promocao real da historia do RSI.
+
+**1. Os 3 consertos trazidos para a origem (oficina), hash conferido nos dois lados.**
+`scripts/smoke-test-studio.ps1` secao (i) ganhou o check novo (candidato parado em
+`engine/rsi/_candidates/<slug>` sem decisao em ate 3 dias, mesma janela STALE que digest/atrito/
+padrao ja usavam - reusa o mecanismo, nao inventa um novo). `scripts/reflect-check.ps1` ganhou o
+aviso fail-soft de janela decorrida (~7 dias medidos em disco entre `patterns-*.md`) ANTES do
+early-exit de "nada pendente" - de proposito, porque e justo quando nada esta pendente que ninguem
+lembra de rodar `rsi-patterns.ps1 -Write`. `scripts/cost-per-artifact.ps1` (arquivo NOVO na
+oficina, ja existia so na instancia) - PECA do RSI que calcula `avg_tokens_per_artifact` (proxy de
+MB de transcricao por Artifact, nunca token faturado, honestidade obrigatoria no proprio texto de
+saida). Adicionado a allowlist `$scriptsAllow` de `scripts/package-release.ps1` (alfabetizado
+entre `client-state.ps1` e `cost-sensor.ps1`) - sem isso repetiria o mesmo furo medido na TASK-283
+(script novo fora da allowlist, nao viaja no pacote publico). MD5 dos 3 arquivos batendo
+byte-a-byte nos dois lados (oficina e instancia) apos o conserto, unico ajuste de forma sendo a
+normalizacao de quebra de linha (LF, igual ao resto do repo - `smoke-test-studio.ps1` tinha CRLF
+so nele por acidente antigo).
+
+**2. `rsi-apply.ps1` ganha `Close-Candidate`: o gap de desenho que o proprio ARCHIVE encontrou e
+nao consertou.** Promocao (passo f) e `-Rollback` nunca limpavam `engine/rsi/_candidates/<slug>`
+depois do desfecho - o rastro ficava so no `LINEAGE.md`, a pasta do candidato continuava parada, e
+em poucos dias virava falso-positivo do check novo do item 1 (foi exatamente o que aconteceu com
+`sq-residual`, a promocao BOA, medida parada 0 dias apos aplicar mas prestes a virar
+"[CANDIDATO] PARADO" em 3). Consertado na causa raiz: os arquivos residuais (`proposed`,
+`test.ps1`) migram para DENTRO do mesmo `_archive/<data>-<slug>/` que ja guarda `manifest.md` +
+`original` (um lugar so por desfecho), e a pasta em `_candidates/` e removida - chamado no fim do
+passo (f) e no fim do `-Rollback`. Provado pelo negativo com um candidato sintetico isolado
+(`negtest`, fora do rastro real): `-Rollback negtest` restaurou o vivo byte-exato E imprimiu
+"candidato removido de `_candidates/`: negtest (arquivado em 2026-08-25-negtest)"; conferido em
+disco que `_candidates/` esvaziou e o archive ganhou os 4 arquivos (manifest+original+proposed+
+test.ps1); fixture inteira removida depois, sem residuo na oficina.
+
+**3. Decisao sobre os 3 candidatos-demo parados 14 dias (achado legitimo do check novo).**
+Investigado um a um contra `engine/rsi/_archive/LINEAGE.md` e `studio/smoke-log.jsonl` antes de
+decidir:
+   - `valida-rollback` - LINEAGE.md ja tinha o par completo (APLICADO 2026-08-10 21:28:13 / ROLLBACK
+     21:28:26, hash byte-exato). So faltava a limpeza de `_candidates/` que o item 2 agora faz
+     sozinho para candidatos futuros - feita manualmente aqui pelos 3 (residuais copiados pro
+     archive existente, pasta removida).
+   - `valida-desnecessario` e `valida-marcador-rsi` - fixtures do self-test da instalacao
+     (10/08/2026, item 4c) SEM nenhum rastro de execucao real em LINEAGE.md nem no smoke-log (o
+     caminho feliz equivalente, `demo-warden-note`, foi o que de fato rodou nesse dia - aplicado e
+     revertido, ambos em LINEAGE). Decisao HONESTA (nao a que so pinta de verde): arquivados em
+     `_archive/2026-08-25-<slug>/` com `CLOSURE.md` proprio explicando o motivo (NAO editado a mao
+     o `LINEAGE.md` - esse continua append-only, so por `rsi-apply.ps1`; arquivar-sem-rodar nao e
+     evento de APLICADO/ROLLBACK, por isso o registro mora num arquivo separado, nao inventa um
+     header novo em LINEAGE). `engine/rsi/_candidates/` (instancia) volta a ficar vazio, igual uma
+     instalacao nova.
+   - Consequencia medida: `RSI vivo: ... candidato parado` sai da lista de FAIL do smoke da
+     instancia sem nenhum check afrouxado - o achado era real, a divida foi fechada, nao escondida.
+
+**4. `law-ledger.md`: ponteiro L13 corrigido, LEI nova NAO mintada por decisao propria.** A
+insercao do item 1 empurrou `smoke-test-studio.ps1` 14 linhas - `scripts/smoke-test-studio.ps1:754`
+virou `:768`, ponteiro corrigido (`law-ledger-check.ps1` voltou de `FAIL: 1` pra `FAIL: 0`).
+Decisao registrada, nao escondida: nem o check novo de candidato-parado, nem o passo 7/item g de
+`squad-creator.md` (residuo de exemplo) ganharam ID de LEI novo nesta Task. Fronteira do proprio
+papel do WARDEN (`squad/agents/warden.md`, "Nao faz"): decidir se uma LEI deve existir e do CANON,
+WARDEN so prova o que ja foi registrado. Fica nomeado, nao escondido, como recomendacao explicita
+pro CANON: (a) candidato parado ja tem maquina provada pelo negativo nesta Task, candidato natural
+a LEI `COBERTA`; (b) passo 7 do squad-creator e hoje "checagem manual, do proprio Squad Creator"
+(texto do proprio arquivo) - sem maquina, candidato a `SEM TESTE` se o CANON decidir registrar.
+
+**5. Prova.** Smoke da oficina (`scripts/smoke-test.ps1`): **256 PASS, 0 FAIL, ALL GREEN**
+(contagem identica a 1.60.0 - nenhum check novo/removido no smoke da oficina; GUARD-NUM em
+`docs/CLAIMS.md` continua 256, sem mudanca). Smoke da instancia (`scripts/smoke-test-studio.ps1`):
+**67 PASS/7 FAIL -> 68 PASS/6 FAIL** (o FAIL de candidato-parado fechou; os 6 remanescentes sao
+divida PRE-EXISTENTE fora de escopo desta Task - `status-beta.png`/pastas soltas na raiz,
+`scratchpad`, artifacts de um Client fora do ratchet de layout, encoding, 2 achados de linhagem - nenhum novo, nenhum
+consertado aqui por mandato explicito do fechamento). `law-ledger-check.ps1`: `FAIL: 0, AVISO: 0,
+LEDGER CONFERE COM O DISCO`.
+
+divida de processo reafirmada (herdada de 1.60.0, nao consertada aqui - fora de escopo): nenhum
+guard obriga rodar `package-release.ps1` antes de fechar uma Task que mexe em `scripts/` ou em
+`law-ledger.md`; e tambem nenhum guard obriga propagar oficina->instancia antes de fechar - foi
+exatamente essa lacuna de processo que produziu o furo desta Task (ARCHIVE editou so a instancia).
+`scripts/rsi-apply.ps1` (item 2) so foi consertado na oficina - a copia da instancia
+(`C:\...\studio-farina\scripts\rsi-apply.ps1`) so recebe o conserto quando o COURIER rodar
+`update-engine.ps1` (publicacao e exclusiva dele); ate la, rodar `-Candidate`/`-Rollback` a partir
+da raiz da instancia usa a versao SEM `Close-Candidate`. Nao e regressao desta Task (o arquivo
+estava identico nos dois lados antes desta Task, 10/08/2026) - fica nomeado para o proximo
+`update-engine.ps1`.
+
+**6. Ultima volta - o proprio gate do pacote reprovou a 1.61.0 (furo real, medido pelo COURIER):**
+a entrada acima citava o nome real de um Client ao descrever a divida
+pre-existente do smoke - `check-public-surface.ps1` reprovou `release/alia-flow/CHANGELOG.md:99`
+e o smoke da instancia pegou o mesmo vazamento (7o FAIL, secao h). Varredura da ENTRADA INTEIRA
+(nao so o paragrafo apontado - mesma licao do incidente de 14/08): so essa ocorrencia, tanto aqui
+quanto em `release-reviews/1.61.0.md` (mesma leva); anonimizado para "artifacts de um Client fora
+do ratchet de layout" - mesma verdade tecnica, nenhum nome. **Causa raiz consertada, nao so o
+sintoma**: `scripts/check-public-surface.ps1` ganhou `-OnlyPaths` (reuso do mesmo scan de
+identidade, so restringe o escopo de arquivos) e `scripts/smoke-test.ps1` passa a chamar-lo contra
+`CHANGELOG.md` DA PROPRIA OFICINA (nao so contra `release/alia-flow`, que so existe DEPOIS de
+empacotar) - pega o vazamento no ATO de escrever o CHANGELOG, nao so no empacotamento la na
+frente. Pergunta respondida: 1.60.0 passou e 1.61.0 nao pela mesma razao de sempre quando um guard
+so roda tarde - sorte do redator (o texto da 1.60.0 por acaso nao citou Client), nao mecanismo;
+agora e mecanismo. `release-reviews/` fica de FORA do novo check de proposito (nunca ship - so gate
+de leitura em `package-release.ps1` - e o historico la ja cita Client real legitimamente como doc
+interno; incluir teria quebrado o smoke contra conteudo pre-existente legitimo). Prova pelo
+negativo: reintroduzida a mesma frase (citando o nome real do Client) no `CHANGELOG.md` -> smoke
+reprovou de verdade (`[FAIL] CHANGELOG.md (oficina): nenhuma identidade de Client real vazada`);
+desfeita -> `[PASS]` de volta. GUARD-NUM 256 -> 257 (1 check novo). Smoke da oficina: **257 PASS,
+0 FAIL, ALL GREEN**. `check-public-surface.ps1 -Repo release/alia-flow` (regenerado com
+`package-release.ps1` apos o conserto): `SUPERFICIE LIMPA`. `package-release.ps1`: **237 PASS, 0
+FAIL, 1 SKIP, ALL GREEN**. Smoke da instancia: **67 PASS/7 FAIL -> 68 PASS/6 FAIL** (o 7o FAIL,
+mesmo vazamento, fechado; os 6 remanescentes sao a mesma divida pre-existente fora de escopo,
+nenhuma nova).
+
+---
+
 ## [1.60.0] - 2026-08-25
 
 MINOR - WARDEN fecha o Ralo n.3 do mandato do CEO (25/08/2026: "quase 5 milhoes de tokens desde a
