@@ -20,6 +20,101 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.60.0] - 2026-08-25
+
+MINOR - WARDEN fecha o Ralo n.3 do mandato do CEO (25/08/2026: "quase 5 milhoes de tokens desde a
+madrugada, isso e inaceitavel, nosso produto ajuda a poupar token como promessa base"). Evidencia
+ja medida na sessao: 149,4 MB de transcript num dia, 169 arquivos, 161 subagentes; Ralo n.1
+(subagente FLINT/TASK-197, 168 chamadas de ferramenta, dezenas de screenshot PNG de tela cheia -
+custo quadratico); Ralo n.2 (fan-out sem teto); Ralo n.3 (custo sem sensor - "Budget"/"Frugality
+Check" eram doutrina lida, nada media nem acusava). L41 novo no law-ledger.
+
+**1. `scripts/cost-sensor.ps1` (NOVO, deterministico, zero LLM).** Mede o custo-proxy do dia por
+sessao a partir dos transcripts locais que o Claude Code ja grava
+(`$env:USERPROFILE\.claude\projects\<slug>\*.jsonl` + `<slug>\<sessao>\subagents\agent-*.jsonl`):
+MB por sessao (arquivo principal + subagentes), contagem de subagentes, top ofensores. Acusa
+`[ESTOURO]` quando uma sessao passa de 20 subagentes OU 30 MB (tetos configuraveis), ou o dia passa
+de 80 MB. Rodado contra a evidencia real da propria sessao (`-WhatIf`, sem gravar): confirmou
+91,47 MB / 8 sessoes / 150 subagentes no dia, batendo com a ordem de grandeza da evidencia da Alia
+(sessao 75e68eaa: 45 subagentes medidos aqui tambem - exato; 7eddbf01: 94 medidos vs 79 citado,
+crescimento durante o dia). Grava `studio/cost-log.jsonl` (append, 1 linha por rodada real, nunca em
+`-WhatIf`) para tendencia - entrada nova em `engine/governance/persistence-catalog.md`. Sem
+agendador (LEI zero-agendamento): pendura em `smoke-test-studio.ps1` quando roda numa instancia
+real, mesmo padrao de `memory-curator.ps1 -Validade`; na oficina o smoke so prova o script (existe,
+roda em `-WhatIf` sem transcript, e ACUSA/DESACUSA `[ESTOURO]` numa fixture sintetica com tetos
+baixos/altos - prova pelo negativo, ver secao "Cost Sensor" de `scripts/smoke-test.ps1`).
+
+**2. Doutrina no motor: `engine/tools.md`, secao "Verificacao visual frugal e teto de delegacao"
+(reuse-first - estendeu o doc que ja tinha Frugality Check/Budget, nenhum arquivo novo).** Quatro
+clausulas (L41 no law-ledger): (a) verificacao de UI mede primeiro por texto/DOM/log, screenshot de
+tela cheia so no FECHAMENTO, nunca a cada iteracao do loop de correcao; (b) teto de 6 imagens de
+tela cheia por conversa de subagente - acima disso e desvio, recorte a regiao mudada ou feche a
+conversa; (c) briefing de delegacao DECLARA Budget (teto de chamadas de ferramenta e de imagens);
+subagente que estoura fecha e devolve parcial, nunca segue queimando; (d) fan-out > 10 subagentes
+por sessao exige justificativa registrada na Task - honestidade registrada: e contrato lido + sensor
+A POSTERIORI (`cost-sensor.ps1`), nao trava em tempo real (o hook de `PreToolUse` nao teria visao do
+total da sessao sem custo proprio alto).
+
+**3. Prova e registro.** L41 no `law-ledger.md` (nasce COBERTA no sensor via os 4 checks novos de
+`smoke-test.ps1`; clausulas (a)/(b)/(c) SEM TESTE, comportamento de delegacao sem maquina - divida
+declarada, nao escondida). L21 (Pesquisa segura) teve o ponteiro `tools.md:220` corrigido para
+`tools.md:262` (a insercao do bloco L41 empurrou a linha). Smoke da oficina: **252 -> 256 PASS, 0
+FAIL, ALL GREEN** (4 checks novos: script presente, `-WhatIf` gracioso sem transcript, fixture
+quebrada de proposito ACUSA `[ESTOURO]` por sessao e por dia, mesma fixture com tetos altos fecha
+`[PASS]` - os 4 provados pelo negativo: exit-code do sensor foi quebrado de proposito, o check de
+`[ESTOURO]` reprovou de verdade, o conserto desfeito confirmou o PASS de volta). `docs/CLAIMS.md`
+GUARD-NUM atualizado 252 -> 256.
+
+---
+
+## [1.59.0] - 2026-08-18
+
+MINOR - WARDEN executa os 5 itens do benchmark DeepSeek Harness (TASK-213), aprovados pelo CEO,
+na ordem, na oficina. Cada item provado pelo negativo (quebrar, ver FAIL/comportamento errado,
+desfazer, ver PASS de volta).
+
+**1. O smoke passa a rodar o docs-gate.** `scripts/smoke-test.ps1` agora chama
+`scripts/law-ledger-check.ps1` e casa o TEXTO `FAIL: 0` / `LEDGER PODRE` (convencao OPP-76, exit
+code nao propaga). Antes de ligar o check, os 3 ponteiros podres reais foram corrigidos em
+`engine/governance/law-ledger.md` (L17 -> orchestration.md:250; smoke-test-studio.ps1 :751->:754
+e :391->:438, medidos no ato).
+
+**2. Freio que quebra passa a gritar.** `scripts/response-guard.ps1` (catch geral) e
+`scripts/graph-usage-sensor.ps1` (catch geral + catch interno do gate) agora gravam uma linha
+`{"ts","session","erro","fase"}` no MESMO ledger que ja escrevem, e continuam `exit 0` (fail-open).
+Ratchet novo em `scripts/smoke-test.ps1` contra `studio/error-log-baseline.txt` (baseline=0).
+
+**3. Medidor do mapa: 3 vereditos independentes.** `scripts/graph-usage.ps1` deixou de imprimir UM
+`VEREDITO:` aninhado (amostra insuficiente virava `[PASS]` disfarcado; o numerador da adocao somava
+leitura injetada pelo gate com leitura autonoma) e passa a imprimir `VEREDITO AMOSTRA`,
+`VEREDITO ADOCAO AUTONOMA` (numerador SO autonomos) e `VEREDITO COBERTURA` (`[INFO]`, nunca decide
+PASS/FAIL sozinho) - 3 perguntas, 3 respostas, nunca uma escondendo a outra. law-ledger L27
+atualizado pro estado real.
+
+**4. Hardcode vira medicao no ato.** `scripts/law-ledger-check.ps1` trocou a tabela
+`$semMaquinaAqui` (sempre "smoke-test.ps1 nunca roda aqui", mesmo na propria oficina que TEM
+`studio.example/`) por `Test-Path (Join-Path $root "studio.example")` medido a cada rodada. Isso
+acendeu 10 ponteiros de `smoke-test.ps1` antes escondidos pelo hardcode - todos corrigidos com a
+linha real medida.
+
+**5. Os habitos baratos** (b write-intent fica FORA desta versao, decisao registrada):
+   a. `engine/governance/persistence-catalog.md` (NOVO) - todo lugar onde o motor grava estado,
+      com classe (durable/live/staging/ratchet), escritor, leitor, ciclo de vida. Entrada em
+      `engine/MAP.md`. Check novo no smoke varre `scripts/*.ps1` por alvo `.jsonl`/`*baseline*.txt`
+      sem entrada no catalogo.
+   b. `scripts/update-engine.ps1` persiste o `Get-MirrorDiff` que ja calculava em
+      `studio/instance-overlay.md` no destino (so em console antes). Check novo em
+      `scripts/smoke-test-studio.ps1` (secao p): os 5 hooks de `.claude/settings.json` local
+      batem com os que o engine entrega (evento+script).
+   c. Secao "Turno, Sessao e Task" em `engine/orchestration.md` (L40 no law-ledger) + ponteiro em
+      `engine/governance/response-guard.md`.
+   d. `scripts/graph-usage-sensor.ps1` passa o conteudo do GRAPH_REPORT.md por
+      `skills/sanitize-input/sanitize-input.ps1` antes de montar o `additionalContext` da injecao
+      estrutural (TASK-169) - skill falhou -> nao injeta (fail-soft).
+
+**Provas.** Smoke da oficina: 242 -> 252 PASS, 0 FAIL, ALL GREEN. Guard-core: `orchestration.md`
+mudou de proposito, baseline atualizada com `-AllowCore`.
+
 ## [1.58.1] - 2026-08-14
 
 PATCH - Ultima milha antes do repo publico: `check-public-surface.ps1` reprovou o pacote 1.58.0

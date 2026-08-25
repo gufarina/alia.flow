@@ -3,6 +3,12 @@
 > O enforcement da lei "a coordenadora delega dominio, nunca executa" na PORTA DE SAIDA da
 > resposta. Contrato estruturado (limiares, modo) em response-guard.yaml. Sem acentos, sem emojis.
 
+## Unidade de tempo que este guard audita
+
+O guard roda sobre o **TURNO** (nunca a sessao inteira, nunca a Task) - ver
+`engine/orchestration.md`, secao "Turno, Sessao e Task", para a definicao das 3 unidades de tempo
+do motor e por que confundi-las e a causa raiz de guard que mede a coisa errada.
+
 ## O furo que isto fecha
 
 A lei de delegacao ja tinha 2 guardas de maquina: `delegation-guard.ps1` (hook de UserPromptSubmit,

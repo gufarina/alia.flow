@@ -296,6 +296,32 @@ try {
     return $sections
   }
 
+  # (3z2) SANITIZE NA INJECAO (TASK-213, item 5d): o conteudo do GRAPH_REPORT.md e DADO DE
+  # CLIENTE (texto que um Specialist ou o proprio operador escreveu na documentacao do Client) -
+  # antes de virar additionalContext (texto que o MODELO le como se fosse instrucao do sistema),
+  # passa pelo mesmo sanitizador que qualquer outro payload de dominio (skills/sanitize-input).
+  # FAIL-SOFT: skill ausente ou erro na chamada -> NAO injeta (silencio, nunca quebra o gate nem
+  # injeta cru). Reusa o mecanismo existente (nao inventa um 2o sanitizador so pra isto).
+  function Invoke-SanitizeMapContent([string]$Text) {
+    try {
+      # $PSScriptRoot (NUNCA $root): skills/ e parte da INSTALACAO do motor, no local real do
+      # proprio script - $root pode ser sobrescrito via -Root em teste/fixture (escopo isolado
+      # sem skills/ nenhuma), o que faria o sanitize sumir so por causa do isolamento de teste,
+      # nao por falta real da skill (achado ao rodar o smoke inteiro, TASK-213).
+      $sanScript = Join-Path (Split-Path -Parent $PSScriptRoot) "skills/sanitize-input/sanitize-input.ps1"
+      if (-not (Test-Path -LiteralPath $sanScript)) { return $null }
+      $sanOut = Join-Path ([System.IO.Path]::GetTempPath()) ("sanitize-map-" + [Guid]::NewGuid().ToString("N") + ".txt")
+      & $sanScript -Text $Text -OutPath $sanOut 6>&1 | Out-Null
+      if (-not (Test-Path -LiteralPath $sanOut)) { return $null }
+      $clean = [System.IO.File]::ReadAllText($sanOut)
+      Remove-Item -LiteralPath $sanOut -Force -ErrorAction SilentlyContinue
+      if ([string]::IsNullOrWhiteSpace($clean)) { return $null }
+      return $clean
+    } catch {
+      return $null
+    }
+  }
+
   $scope = ""
   $externalMapFile = $null
   $reScope = '(^|[^A-Za-z0-9_.-])clients/([A-Za-z0-9_.-]+)'
@@ -415,10 +441,17 @@ try {
             # reinjeta (anti-ruido, uma vez por par sessao+escopo).
             $mapContent = Get-MapInjection $mapFile
             if ($null -ne $mapContent) {
-              $injectMsg = "[MAPA INJETADO] " + $clientId + " - God Nodes + Community Hubs de " +
-                $mapFile + " (injecao automatica no 1o toque desta sessao+escopo, TASK-169):`n`n" +
-                $mapContent
-              $needsInjectLedgerLine = $true
+              # TASK-213 (item 5d): sanitiza ANTES de montar o additionalContext - conteudo cru de
+              # cliente nunca chega ao modelo sem passar pela borda. Sanitize falhou -> nao injeta
+              # (fail-soft, ver Invoke-SanitizeMapContent acima).
+              $mapContentLimpo = Invoke-SanitizeMapContent $mapContent
+              if ($null -ne $mapContentLimpo) {
+                $injectMsg = "[MAPA INJETADO] " + $clientId + " - God Nodes + Community Hubs de " +
+                  $mapFile + " (injecao automatica no 1o toque desta sessao+escopo, TASK-169;" +
+                  " sanitizado antes da injecao, TASK-213):`n`n" +
+                  $mapContentLimpo
+                $needsInjectLedgerLine = $true
+              }
             }
           }
         } elseif ($scope -like 'clients/*') {
@@ -447,7 +480,24 @@ try {
           }
         }
       }
-    } catch { $noMapMsg = $null; $injectMsg = $null; $needsInjectLedgerLine = $false }
+    } catch {
+      $noMapMsg = $null; $injectMsg = $null; $needsInjectLedgerLine = $false
+      # Freio que quebra passa a gritar (TASK-213): a decisao do gate (recusar/injetar) falhou -
+      # grava no MESMO ledger e segue fail-open (o evento ainda vira MEDIDA no passo (5) abaixo).
+      try {
+        $errObjInner = [ordered]@{
+          ts      = (Get-Date).ToString("o")
+          session = $sessionId
+          erro    = $_.Exception.GetType().Name
+          fase    = "gate-decisao"
+        }
+        $errLineInner = ($errObjInner | ConvertTo-Json -Compress)
+        $utf8NoBomInner = New-Object System.Text.UTF8Encoding($false)
+        if (Test-Path -LiteralPath (Split-Path -Parent $LedgerPath)) {
+          [System.IO.File]::AppendAllText($LedgerPath, $errLineInner + "`n", $utf8NoBomInner)
+        }
+      } catch { }
+    }
   }
 
   # (5) Escreve a linha no ledger - MEDE sempre, independente da decisao do gate (a tentativa
@@ -545,5 +595,25 @@ try {
 
   exit 0
 } catch {
+  # Freio que quebra passa a gritar (TASK-213): grava UMA linha no MESMO ledger que o sensor
+  # ja escreve (nao inventa arquivo novo) e continua fail-open (exit 0 - sensor quebrado nunca
+  # trava a ferramenta que ele estava medindo).
+  try {
+    $errRoot2 = if (-not [string]::IsNullOrWhiteSpace($Root)) { $Root } else { Split-Path -Parent $PSScriptRoot }
+    $errLedger2 = if (-not [string]::IsNullOrWhiteSpace($LedgerPath)) { $LedgerPath } else { Join-Path (Join-Path $errRoot2 "studio") "graph-usage-log.jsonl" }
+    $errDir2 = Split-Path -Parent $errLedger2
+    if (-not (Test-Path -LiteralPath $errDir2)) { New-Item -ItemType Directory -Force -Path $errDir2 | Out-Null }
+    $errSession2 = ""
+    try { $errSession2 = [string]$sessionId } catch { }
+    $errObj2 = [ordered]@{
+      ts      = (Get-Date).ToString("o")
+      session = $errSession2
+      erro    = $_.Exception.GetType().Name
+      fase    = "catch-geral"
+    }
+    $errLine2 = ($errObj2 | ConvertTo-Json -Compress)
+    $utf8NoBomErr2 = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::AppendAllText($errLedger2, $errLine2 + "`n", $utf8NoBomErr2)
+  } catch { }
   exit 0
 }

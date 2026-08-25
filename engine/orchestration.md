@@ -254,6 +254,30 @@ o irreversivel. Acao parada nao gera Artifact, e Artifact e a unica prova de pro
 > nem assunto com o operador (bastidor nunca abre a conversa, AGENTS.md). A primeira resposta e sempre
 > sobre o pedido dele; a varredura das paradas roda em silencio depois.
 
+## Turno, Sessao e Task (unidades de tempo do motor)
+
+> LEI (unidades de tempo, TASK-213, 18/08/2026): o motor usa 3 palavras pra tempo e cada uma tem um
+> limite proprio - misturar uma pela outra e a causa raiz de guard que mede a coisa errada (ex.:
+> um freio que julga TURNO como se fosse SESSAO nunca pega repeticao entre turnos; um relatorio que
+> soma SESSAO como se fosse TASK conta o mesmo trabalho duas vezes).
+
+- **Turno**: da ultima mensagem genuina de role `user` (com texto, nao so `tool_result`) ate a
+  proxima pausa/resposta final do assistente. E a unidade que `response-guard.ps1` audita (REGRA 1
+  e REGRA 2 rodam sobre o TURNO ATUAL, nunca a sessao inteira) - por isso o hook e de `Stop`, que
+  dispara ao fim de cada turno, nao ao fim da sessao.
+- **Sessao**: uma conversa continua (um `session_id` do transcript), pode ter dezenas de turnos.
+  E a unidade que `graph-usage-sensor.ps1`/`graph-usage.ps1` usam para medir a lei do grafo (o par
+  `sessao+escopo`) e que `session-reflection.ps1` fecha ao capturar aprendizado no fim.
+- **Task**: a unidade de trabalho registrada no `state.json` (IDENTIFICA/REGISTRA/DELEGA/MONITORA/
+  FECHA, os 5 passos acima) - pode atravessar VARIAS sessoes (retomada em outro dia) e sempre
+  produz Artifact + Gate. E a unidade que vira KPI (ver "Modelo Cliente-Projeto-Tarefa" no
+  glossario) - nunca confundir com sessao: uma Task longa some/reaparece em sessoes diferentes, mas
+  continua sendo UMA Task so (mesmo id, no ledger de linhagem).
+
+Guardrail que confere esta lei: `scripts/law-ledger-check.ps1` secao (A2)/(B), que valida que este
+ponteiro (`engine/orchestration.md`, a secao acima) esta registrado no law-ledger com teste
+citado - ver `engine/governance/law-ledger.md`, L40.
+
 ## Segue
 [Constituicao](constitution.md) - [Persona](agents/persona.md) - [Glossario](glossary.md) - 
 [Squad Creator](agents/squad-creator.md).

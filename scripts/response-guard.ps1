@@ -534,5 +534,26 @@ try {
     " informativo_sem_delegacao=" + $informativo)
   exit 0
 } catch {
+  # Freio que quebra passa a gritar (TASK-213): antes disto um erro aqui (ex.: transcript_path
+  # apontando pra um diretorio, Get-Content estourando) morria em silencio - exit 0, zero rastro,
+  # ninguem via que o guard tinha parado de proteger o turno. Agora grava UMA linha no MESMO ledger
+  # que o modo normal ja usa e continua fail-open (exit 0 - guard quebrado nunca trava o operador).
+  try {
+    $errRoot = Split-Path -Parent $PSScriptRoot
+    $errLogFile = if (-not [string]::IsNullOrWhiteSpace($LogPath)) { $LogPath } else { Join-Path (Join-Path $errRoot "studio") "response-guard-log.jsonl" }
+    $errLogDir = Split-Path -Parent $errLogFile
+    if (-not (Test-Path -LiteralPath $errLogDir)) { New-Item -ItemType Directory -Force -Path $errLogDir | Out-Null }
+    $errSessionId = ""
+    try { $errSessionId = [string]$sessionId } catch { }
+    $errObj = [ordered]@{
+      ts     = (Get-Date).ToString("o")
+      session = $errSessionId
+      erro   = $_.Exception.GetType().Name
+      fase   = "catch-geral"
+    }
+    $errLine = ($errObj | ConvertTo-Json -Compress)
+    $utf8NoBomErr = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::AppendAllText($errLogFile, $errLine + "`n", $utf8NoBomErr)
+  } catch { }
   exit 0
 }

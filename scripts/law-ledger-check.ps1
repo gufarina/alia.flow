@@ -185,11 +185,31 @@ Write-Host ""
 Write-Host "--- (B) Ponteiros de teste (script:linha) contra o disco ---"
 
 # Scripts com dependencia dura conhecida que impede rodar NESTA instancia (nao a oficina/lab).
-# smoke-test.ps1: espera studio.example/ na raiz (a Studio-modelo do produto) - esta instancia
-# aplicada nao tem essa pasta (e a instancia REAL do operador, nao o demo), entao o script morre
-# com ErrorActionPreference Stop antes do fim (medido 09/08/2026, Push-Location: Cannot find path).
-$semMaquinaAqui = @{
-    "scripts/smoke-test.ps1" = "espera studio.example/ na raiz (Studio-modelo do produto) - ausente nesta instancia aplicada; o script comeca mas MORRE antes do fim (Push-Location: Cannot find path), medido 09/08/2026"
+# smoke-test.ps1: espera studio.example/ na raiz (a Studio-modelo do produto) - MEDIDO NO ATO
+# (TASK-213, item 4 - antes era uma tabela hardcoded, "sempre ausente", mesmo em instancias como
+# a propria oficina que TEM studio.example/ de verdade; era vira de sino de fe travestida de
+# medida). Test-Path aqui, agora: instancia com studio.example/ presente -> o script RODA de
+# verdade e os ponteiros dele voltam a ser conferidos igual a qualquer outro; instancia sem
+# studio.example/ (a aplicada, real, do operador) -> continua [SEM MAQUINA NESTA INSTANCIA],
+# mesma mensagem de sempre, so que agora provada, nao presumida.
+$temStudioExample = Test-Path -LiteralPath (Join-Path $root "studio.example")
+$semMaquinaAqui = @{}
+if (-not $temStudioExample) {
+    $semMaquinaAqui["scripts/smoke-test.ps1"] = "espera studio.example/ na raiz (Studio-modelo do produto) - AUSENTE nesta instancia (medido no ato: Test-Path " + (Join-Path $root "studio.example") + " = False); o script comeca mas MORRE antes do fim (Push-Location: Cannot find path)"
+}
+
+# smoke-test-studio.ps1: por DESENHO nunca viaja no pacote publico (package-release.ps1,
+# $scriptsAllow, comentario "Fora de proposito" - e o smoke DA INSTANCIA Studio Farina, le
+# clientes/squads REAIS do operador; nao existe "Studio Farina" numa instalacao limpa). Achado
+# TASK-283 fechamento: rodar este checker DENTRO do pacote empacotado (release/alia-flow, onde o
+# arquivo de fato nao existe por desenho) contava a ausencia como [FAIL] "nao existe nesta
+# instancia" - falso positivo, mesmo padrao ja resolvido acima para smoke-test.ps1/studio.example,
+# nunca replicado pra este script. Ausencia aqui e esperada sempre que o arquivo nao esta em disco
+# (oficina e instancia aplicada real O TEM; so o pacote publico nao) - medido no ato via Test-Path,
+# nao presumido.
+$temSmokeStudio = Test-Path -LiteralPath (Join-Path $root "scripts/smoke-test-studio.ps1")
+if (-not $temSmokeStudio) {
+    $semMaquinaAqui["scripts/smoke-test-studio.ps1"] = "smoke DA INSTANCIA Studio Farina - por desenho nao viaja no pacote publico (package-release.ps1, allowlist scripts/, comentario 'Fora de proposito'); AUSENTE aqui e esperado (medido no ato: Test-Path " + (Join-Path $root "scripts/smoke-test-studio.ps1") + " = False), nao ponteiro podre"
 }
 
 # CONSERTO TASK-157: aceita as 2 formas de chamada do helper Check(...) usadas no motor -
@@ -325,9 +345,21 @@ if (Test-Path -LiteralPath $clientTruthPath) {
 $personaRootPath = Join-Path $EngineDir "agents\persona.md"
 $rootIsOficina = (Test-Path -LiteralPath (Join-Path $root "engine\constitution.md")) -and
                  ((Split-Path -Leaf $root) -eq "alia-flow-lab")
-if ($rootIsOficina) {
+# TERCEIRO contexto medido no fechamento do TASK-283, pacote publico empacotado
+# (release/alia-flow): nao e a oficina standalone (leaf != "alia-flow-lab") NEM a raiz do studio
+# com a oficina aninhada em clients/alia-flow-lab (o pacote nunca ship-a essa pasta - o produto e
+# UM motor, nao um studio com oficina dentro). Sem essa 3a deteccao, o codigo caia no ramo "else"
+# de sempre, montava um caminho fantasma e reprovava [FAIL] "nao encontrado" - falso positivo, nao
+# ponteiro podre nem drift real (nao ha 2a copia pra comparar aqui, igual ao caso oficina==raiz).
+$temOficinaAninhada = Test-Path -LiteralPath (Join-Path $root "clients\alia-flow-lab\engine\agents\persona.md")
+$ehPacotePublico = (-not $rootIsOficina) -and (-not $temOficinaAninhada)
+if ($rootIsOficina -or $ehPacotePublico) {
     $personaLabPath = $personaRootPath
-    $personaLabLabel = "L31 formato: persona.md (oficina == raiz nesta execucao, rodando de dentro de clients/alia-flow-lab - so 1 copia local, sem aninhada pra comparar) declara o mesmo marcador de LEI da resposta por decisao + o anti-padrao"
+    $personaLabLabel = if ($rootIsOficina) {
+        "L31 formato: persona.md (oficina == raiz nesta execucao, rodando de dentro de clients/alia-flow-lab - so 1 copia local, sem aninhada pra comparar) declara o mesmo marcador de LEI da resposta por decisao + o anti-padrao"
+    } else {
+        "L31 formato: persona.md (pacote publico - so 1 copia, sem oficina aninhada por desenho, clients/alia-flow-lab nunca viaja no pacote) declara o mesmo marcador de LEI da resposta por decisao + o anti-padrao"
+    }
 } else {
     $personaLabPath = Join-Path $root "clients\alia-flow-lab\engine\agents\persona.md"
     $personaLabLabel = "L31 formato: persona.md (oficina) declara o mesmo marcador de LEI da resposta por decisao + o anti-padrao"

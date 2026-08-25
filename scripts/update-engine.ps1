@@ -169,6 +169,7 @@ function Backup-InstanceFile([string]$bkpRoot, [string]$topDir, [string]$rel, [s
 }
 
 $totNew = 0; $totChanged = 0; $totRemoved = 0
+$overlayReport = New-Object System.Collections.Generic.List[string]  # TASK-213 item 5b: persiste o Get-MirrorDiff em studio/instance-overlay.md
 
 if ($Check) { Write-Host "2/3 Comparando o motor (lab -> instancia)..." }
 else        { Write-Host "2/3 Atualizando o motor (diff-only)..." }
@@ -187,6 +188,12 @@ foreach ($d in $engineDirs) {
   foreach ($rel in $diff.Changed) { Write-Host ("        ALTERADO  " + $d + "\" + $rel) }
   foreach ($rel in $diff.Removed) { Write-Host ("        REMOVIDO  " + $d + "\" + $rel) }
   $totNew += $n; $totChanged += $c; $totRemoved += $r
+  [void]$overlayReport.Add("### " + $d + "/ (espelho diff-only, motor)")
+  [void]$overlayReport.Add("- NOVO: " + $n + " | ALTERADO: " + $c + " | REMOVIDO: " + $r)
+  foreach ($rel in $diff.New)     { [void]$overlayReport.Add("  - NOVO      " + $d + "/" + $rel.Replace('\','/')) }
+  foreach ($rel in $diff.Changed) { [void]$overlayReport.Add("  - ALTERADO  " + $d + "/" + $rel.Replace('\','/')) }
+  foreach ($rel in $diff.Removed) { [void]$overlayReport.Add("  - REMOVIDO  " + $d + "/" + $rel.Replace('\','/')) }
+  [void]$overlayReport.Add("")
   if ($Check) { continue }
   foreach ($rel in $diff.New) {
     $to = Join-Path $dst $rel
@@ -215,6 +222,15 @@ foreach ($d in $mergeDirs) {
   $src = Join-Path $lab $d
   if (Test-Path -LiteralPath $src) {
     Write-Host ("    [merge]   " + $d + "\ (soma - preserva ajustes locais)")
+    # Get-MirrorDiff aqui e SO LEITURA (nunca troca o robocopy abaixo, que continua sendo quem
+    # de fato aplica o merge): serve pra REGISTRAR o overlay - arquivo que existe no destino mas
+    # nao no lab e customizacao LOCAL desta instancia, preservada de proposito pelo merge.
+    $mergeDiff = Get-MirrorDiff $src (Join-Path $root $d) @()
+    [void]$overlayReport.Add("### " + $d + "/ (merge - soma, preserva ajustes locais)")
+    [void]$overlayReport.Add("- do lab, NOVO/ALTERADO nesta rodada: " + $mergeDiff.New.Count + "/" + $mergeDiff.Changed.Count)
+    [void]$overlayReport.Add("- SO NESTA INSTANCIA (overlay local, nao existe no lab, preservado pelo merge): " + $mergeDiff.Removed.Count)
+    foreach ($rel in $mergeDiff.Removed) { [void]$overlayReport.Add("  - LOCAL  " + $d + "/" + $rel.Replace('\','/')) }
+    [void]$overlayReport.Add("")
     if ($Check) { robocopy $src (Join-Path $root $d) /E /L /NFL /NDL /NP /NS /NC /NJH /NJS | Out-Null }
     else        { robocopy $src (Join-Path $root $d) /E    /NFL /NDL /NP /NS /NC /NJH /NJS | Out-Null }
   }
@@ -239,6 +255,35 @@ foreach ($f in $productFiles) {
 Write-Host ""
 Write-Host ("    Total: " + $totNew + " NOVO, " + $totChanged + " ALTERADO, " + $totRemoved + " REMOVIDO" + $(if ($Check) { " (nada aplicado)" } else { " aplicados" }))
 Write-Host ""
+
+# TASK-213 (item 5b): persiste o Get-MirrorDiff em studio/instance-overlay.md no DESTINO - registro
+# do que diferencia esta instancia do lab, no momento do update (motor: diff aplicado; merge:
+# customizacao local preservada). So grava quando de fato aplica (nao em -Check, que nao toca nada).
+if (-not $Check) {
+  $overlayPath = Join-Path (Join-Path $root "studio") "instance-overlay.md"
+  $overlayDir = Split-Path -Parent $overlayPath
+  if (-not (Test-Path -LiteralPath $overlayDir)) { New-Item -ItemType Directory -Force -Path $overlayDir | Out-Null }
+  $overlayGeradoEm = "gerado em: " + (Get-Date).ToString("o")
+  $overlayLabLine = "lab: " + $lab
+  $overlayInstLine = "instancia: " + $root
+  $overlayVerLine = "versao lab: " + $verLab + " | versao instancia (antes deste update): " + $verInst
+  $overlayHeader = @(
+    "# Instance Overlay - o que diferencia esta instancia do laboratorio",
+    "",
+    "> Gerado por scripts/update-engine.ps1 a cada update aplicado (TASK-213, item 5b). Persiste o",
+    "> Get-MirrorDiff que o script ja calcula - antes disto o diff so aparecia no console e sumia.",
+    "> Sem acentos, sem emojis.",
+    "",
+    $overlayGeradoEm,
+    $overlayLabLine,
+    $overlayInstLine,
+    $overlayVerLine,
+    ""
+  )
+  $overlayTxt = ($overlayHeader + $overlayReport) -join "`r`n"
+  [System.IO.File]::WriteAllText($overlayPath, $overlayTxt, (New-Object System.Text.UTF8Encoding($false)))
+  Write-Host ("    [overlay] registro persistido em studio\instance-overlay.md")
+}
 
 if ($Check) {
   Write-Host "CHECK: nada foi alterado. Rode sem -Check para aplicar exatamente o relatorio acima."

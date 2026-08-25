@@ -51,6 +51,7 @@ risco de drift. Precisa do threshold/cerca exata: abra `rsi.yaml`. Para o resto,
 - engine/governance/public-surface.md - a LEI do que pode existir no git (produto publico, nunca material de dev do cliente).
 - engine/governance/response-guard.md - o freio na PORTA DE SAIDA da resposta (hook de Stop, `response-guard.ps1`): as 2 regras (DELEGA/GROUNDING), os 2 modos (aviso/bloqueio) e a valvula de excecao por ordem do Operator.
 - engine/governance/law-ledger.md - registro de toda LEI declarada no motor: onde vive, que teste cobre, COBERTA ou SEM TESTE.
+- engine/governance/persistence-catalog.md - todo lugar onde o motor grava estado em disco (ledger, baseline, staging), com classe (durable/live/staging/ratchet), escritor, leitor e ciclo de vida. Consultar ANTES de criar um ledger/baseline novo (reuse-first).
 
 ## Entrega e workflows (abrir ao executar um ciclo de entrega)
 

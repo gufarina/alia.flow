@@ -185,6 +185,12 @@ function Measure-Adocao([object[]]$events) {
   # esconde que a maior parte da adocao agora vem de MAQUINA, nao de habito.
   $injetados = @($adotaram | Where-Object { $_.firstMapMatch -eq 'map-injected' })
   $autonomos = @($adotaram | Where-Object { $_.firstMapMatch -ne 'map-injected' })
+  # TASK-213 (item 3, benchmark DeepSeek Harness): o numerador da ADOCAO passa a ser SO os
+  # autonomos - injecao automatica (a maquina entregando o mapa sozinha) nao e merito do agente,
+  # e MERITO DO GATE. Misturar os dois no mesmo numerador escondia que quase toda "adocao" de hoje
+  # vem de maquina, nao de habito - o oposto do que a lei do grafo tenta medir.
+  $pctAutonomo = 0
+  if ($total -gt 0) { $pctAutonomo = [math]::Round((100.0 * $autonomos.Count / $total), 1) }
   return [pscustomobject]@{
     pares         = $pairs
     comVarredura  = $comVarredura
@@ -195,6 +201,7 @@ function Measure-Adocao([object[]]$events) {
     soMapa        = $soMapa
     total         = $total
     pct           = $pct
+    pctAutonomo   = $pctAutonomo
   }
 }
 
@@ -217,23 +224,28 @@ Write-Host ("[OK] dos pares acima, GATEAVEIS DE VERDADE (escopo com mapa em disc
   " antes do conserto de 13/08/2026 (TASK-159), por um motivo que nao e culpa do gate.")
 Write-Host ""
 
-Write-Host ("ADOCAO SO GATEAVEIS (janela da trava, o VEREDITO, desde " + $GateLigadoUtc.ToString("yyyy-MM-dd") + "): " +
-  $mJanelaG.adotaram.Count + "/" + $mJanelaG.total + " = " +
-  ([string]::Format($inv, "{0:0.0}", $mJanelaG.pct)) + "%   (alvo >= " + $ALVO_PCT + "%)")
-Write-Host ("  DESTES, injetados pelo gate (TASK-169, match=map-injected): " + $mJanelaG.injetados.Count +
-  " | leitura autonoma (agente leu sozinho antes de qualquer injecao): " + $mJanelaG.autonomos.Count)
-Write-Host ("ADOCAO SO GATEAVEIS (historico completo): " +
-  $mHistG.adotaram.Count + "/" + $mHistG.total + " = " +
-  ([string]::Format($inv, "{0:0.0}", $mHistG.pct)) + "%")
-Write-Host ("  DESTES, injetados: " + $mHistG.injetados.Count + " | autonomos: " + $mHistG.autonomos.Count)
-Write-Host ("  (referencia, NAO e mais o veredito - todos os pares, gateaveis ou nao) ADOCAO (janela da trava): " +
-  $mJanela.adotaram.Count + "/" + $mJanela.total + " = " +
-  ([string]::Format($inv, "{0:0.0}", $mJanela.pct)) + "%")
-Write-Host ("ADOCAO (historico completo, desde o inicio do ledger): " +
-  $mHist.adotaram.Count + "/" + $mHist.total + " = " +
-  ([string]::Format($inv, "{0:0.0}", $mHist.pct)) + "%")
+# TASK-213 (item 3, benchmark DeepSeek Harness): as 3 perguntas que este contador responde sao
+# INDEPENDENTES uma da outra - amostra pequena nao vira "PASS" escondido, cobertura nao decide
+# adocao, e injecao automatica nao vira merito na adocao. Antes disto um unico VEREDITO aninhava
+# as tres (amostra insuficiente virava [PASS] disfarcado; o numerador da adocao somava injetado +
+# autonomo, escondendo que quase toda "adocao" vinha de maquina, nao de habito). Cada pergunta
+# agora imprime a sua MEDIDA e o seu VEREDITO proprio, nunca dentro do outro.
+Write-Host ("AMOSTRA (janela da trava, so gateaveis): " + $mJanelaG.total + "/" + $MIN_AMOSTRA +
+  " minimo -> " + $(if ($mJanelaG.total -ge $MIN_AMOSTRA) { "suficiente" } else { "insuficiente" }))
+Write-Host ("ADOCAO AUTONOMA: " + $mJanelaG.autonomos.Count + "/" + $mJanelaG.total + " = " +
+  ([string]::Format($inv, "{0:0.0}", $mJanelaG.pctAutonomo)) + "%   (numerador SO autonomos - injecao" +
+  " automatica do gate NAO conta como merito do agente; alvo >= " + $ALVO_PCT + "%)")
+Write-Host ("  DESTES " + $mJanelaG.total + " par(es) gateaveis: injetados pelo gate (TASK-169, match=map-injected): " +
+  $mJanelaG.injetados.Count + " | autonomos (leitura genuina, antes de qualquer injecao): " + $mJanelaG.autonomos.Count)
+Write-Host ("COBERTURA: " + $mJanelaG.total + "/" + $mJanela.total + " = " +
+  $(if ($mJanela.total -gt 0) { [string]::Format($inv, "{0:0.0}", (100.0 * $mJanelaG.total / $mJanela.total)) } else { "0.0" }) +
+  "%   (pares em escopo COM mapa em disco vs todos os pares que varreram, janela da trava - o" +
+  " resto e escopo sem mapa nenhum, fallback/Client sem squad, fora do alcance do gate)")
+Write-Host ("historico completo (referencia, nao decide veredito): ADOCAO AUTONOMA " + $mHistG.autonomos.Count +
+  "/" + $mHistG.total + " = " + ([string]::Format($inv, "{0:0.0}", $mHistG.pctAutonomo)) +
+  "%   | COBERTURA " + $mHistG.total + "/" + $mHist.total)
 Write-Host ("FUROS SO GATEAVEIS (janela da trava): " + $mJanelaG.furos.Count + " par(es) varreram sem consultar o mapa antes, em escopo QUE TINHA mapa pra ler.")
-Write-Host ("FUROS (janela da trava): " + $mJanela.furos.Count + " par(es) varreram sem consultar o mapa antes. (todos os pares, gateaveis ou nao - referencia, nao e mais o veredito)")
+Write-Host ("FUROS (janela da trava): " + $mJanela.furos.Count + " par(es) varreram sem consultar o mapa antes. (todos os pares, gateaveis ou nao - referencia)")
 Write-Host ("FUROS (historico completo): " + $mHist.furos.Count + " par(es) varreram sem consultar o mapa antes.")
 Write-Host ""
 
@@ -263,42 +275,43 @@ if ($mJanelaG.furos.Count -gt 0) {
   Write-Host ""
 }
 
-# VEREDITO - a linha que o smoke le. Julgado SOBRE A JANELA DA TRAVA, SO PARES GATEAVEIS (CONSERTO
-# TASK-159): antes, o denominador incluia par sem mapa nenhum em disco - ler o impossivel nunca
-# aconteceria, entao esses pares eram furo garantido por um motivo que nao mede o gate, so infla o
-# numero de furos. Escopo sem mapa fica de fora do veredito (nao pode ser cobrado por algo que nao
-# existe), mas continua contado e mostrado acima ("dos pares acima, GATEAVEIS DE VERDADE...") -
-# nada some, so para de contaminar o alvo de 70%. Proibido afrouxar o alvo pra passar: se a janela
-# gateavel reprovar, o veredito reprova com o numero real.
+# 3 VEREDITOS INDEPENDENTES (TASK-213, item 3) - a linha que o smoke le. Julgados SOBRE A JANELA
+# DA TRAVA, SO PARES GATEAVEIS (CONSERTO TASK-159, preservado): escopo sem mapa nenhum fica fora
+# (nao pode ser cobrado por algo que nao existe), mas continua contado e mostrado acima. NUNCA
+# aninhados: amostra insuficiente NAO vira "adocao PASS" disfarcado (o bug que este item fecha) -
+# ela emite [SEM AMOSTRA] e para ali; cobertura e puramente informativa (nunca decide PASS/FAIL).
 # TASK-169 (14/08/2026): o gate deixou de so RECUSAR e passou a INJETAR o mapa (God Nodes +
-# Community Hubs) via additionalContext no 1o toque de todo par gateavel - a leitura deixou de
-# depender de habito/lembranca. Por isso o alvo de 70% agora e PISO REAL, nao aspiracao: um par
-# gateavel que aparece como FURO daqui pra frente nao e mais "o agente esqueceu de ler" - e
-# "a injecao nao aconteceu" (killswitch ligado, erro no gate, ou o toque aconteceu ANTES desta
-# versao do sensor). O texto abaixo reflete isso: abaixo do alvo com o mecanismo ligado e sinal
-# de MAQUINA, nao de disciplina.
-if ($mJanelaG.total -ge $MIN_AMOSTRA -and $mJanelaG.pct -lt $ALVO_PCT) {
-  Write-Host ("VEREDITO: [AVISO] adocao (so gateaveis) " + ([string]::Format($inv, "{0:0.0}", $mJanelaG.pct)) + "% em " +
-    $mJanelaG.total + " par(es) gateaveis desde " + $GateLigadoUtc.ToString("yyyy-MM-dd") +
-    " (quando a trava entrou; " + $mJanela.total + " pares TOTAIS, incluindo " + ($mJanela.total - $mJanelaG.total) +
-    " sem mapa nenhum em disco, fora desta conta) - abaixo do alvo de " + $ALVO_PCT +
-    "%. historico completo (so gateaveis): " + ([string]::Format($inv, "{0:0.0}", $mHistG.pct)) + "% em " + $mHistG.total +
-    " par(es), sendo " + $mHistG.injetados.Count + " por injecao automatica (TASK-169) e " + $mHistG.autonomos.Count +
-    " por leitura autonoma. Com a injecao ligada, par gateavel sem mapa no contexto e DEFEITO DE MAQUINA" +
-    " (killswitch, erro no gate, ou pares anteriores a esta versao do sensor) - nao mais falta de habito.")
-  exit 0
-}
+# Community Hubs) via additionalContext no 1o toque de todo par gateavel. Por isso a injecao NUNCA
+# conta como adocao autonoma - ela e o gate fazendo o trabalho, nao o agente desenvolvendo habito.
 if ($mJanelaG.total -lt $MIN_AMOSTRA) {
-  Write-Host ("VEREDITO: [PASS] amostra gateavel insuficiente na janela da trava para julgar (" + $mJanelaG.total +
-    " de " + $MIN_AMOSTRA + " pares minimos, desde " + $GateLigadoUtc.ToString("yyyy-MM-dd") +
-    ") - sensor vivo, medindo. historico completo (so gateaveis): " +
-    ([string]::Format($inv, "{0:0.0}", $mHistG.pct)) + "% em " + $mHistG.total + " par(es).")
-  exit 0
+  Write-Host ("VEREDITO AMOSTRA: [SEM AMOSTRA] " + $mJanelaG.total + " par(es) gateaveis na janela da trava" +
+    " (desde " + $GateLigadoUtc.ToString("yyyy-MM-dd") + "), minimo " + $MIN_AMOSTRA +
+    " - sensor vivo, medindo, amostra pequena demais pra julgar.")
+} else {
+  Write-Host ("VEREDITO AMOSTRA: [SUFICIENTE] " + $mJanelaG.total + " par(es) gateaveis na janela da trava" +
+    " (desde " + $GateLigadoUtc.ToString("yyyy-MM-dd") + "), minimo " + $MIN_AMOSTRA + ".")
 }
-Write-Host ("VEREDITO: [PASS] adocao (so gateaveis) " + ([string]::Format($inv, "{0:0.0}", $mJanelaG.pct)) + "% em " +
-  $mJanelaG.total + " par(es) gateaveis desde " + $GateLigadoUtc.ToString("yyyy-MM-dd") +
-  " (quando a trava entrou) - no alvo (>= " + $ALVO_PCT + "%), sendo " + $mJanelaG.injetados.Count +
-  " por injecao automatica (TASK-169) e " + $mJanelaG.autonomos.Count + " por leitura autonoma." +
-  " historico completo (so gateaveis): " +
-  ([string]::Format($inv, "{0:0.0}", $mHistG.pct)) + "% em " + $mHistG.total + " par(es).")
+
+if ($mJanelaG.total -lt $MIN_AMOSTRA) {
+  Write-Host ("VEREDITO ADOCAO AUTONOMA: [SEM AMOSTRA] nao julgavel com amostra insuficiente (ver" +
+    " VEREDITO AMOSTRA acima) - NUNCA [PASS] so por falta de dado. historico completo (referencia):" +
+    " " + $mHistG.autonomos.Count + "/" + $mHistG.total + " = " +
+    ([string]::Format($inv, "{0:0.0}", $mHistG.pctAutonomo)) + "%.")
+} elseif ($mJanelaG.pctAutonomo -lt $ALVO_PCT) {
+  Write-Host ("VEREDITO ADOCAO AUTONOMA: [AVISO] " + $mJanelaG.autonomos.Count + "/" + $mJanelaG.total + " = " +
+    ([string]::Format($inv, "{0:0.0}", $mJanelaG.pctAutonomo)) + "% abaixo do alvo de " + $ALVO_PCT +
+    "% (injecao automatica excluida do numerador - so leitura genuina do agente). historico completo" +
+    " (referencia): " + $mHistG.autonomos.Count + "/" + $mHistG.total + " = " +
+    ([string]::Format($inv, "{0:0.0}", $mHistG.pctAutonomo)) + "%.")
+} else {
+  Write-Host ("VEREDITO ADOCAO AUTONOMA: [PASS] " + $mJanelaG.autonomos.Count + "/" + $mJanelaG.total + " = " +
+    ([string]::Format($inv, "{0:0.0}", $mJanelaG.pctAutonomo)) + "% no alvo (>= " + $ALVO_PCT +
+    "%), leitura genuina do agente - nao depende da injecao automatica do gate.")
+}
+
+Write-Host ("VEREDITO COBERTURA: [INFO] " + $mJanelaG.total + "/" + $mJanela.total + " = " +
+  $(if ($mJanela.total -gt 0) { [string]::Format($inv, "{0:0.0}", (100.0 * $mJanelaG.total / $mJanela.total)) } else { "0.0" }) +
+  "% dos pares que varreram tinham mapa em disco (o resto e escopo sem mapa nenhum - nao e culpa" +
+  " do gate; puramente informativo, nunca decide PASS/FAIL sozinho).")
+exit 0
 exit 0

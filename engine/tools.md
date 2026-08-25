@@ -193,6 +193,48 @@ gasto; o Loop de RSI mede o resultado depois. A metrica que prova a alma do Alia
 > **Custo medio por Artifact cai com o tempo.** Se o custo por entrega sobe sem ganho de qualidade,
 > e regressao - vira sinal pro RSI.
 
+## Verificacao visual frugal e teto de delegacao (TASK-283, mandato do CEO 25/08/2026)
+
+> LEI: verificacao de UI mede primeiro por TEXTO; screenshot de tela cheia so no FECHAMENTO. Teto
+> de 6 imagens por conversa de subagente. Delegacao DECLARA Budget. Fan-out > 10 exige Task
+> justificada.
+
+Medido no proprio parque em 25/08/2026: 149,4 MB de transcript num dia, 161 subagentes, um unico
+subagente (FLINT/TASK-197) com 168 chamadas de ferramenta incluindo dezenas de `Read` de screenshot
+PNG de tela cheia (250-460 KB de base64 cada) - cada volta seguinte reenvia TODAS as imagens
+anteriores no contexto (custo QUADRATICO, o ralo mais caro medido). A doutrina existia em prosa
+("Budget", "Frugality Check" acima) mas nada media nem acusava - o CEO descobriu pelo faturamento,
+nao pelo motor. Quatro clausulas fecham isso:
+
+**(a) Texto/DOM/log primeiro, screenshot so no fechamento.** Verificacao de UI mede por
+`read_page`/DOM, console/log ou arquivo ANTES de qualquer imagem. Screenshot de tela cheia e o
+ULTIMO recurso, usado so no FECHAMENTO da entrega (prova final ao operador) - nunca a cada iteracao
+do loop de correcao (`engine/workflows/qa-loop.md`). Cada iteracao do loop usa o sinal mais barato
+que confirma ou nega a correcao (texto/DOM), guardando a imagem para quando a decisao ja foi tomada.
+
+**(b) Teto de 6 imagens de tela cheia por conversa de subagente.** Acima de 6 `Read` de imagem de
+tela cheia na MESMA conversa e desvio, nao escolha livre - o contexto com N imagens paga TODAS de
+novo a cada volta (a causa raiz do Ralo n.1). Precisa comparar mais telas: (1) recorte/zoom so da
+REGIAO que mudou, nunca a tela inteira de novo, ou (2) feche a conversa e abra outra (memoria fica
+no Artifact escrito, nao no contexto vivo).
+
+**(c) Delegacao DECLARA Budget.** Todo briefing de delegacao a um Specialist com tarefa de
+verificacao visual/QA declara teto de chamadas de ferramenta e teto de imagens (o campo `Budget` ja
+existia como termo no glossario, sem numero - agora carrega numero). Subagente que estoura o teto
+FECHA e devolve parcial + proximo passo explicito - nunca segue queimando ferramenta atras de
+ferramenta ate o operador descobrir pelo faturamento.
+
+**(d) Fan-out > 10 subagentes por sessao exige justificativa registrada na Task.** Honestidade sobre
+o mecanismo: nao ha como medir uma sessao VIVA e bloquear em tempo real (o hook de `PreToolUse` roda
+por chamada de ferramenta, nao teria visao do total da sessao sem custo proprio alto). A lei aqui e
+CONTRATO LIDO + SENSOR A POSTERIORI, nao trava em tempo real - `scripts/cost-sensor.ps1` mede depois
+(MB de transcript + contagem de subagentes por sessao/dia, a partir dos transcripts locais que o
+proprio Claude Code ja grava) e acusa `[ESTOURO]` quando uma sessao passa do teto configurado
+(default 20 subagentes OU 30 MB) ou o dia passa do teto diario (default 80 MB) - grava
+`studio/cost-log.jsonl` para tendencia. Numa instancia real, a chamada anda de carona no
+`smoke-test-studio.ps1` (mesmo padrao de `memory-curator.ps1 -Validade`, ver "Pipeline em CLI"
+acima) - zero agendador novo.
+
 ## Frugalidade nunca corta qualidade
 
 Reduzir custo e obrigatorio; reduzir qualidade e proibido (Principio VIII). Na duvida entre a rota

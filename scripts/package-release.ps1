@@ -109,7 +109,7 @@ foreach ($d in $shipDirs) {
 #   - migrate-to-studio.ps1  : migracao UNICA do sistema legado do dono (caminhos da maquina dele).
 #   - extract-secrets.ps1    : idem - opera em studio/state.json especifico da migracao do dono.
 $scriptsAllow = @(
-  "_studio.ps1","budget-check.ps1","check-public-surface.ps1","client-state.ps1","ddd-drift.ps1",
+  "_studio.ps1","budget-check.ps1","check-public-surface.ps1","client-state.ps1","cost-sensor.ps1","ddd-drift.ps1",
   "debt-scan.ps1","delegation-guard.ps1","doctor.ps1","evolution-scan.ps1","git-sync.ps1",
   "graph-check.ps1","graph-usage-sensor.ps1","graph-usage.ps1","guard-core.ps1","health-check.ps1",
   "import-project.ps1","install.ps1","kb-index.ps1","law-ledger-check.ps1",
