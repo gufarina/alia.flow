@@ -20,6 +20,88 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.62.0] - 2026-08-25
+
+WARDEN torna o teto de Budget da L41 COBRAVEL (TASK-286, mandato do CEO 25/08/2026). Ate aqui a
+clausula "Delegacao DECLARA Budget" era contrato lido puro - nenhuma maquina conferia o teto
+declarado contra o gasto real. Prova constrangedora medida na propria sessao: os subagentes que
+CONSTRUIRAM o freio de custo (TASK-283) estouraram o teto do proprio briefing (115 chamadas de
+ferramenta de um teto de 55, 53 de um teto de 40 - o de 43/60 coube) e nada acusou, ninguem soube
+ate a contagem manual. "O Alia Flow economiza tokens" era promessa sem maquina - a casa tem lei
+contra promessa falsa (constroi a coisa real ou corta a frase).
+
+**1. Formato do teto: linha canonica legivel por maquina, nao mais prosa livre.** Prosa como "teto
+de 60 chamadas de ferramenta" nunca foi parseavel - a correcao e o FORMATO, nao mais texto pedindo
+boa vontade. Toda delegacao (Task/Agent) que quer o teto cobrado declara, dentro do proprio
+`prompt`, a linha `Budget: tools=<N> images=<M>` (M opcional). Documentado como a forma vigente da
+clausula (c) da L41 em `engine/tools.md` (secao "Verificacao visual frugal e teto de delegacao").
+
+**2. O mecanismo: `scripts/response-guard.ps1` ganha a REGRA 3 (BUDGET) - reuse-first, zero
+infra/hook novo.** O hook de `Stop` ja rodava a CADA turno do coordenador auditando REGRA 1
+(DELEGA) e REGRA 2 (GROUNDING); a REGRA 3 usa o MESMO `$allToolUses` do turno, filtra os
+Task/Agent chamados, le a linha canonica do `prompt`, e acha o transcript PROPRIO de cada
+sub-agente gerado (`subagents/agent-<hash>.jsonl`, correlacionado pelo `toolUseId` gravado no
+`.meta.json` irmao - o MESMO layout de disco que `scripts/cost-sensor.ps1` (1.60.0) ja usa para
+contar subagentes; achado confirmado em disco nesta Task: cada `agent-*.jsonl` de sub-agente real
+segue o mesmo contrato `{type, message:{content}}` do transcript pai, com `tool_use` contavel
+1-para-1). Conta o `tool_use` REAL do sub-agente e compara com o `N` declarado; estourou, vira
+`[ESTOURO]` no log (`studio/response-guard-log.jsonl`, campos `budget_ok`/`budget_estouros`
+novos) e, em modo bloqueio, cita o par declarado/real na razao do bloqueio do turno pai.
+
+**3. Alcance real, sem inflar o freio (honestidade obrigatoria).** O sensor e A POSTERIORI: o
+sub-agente ja terminou e ja gastou quando o Stop do turno pai roda, entao isto NUNCA impede o
+estouro em tempo real, so ACUSA depois (mesma limitacao ja registrada na clausula (d) da L41 para
+fan-out/`cost-sensor.ps1`). Cobre so `tools=` e `images=` declarados NO FORMATO CANONICO; deixa
+de fora `conversations=`/fan-out por delegacao individual (isso continua so agregado por sessao via
+`cost-sensor.ps1`) e qualquer delegacao cujo Budget continua em prosa livre - essa fica visivel no
+log como `SEM-BUDGET-DECLARADO` (conta pra medir adocao do formato), mas NUNCA acusa (nao ha
+numero de maquina pra comparar). `engine/tools.md` foi emendado para dizer isso com todas as
+letras, sem sugerir travamento em tempo real que nao existe.
+
+**4. `engine/governance/law-ledger.md`: L41 emendada com o teste novo citado.** A clausula (c)
+sai de "SEM TESTE (comportamento de delegacao, contrato lido)" para COBERTA - especificamente para
+`tools=`/`images=` declarados no formato canonico. Continuam SEM TESTE: clausula (a)
+(texto-antes-de-screenshot), clausula (b) (teto fixo de 6 imagens por conversa, sem maquina
+propria mesmo o sensor contando imagens reais), `conversations=`/fan-out por delegacao individual,
+e toda delegacao em prosa livre (visivel, nunca cobrada). Ponteiro L21 corrigido de novo
+(`engine/tools.md:262` -> `:290`, mesma fragilidade de ponteiro-por-linha ja registrada na
+TASK-283 anterior - a insercao de texto na L41 empurra o marcador vizinho).
+
+**5. Prova pelo negativo (WARDEN, metodo do proprio motor).** 3 fixtures novas em
+`scripts/smoke-test.ps1` (secao "Response Guard: REGRA 3 BUDGET"): (negativo) sub-agente sintetico
+com 5 `tool_use` reais vs `Budget: tools=3` declarado -> ACUSA e BLOQUEIA citando "declarado=3
+real=5"; (positivo, desfaz) mesmo sub-agente com `Budget: tools=10` (cabe) -> PASSA; (limite
+honesto) delegacao SEM a linha canonica -> nao acusa, so `SEM-BUDGET-DECLARADO` no log. Provado
+tambem na IMPLEMENTACAO: regex do parser da linha canonica quebrada de proposito
+(`BudgetQUEBRADOPROVA:` em vez de `Budget:`) -> o mesmo check de estouro caiu para `[FAIL]` de
+verdade; regex restaurada -> `[PASS]` de volta.
+
+**6. Numeros.** GUARD-NUM `docs/CLAIMS.md` `VERIFICACOES_DETERMINISTICAS_OFICINA`: `257 -> 260`
+(3 checks novos). Smoke da oficina: **260 PASS, 0 FAIL, ALL GREEN**. `law-ledger-check.ps1`:
+`FAIL: 0, AVISO: 0, LEDGER CONFERE COM O DISCO`.
+
+Divida honesta que fica nomeada (nao escondida): esta Task tambem completou o item 6, faltante em
+`release-reviews/1.61.0.md` (o conserto do vazamento de identidade de Client pego pelo proprio
+gate na ultima volta da 1.61.0) - registrado la, nao aqui, porque pertence aquela versao.
+
+ULTIMA VOLTA (mesmo dia): o proprio gate reprovou a 1.62.0 no passo 0/3 -
+`release-reviews/1.62.0.md` tinha `veredito: PASS (parcial - fechado por budget proprio, ver
+"divida declarada")`; o parser de `package-release.ps1` (`^veredito:\s*(\S+)\s*$`) exige TOKEN
+UNICO na linha, entao o veredito lido saiu vazio - gate falhou FECHADO, comportamento correto.
+Corrigido: linha virou `veredito: PASS` puro, a ressalva foi para um paragrafo no corpo do
+documento. Decisao de fundo (nao so a ocorrencia): o veredito continua BINARIO por desenho
+(PASS = pode empacotar, FAIL = nao pode) - nuance/divida declarada NUNCA vai na linha que a
+maquina le, sempre no corpo. Documentado como LEI em `release-reviews/TEMPLATE.md`.
+`scripts/smoke-test.ps1` ganhou 2 checks novos (secao "Release Review: veredito e token unico")
+que reusam o REGEX REAL de `package-release.ps1` (extraido do proprio arquivo, nao copiado a
+mao) contra todo `release-reviews/*.md` - provado pelo negativo: reintroduzida a mesma linha
+quebrada em `1.62.0.md` -> check caiu para `[FAIL]` citando `veredito=''`; desfeita -> `[PASS]`
+de volta. GUARD-NUM `docs/CLAIMS.md`: `260 -> 262`. Smoke da oficina: **262 PASS, 0 FAIL, ALL
+GREEN**. Sem versao nova mintada (mudanca e so a linha de veredito + o contrato, dentro da mesma
+1.62.0, por instrucao explicita do coordenador).
+
+---
+
 ## [1.61.0] - 2026-08-25
 
 PATCH-shaped MINOR - WARDEN fecha o furo de PIPELINE que o proprio ARCHIVE cometeu ao entregar os

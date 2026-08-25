@@ -218,11 +218,39 @@ novo a cada volta (a causa raiz do Ralo n.1). Precisa comparar mais telas: (1) r
 REGIAO que mudou, nunca a tela inteira de novo, ou (2) feche a conversa e abra outra (memoria fica
 no Artifact escrito, nao no contexto vivo).
 
-**(c) Delegacao DECLARA Budget.** Todo briefing de delegacao a um Specialist com tarefa de
-verificacao visual/QA declara teto de chamadas de ferramenta e teto de imagens (o campo `Budget` ja
-existia como termo no glossario, sem numero - agora carrega numero). Subagente que estoura o teto
-FECHA e devolve parcial + proximo passo explicito - nunca segue queimando ferramenta atras de
-ferramenta ate o operador descobrir pelo faturamento.
+**(c) Delegacao DECLARA Budget - e desde 25/08/2026 (TASK-286) o teto e COBRAVEL, nao so lido.**
+Todo briefing de delegacao a um Specialist declara teto de chamadas de ferramenta e teto de
+imagens (o campo `Budget` ja existia como termo no glossario). Prova constrangedora medida na
+propria TASK-286: os subagentes que CONSTRUIRAM este freio estouraram o teto do proprio briefing
+(115 chamadas de um teto de 55, 53 de um teto de 40) e nada acusou - o teto em prosa livre
+("teto de 60 chamadas de ferramenta") nunca foi legivel por maquina. Correcao: o teto agora se
+declara numa LINHA CANONICA, dentro do `prompt` da delegacao (Task/Agent) -
+
+> `Budget: tools=<N> images=<M>`
+
+- `tools=<N>` (obrigatorio para o sensor pegar) e o teto de chamadas de ferramenta da conversa do
+  sub-agente; `images=<M>` (opcional) e o teto de `Read` de imagem de tela cheia. `scripts/response-guard.ps1`
+  (o mesmo hook de `Stop` que ja audita REGRA 1/DELEGA e REGRA 2/GROUNDING) ganhou a REGRA 3
+  (BUDGET): ao fim do turno do coordenador, para cada Task/Agent chamado, le a linha canonica do
+  `prompt`, acha o transcript PROPRIO do sub-agente gerado (`subagents/agent-*.jsonl`, correlacionado
+  pelo `toolUseId` do `.meta.json` irmao - mesmo layout de disco que `scripts/cost-sensor.ps1` ja usa
+  pra contar subagentes) e CONTA de verdade quantos `tool_use` (e quantas imagens) o sub-agente
+  chamou. Estourou o declarado -> `[ESTOURO]` no log (`studio/response-guard-log.jsonl`, campos
+  `budget_ok`/`budget_estouros`) e, em modo bloqueio, a razao do bloqueio do turno cita o numero
+  declarado e o numero real, lado a lado.
+
+**Alcance real (honestidade obrigatoria, nao inflar o freio):** o sensor e A POSTERIORI - o
+sub-agente ja terminou e ja gastou quando o Stop do turno pai roda, entao isto NUNCA impede o
+estouro em tempo real, so ACUSA depois (mesma honestidade da clausula (d) abaixo). So mede
+delegacao que passa pela ferramenta `Task`/`Agent` com transcript proprio em disco - nao cobre
+sub-delegacao dentro do proprio texto de um Specialist sem novo `Task`. So mede `tools=` e
+`images=`; `conversations=`/fan-out continua so na clausula (d) (`cost-sensor.ps1`, contagem de
+subagentes por sessao, nao por delegacao individual). Delegacao SEM a linha canonica (so prosa)
+fica `SEM-BUDGET-DECLARADO` no log - visivel para medir adocao do formato, mas NAO acusa (nao ha
+numero de maquina pra comparar); a lei aqui e "declare no formato certo e o sensor te cobra", nao
+"toda delegacao sem numero e violacao". Subagente que estoura o teto continua devendo FECHAR e
+devolver parcial por conta propria (a doutrina do paragrafo anterior nao mudou) - o sensor prova
+que isso aconteceu ou nao, nao substitui o julgamento de quem executa.
 
 **(d) Fan-out > 10 subagentes por sessao exige justificativa registrada na Task.** Honestidade sobre
 o mecanismo: nao ha como medir uma sessao VIVA e bloquear em tempo real (o hook de `PreToolUse` roda

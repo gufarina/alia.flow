@@ -1291,7 +1291,7 @@ Write-Host ""
 Write-Host "-- Response Guard: o freio na porta de saida (M1) --"
 $rgScript = Join-Path $root "scripts\response-guard.ps1"
 $rgTxt = if (Test-Path -LiteralPath $rgScript) { ReadText $rgScript } else { "" }
-Check "Response Guard: script existe e cita as 2 regras (DELEGA/GROUNDING)" ((Test-Path -LiteralPath $rgScript) -and ($rgTxt -match 'DELEGA') -and ($rgTxt -match 'GROUNDING'))
+Check "Response Guard: script existe e cita as 3 regras (DELEGA/GROUNDING/BUDGET)" ((Test-Path -LiteralPath $rgScript) -and ($rgTxt -match 'DELEGA') -and ($rgTxt -match 'GROUNDING') -and ($rgTxt -match 'BUDGET'))
 
 $settingsPath = Join-Path $root ".claude\settings.json"
 $stopWired = $false
@@ -1419,6 +1419,77 @@ $rgOut7 = Invoke-ResponseGuard -TranscriptPath $rgT7 -SessionId "RG-T7"
 Check "Clausula coordenacao (c): escrita de dominio FORA de coordination/ no mesmo turno ainda BLOQUEIA (REGRA 1)" (($rgOut7 -match '"decision":"block"') -and ($rgOut7 -match 'falta delegacao')) ("saida: " + $rgOut7)
 
 if (Test-Path -LiteralPath $rgRoot) { Remove-Item -Recurse -Force -LiteralPath $rgRoot -ErrorAction SilentlyContinue }
+
+# --- Response Guard: REGRA 3 BUDGET (TASK-286, L41 clausula c, prova pelo negativo) ---
+# Fabrica um sub-agente sintetico (subagents/agent-X.jsonl + .meta.json, mesmo layout de disco que
+# cost-sensor.ps1 ja mede) com N tool_use REAIS, e um Task no turno pai com a linha canonica
+# "Budget: tools=<declarado>" no prompt. declarado < real -> ESTOURO tem que acusar; desfeito
+# (declarado >= real) tem que passar liso - o par negativo/positivo classico do WARDEN.
+Write-Host ""
+Write-Host "-- Response Guard: REGRA 3 BUDGET (correlaciona Budget: tools=N do briefing com o transcript real do sub-agente, prova pelo negativo) --"
+$rgRoot2 = Join-Path ([System.IO.Path]::GetTempPath()) ("rg-budget-fixture-" + $PID)
+if (Test-Path -LiteralPath $rgRoot2) { Remove-Item -Recurse -Force -LiteralPath $rgRoot2 -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Force -Path $rgRoot2 | Out-Null
+$rgLog2 = Join-Path $rgRoot2 "log.jsonl"
+$rgCfg2 = Join-Path $rgRoot2 "response-guard.yaml"
+[System.IO.File]::WriteAllText($rgCfg2, "mode: bloqueio`nmin_claims: 3`nmin_chars_informativo: 1500`n", $rgUtf8)
+
+function New-RgSubagentFixture {
+    # Cria <SessDir>/<Sid>/subagents/agent-<Tag>.jsonl (com $ToolCount linhas "assistant" de
+    # tool_use real, todas Bash de um comando trivial) + o .meta.json irmao com o toolUseId que
+    # correlaciona de volta ao tool_use Task do transcript PAI (Find-SubagentTranscript no script real).
+    param([string]$SessDir, [string]$Sid, [string]$Tag, [string]$ToolUseId, [int]$ToolCount)
+    $subDir = Join-Path $SessDir (Join-Path $Sid "subagents")
+    New-Item -ItemType Directory -Force -Path $subDir | Out-Null
+    $agentJsonl = Join-Path $subDir ("agent-" + $Tag + ".jsonl")
+    $agentMeta = Join-Path $subDir ("agent-" + $Tag + ".meta.json")
+    $lines = New-Object System.Collections.Generic.List[string]
+    for ($i = 0; $i -lt $ToolCount; $i++) {
+        $lines.Add((@{ type = "assistant"; message = @{ role = "assistant"; content = @(@{ type = "tool_use"; id = ("sub" + $i); name = "Bash"; input = @{ command = "echo " + $i } }) } } | ConvertTo-Json -Depth 8 -Compress))
+    }
+    [System.IO.File]::WriteAllText($agentJsonl, ($lines -join "`n") + "`n", $rgUtf8)
+    [System.IO.File]::WriteAllText($agentMeta, (@{ agentType = "general-purpose"; description = "fixture"; toolUseId = $ToolUseId; spawnDepth = 1 } | ConvertTo-Json -Compress), $rgUtf8)
+}
+
+# Cenario 8 (negativo): Budget: tools=3 declarado, sub-agente real gastou 5 -> ESTOURO, BLOQUEIA.
+$rgSid8 = "t8"
+$rgT8 = Join-Path $rgRoot2 ($rgSid8 + ".jsonl")
+New-RgSubagentFixture -SessDir $rgRoot2 -Sid $rgSid8 -Tag "estouro" -ToolUseId "budget-t8" -ToolCount 5
+New-RgTranscript -Path $rgT8 -UserText "delegue uma tarefa pequena" `
+    -AssistantBlocks @(@{ id = "budget-t8"; name = "Task"; input = @{ subagent_type = "warden"; description = "fixture estouro"; prompt = "faca X.`nBudget: tools=3 images=0`nresto do briefing" } }) `
+    -FinalText "Delegado."
+$rgOut8Payload = (@{ session_id = "RG-T8"; transcript_path = $rgT8.Replace('\', '/'); stop_hook_active = $false } | ConvertTo-Json -Compress)
+if (Test-Path -LiteralPath $rgLog2) { Remove-Item -LiteralPath $rgLog2 -Force -ErrorAction SilentlyContinue }
+$rgOut8 = ($rgOut8Payload | & powershell -ExecutionPolicy Bypass -File $rgScript -LogPath $rgLog2 -ConfigPath $rgCfg2 2>&1) -join "`n"
+Check "Response Guard (REGRA 3 BUDGET, negativo): sub-agente com 5 tool_use vs Budget tools=3 declarado ACUSA e BLOQUEIA" (($rgOut8 -match '"decision":"block"') -and ($rgOut8 -match 'Budget') -and ($rgOut8 -match 'declarado=3 real=5')) ("saida: " + $rgOut8)
+
+# Cenario 9 (positivo, desfaz o cenario 8): mesmo sub-agente, Budget: tools=10 (cabe) -> PASSA.
+$rgSid9 = "t9"
+$rgT9 = Join-Path $rgRoot2 ($rgSid9 + ".jsonl")
+New-RgSubagentFixture -SessDir $rgRoot2 -Sid $rgSid9 -Tag "coube" -ToolUseId "budget-t9" -ToolCount 5
+New-RgTranscript -Path $rgT9 -UserText "delegue uma tarefa pequena" `
+    -AssistantBlocks @(@{ id = "budget-t9"; name = "Task"; input = @{ subagent_type = "warden"; description = "fixture coube"; prompt = "faca X.`nBudget: tools=10 images=0`nresto do briefing" } }) `
+    -FinalText "Delegado."
+$rgOut9Payload = (@{ session_id = "RG-T9"; transcript_path = $rgT9.Replace('\', '/'); stop_hook_active = $false } | ConvertTo-Json -Compress)
+if (Test-Path -LiteralPath $rgLog2) { Remove-Item -LiteralPath $rgLog2 -Force -ErrorAction SilentlyContinue }
+$rgOut9 = ($rgOut9Payload | & powershell -ExecutionPolicy Bypass -File $rgScript -LogPath $rgLog2 -ConfigPath $rgCfg2 2>&1) -join "`n"
+Check "Response Guard (REGRA 3 BUDGET, positivo): mesmo sub-agente com Budget tools=10 (cabe) PASSA (sem decision:block)" ($rgOut9 -notmatch '"decision":"block"') ("saida: " + $rgOut9)
+
+# Cenario 10: delegacao SEM a linha canonica (so prosa) -> nao acusa, so fica SEM-BUDGET-DECLARADO
+# (visivel no log, nunca vira violacao - teto em prosa nao e legivel por maquina, de proposito).
+$rgSid10 = "t10"
+$rgT10 = Join-Path $rgRoot2 ($rgSid10 + ".jsonl")
+New-RgSubagentFixture -SessDir $rgRoot2 -Sid $rgSid10 -Tag "semdeclarar" -ToolUseId "budget-t10" -ToolCount 50
+New-RgTranscript -Path $rgT10 -UserText "delegue uma tarefa pequena" `
+    -AssistantBlocks @(@{ id = "budget-t10"; name = "Task"; input = @{ subagent_type = "warden"; description = "fixture sem budget"; prompt = "faca X com teto de 3 chamadas (prosa, sem linha canonica)" } }) `
+    -FinalText "Delegado."
+if (Test-Path -LiteralPath $rgLog2) { Remove-Item -LiteralPath $rgLog2 -Force -ErrorAction SilentlyContinue }
+$rgOut10Payload = (@{ session_id = "RG-T10"; transcript_path = $rgT10.Replace('\', '/'); stop_hook_active = $false } | ConvertTo-Json -Compress)
+$rgOut10 = ($rgOut10Payload | & powershell -ExecutionPolicy Bypass -File $rgScript -LogPath $rgLog2 -ConfigPath $rgCfg2 2>&1) -join "`n"
+$rgLog10Txt = if (Test-Path -LiteralPath $rgLog2) { ReadText $rgLog2 } else { "" }
+Check "Response Guard (REGRA 3 BUDGET): delegacao SEM linha canonica 'Budget: tools=N' NAO acusa (teto em prosa e ilegivel por maquina, de proposito) e fica SEM-BUDGET-DECLARADO no log" (($rgOut10 -notmatch '"decision":"block"') -and ($rgLog10Txt -match '"budget_sem_declarar":1')) ("saida: " + $rgOut10 + " | log: " + $rgLog10Txt)
+
+if (Test-Path -LiteralPath $rgRoot2) { Remove-Item -Recurse -Force -LiteralPath $rgRoot2 -ErrorAction SilentlyContinue }
 
 # --- Artifact Ladder: o pacote da escada de frugalidade de SAIDA (WEAVER, cluster OPP-79/1.54.0) --
 # Furo pego pelo Gate: 8 arquivos entraram na oficina (artifact-ladder.md, engineering.md, tools.md,
@@ -2129,6 +2200,39 @@ $verProdutoPath = Join-Path (Split-Path (Split-Path (Split-Path $root -Parent) -
 $verProduto = if (Test-Path -LiteralPath $verProdutoPath) { ((Get-Content -LiteralPath $verProdutoPath -ErrorAction SilentlyContinue) -join "").Trim() } else { "(ausente)" }
 Warn ("Versao: oficina=" + $verOficina + " release/alia-flow=" + $verRelease + " Projetos/alia-flow=" + $verProduto) (($verOficina -eq $verRelease) -and ($verOficina -eq $verProduto)) "drift so o CEO resolve, publicando"
 
+# --- Release Review: veredito e token unico, sempre (TASK-286) ---
+# Prova constrangedora medida nesta Task: "veredito: PASS (parcial - fechado por budget proprio,
+# ver \"divida declarada\")" reprovou o gate de package-release.ps1 porque o parser real
+# ('(?m)^veredito:\s*(\S+)\s*$') exige TOKEN UNICO na linha - o gate falhou FECHADO (certo), mas
+# nada no smoke pegava esse formato ANTES de chegar no empacotador. Decisao registrada (WARDEN,
+# TASK-286): o veredito continua BINARIO por desenho, nao por limitacao de parser - qualquer
+# ressalva/nuance vai pro CORPO do documento (secao "divida declarada" ou um paragrafo proprio),
+# nunca na linha que a maquina le. Contrato documentado em release-reviews/TEMPLATE.md; este check
+# e o CONSERTO DA CAUSA (nao so a ocorrencia) - reusa o REGEX REAL de scripts/package-release.ps1
+# (extraido do proprio arquivo, nao copiado a mao - se o parser mudar, este check acompanha).
+Write-Host ""
+Write-Host "-- Release Review: veredito e token unico PASS|FAIL, nunca com ressalva na linha (TASK-286) --"
+$prPath2 = Join-Path $root "scripts\package-release.ps1"
+$prTxt2 = if (Test-Path -LiteralPath $prPath2) { ReadText $prPath2 } else { "" }
+$prVerdPatM = [regex]::Match($prTxt2, "(?m)^\`$reviewVerdMatch\s*=\s*\[regex\]::Match\(\`$reviewTxt,\s*'([^']+)'\)")
+$rrDir = Join-Path $root "release-reviews"
+$rrBad = New-Object System.Collections.Generic.List[string]
+$rrChecked = 0
+if ($prVerdPatM.Success -and (Test-Path -LiteralPath $rrDir)) {
+  $rrPattern = $prVerdPatM.Groups[1].Value
+  $rrFiles = @(Get-ChildItem -LiteralPath $rrDir -Filter "*.md" -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne "TEMPLATE.md" })
+  foreach ($rf in $rrFiles) {
+    $rrTxt = ReadText $rf.FullName
+    $rrM = [regex]::Match($rrTxt, $rrPattern)
+    $rrOk = $rrM.Success -and (($rrM.Groups[1].Value -eq 'PASS') -or ($rrM.Groups[1].Value -eq 'FAIL'))
+    $rrChecked++
+    if (-not $rrOk) { $rrBad.Add($rf.Name + " (veredito='" + $rrM.Groups[1].Value + "')") }
+  }
+}
+Check "Release Review: regex real de package-release.ps1 (reusado) achado no script" $prVerdPatM.Success
+Check ("Release Review: todo release-reviews/*.md (exceto TEMPLATE.md, " + $rrChecked + " arquivo(s)) tem 'veredito:' como TOKEN UNICO PASS ou FAIL") ($rrBad.Count -eq 0) ("arquivo(s) com problema: " + ($rrBad -join " | "))
+
+
 # --- Numero publico: README.md (produto) e GUARD-NUM (oficina) - cada um trava so contra o
 # total REAL do CONTEXTO onde faz sentido (M5) ---
 # Dois numeros diferentes e legitimos, nunca somar (engine/governance/client-truth.md, LEI 2):
@@ -2190,6 +2294,7 @@ if ($claimsExists) {
   # script inteiro (pior que um FAIL: nenhum check depois deste rodava). Pulado com honestidade.
   Warn "Numero publico: GUARD-NUM vs total real - pulado (CLAIMS.md ausente, doc interno)" $false "CLAIMS.md nao viaja no pacote/repo publico por LEI; nada a checar aqui"
 }
+
 
 # --- Resultado ---
 Write-Host ""

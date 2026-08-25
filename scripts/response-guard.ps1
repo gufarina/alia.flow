@@ -15,7 +15,7 @@
   infinito: o proprio Stop hook dispara de novo quando ele bloqueia, e essa flag sinaliza que
   ja estamos num loop de bloqueio).
 
-  2 regras deterministicas (sem LLM, sem rede) sobre o TURNO ATUAL (da ultima mensagem de role
+  3 regras deterministicas (sem LLM, sem rede) sobre o TURNO ATUAL (da ultima mensagem de role
   "user" ate o fim do transcript):
     REGRA 1 (DELEGA): Write/Edit/NotebookEdit em qualquer arquivo de dominio (clients/, engine/,
       docs/, skills/, scripts/, AGENTS.md, CLAUDE.md, raiz - fora de memory/, _proposals/,
@@ -32,6 +32,14 @@
       turno em clients/*/artifacts/*.html - claim tecnico (extensao de arquivo ou arquivo:linha) no
       CONTEUDO do html sem rotulo de proveniencia e violacao. Pagina de marketing sem claim tecnico
       da 0 na contagem e passa - o gatilho e a presenca do claim, nao a ausencia do rotulo.
+    REGRA 3 (BUDGET, TASK-286, 25/08/2026, law-ledger L41 clausula c): toda delegacao (Task/Agent)
+      do turno cujo `prompt` traga a linha canonica "Budget: tools=<N> [images=<M>]" tem o teto
+      comparado com a contagem REAL de tool_use (e de Read de imagem de tela cheia) no transcript
+      PROPRIO do sub-agente gerado (achado via .meta.json em subagents/, mesmo layout que
+      scripts/cost-sensor.ps1 ja usa para contar subagentes). Sensor A POSTERIORI - o sub-agente ja
+      terminou quando o Stop do turno pai roda, entao isto ACUSA depois, nunca trava o sub-agente em
+      tempo real. Delegacao sem a linha canonica (so prosa) fica SEM-BUDGET-DECLARADO: nao acusa,
+      so conta pra medir adocao do formato.
 
   A VALVULA (excecao legitima da REGRA 1, 09/08/2026): a lei DELEGA sempre teve uma excecao
   doutrinaria - o Operator pode mandar a coordenadora executar dominio ela mesma (ver
@@ -127,6 +135,74 @@ function Get-ToolResultsFromContent {
     $out.Add([pscustomobject]@{ tool_use_id = $tuid; text = $rtext })
   }
   return $out.ToArray()
+}
+
+function Find-SubagentTranscript {
+  # REGRA 3 (BUDGET, TASK-286, L41 clausula c). Correlaciona um tool_use Task/Agent do turno pai
+  # com o transcript PROPRIO do sub-agente que ele gerou. Layout de disco (medido em sessao real,
+  # 25/08/2026, mesmo achado que cost-sensor.ps1 ja usa para contar subagentes):
+  #   <sessDir>/<sessionId>.jsonl                              (transcript do turno pai)
+  #   <sessDir>/<sessionId>/subagents/agent-<hash>.jsonl        (transcript DO sub-agente)
+  #   <sessDir>/<sessionId>/subagents/agent-<hash>.meta.json    ({"toolUseId": "toolu_...", ...})
+  # O .meta.json e o elo: toolUseId == o id do proprio tool_use Task/Agent no transcript pai.
+  param([string]$TranscriptPath, [string]$ToolUseId)
+  try {
+    if ([string]::IsNullOrWhiteSpace($ToolUseId)) { return $null }
+    $sessDir = Split-Path -Parent $TranscriptPath
+    $sid = [System.IO.Path]::GetFileNameWithoutExtension($TranscriptPath)
+    $subDir = Join-Path $sessDir (Join-Path $sid "subagents")
+    if (-not (Test-Path -LiteralPath $subDir)) { return $null }
+    $metaFiles = Get-ChildItem -LiteralPath $subDir -Filter "*.meta.json" -File -ErrorAction SilentlyContinue
+    foreach ($mf in $metaFiles) {
+      $mo = $null
+      try { $mo = (Get-Content -LiteralPath $mf.FullName -Raw -Encoding UTF8) | ConvertFrom-Json } catch { continue }
+      $tuid = $null
+      try { $tuid = [string]$mo.toolUseId } catch { }
+      if ($tuid -eq $ToolUseId) {
+        $jsonlName = $mf.Name -replace '\.meta\.json$', '.jsonl'
+        return (Join-Path $subDir $jsonlName)
+      }
+    }
+  } catch { }
+  return $null
+}
+
+function Get-SubagentActualUsage {
+  # Conta tool_use REAL dentro do transcript do sub-agente (mesmo parser Get-ToolUsesFromContent
+  # usado no transcript pai - o .jsonl do sub-agente segue o MESMO contrato {type, message:{content}},
+  # medido em disco: 70 "type":"tool_use" batendo 1-para-1 com os blocos tool_use dentro dos objetos
+  # "assistant"). Imagem = Read cujo file_path termina em extensao de imagem de tela cheia.
+  param([string]$AgentJsonlPath)
+  $toolCount = 0
+  $imageCount = 0
+  if ([string]::IsNullOrWhiteSpace($AgentJsonlPath) -or -not (Test-Path -LiteralPath $AgentJsonlPath)) {
+    return [pscustomobject]@{ tools = 0; images = 0; found = $false }
+  }
+  try {
+    $lines = @(Get-Content -LiteralPath $AgentJsonlPath -Encoding UTF8 -ErrorAction Stop)
+    foreach ($rl in $lines) {
+      if ([string]::IsNullOrWhiteSpace($rl)) { continue }
+      $o = $null
+      try { $o = $rl | ConvertFrom-Json } catch { continue }
+      if ($null -eq $o) { continue }
+      $t = $null
+      try { $t = $o.type } catch { }
+      if ($t -ne 'assistant') { continue }
+      $c = $null
+      try { $c = $o.message.content } catch { }
+      foreach ($tu in (Get-ToolUsesFromContent $c)) {
+        $toolCount++
+        $tn = $null
+        try { $tn = [string]$tu.name } catch { }
+        if ($tn -eq 'Read') {
+          $fp = $null
+          try { $fp = [string]$tu.input.file_path } catch { }
+          if (-not [string]::IsNullOrWhiteSpace($fp) -and ($fp -match '(?i)\.(png|jpe?g|gif|webp|bmp)$')) { $imageCount++ }
+        }
+      }
+    }
+  } catch { }
+  return [pscustomobject]@{ tools = $toolCount; images = $imageCount; found = $true }
 }
 
 function Get-ResponseGuardConfig {
@@ -413,6 +489,55 @@ try {
 
   $delegaOk = (-not $violacaoDelega) -and (-not $violacaoEspecialista)
 
+  # (4d) REGRA 3 - BUDGET (TASK-286, L41 clausula c: "Delegacao DECLARA Budget"). Ate aqui a
+  # clausula era CONTRATO LIDO puro - nenhuma maquina conferia o teto declarado contra o gasto
+  # real. Prova constrangedora medida na propria TASK-286: subagentes estouraram o teto do proprio
+  # briefing (115 de um teto de 55, 53 de um teto de 40) e nada acusou.
+  # Mecanismo: toda delegacao (Task/Agent) cujo `prompt` traga a LINHA CANONICA
+  #   Budget: tools=<N> [images=<M>]
+  # tem o N (e o M, se presente) comparado contra a contagem REAL de tool_use (e de Read de
+  # imagem) no transcript PROPRIO do sub-agente (Find-SubagentTranscript + Get-SubagentActualUsage
+  # acima). Sensor A POSTERIORI, nao trava em tempo real: o sub-agente ja terminou quando o Stop
+  # do turno pai roda (mesma honestidade ja registrada na clausula (d) - o hook de PreToolUse nao
+  # tem visao do total da sessao). Delegacao SEM a linha canonica (prosa solta, tipo "teto de 60
+  # chamadas") fica SEM-BUDGET-DECLARADO: nao acusa (nao ha numero de maquina pra comparar), so
+  # conta para medir adocao do formato - o motivo de exigir a linha canonica e justamente esse:
+  # teto em prosa nao e legivel por maquina, so a linha `Budget: tools=N` e.
+  $budgetEstouros = New-Object System.Collections.Generic.List[string]
+  $budgetVerificados = 0
+  $budgetSemDeclarar = 0
+  foreach ($tu in $allToolUses) {
+    $tname = $null
+    try { $tname = [string]$tu.name } catch { }
+    if ($tname -ne 'Agent' -and $tname -ne 'Task') { continue }
+    $prompt = $null
+    try { $prompt = [string]$tu.input.prompt } catch { }
+    if ([string]::IsNullOrWhiteSpace($prompt)) { $budgetSemDeclarar++; continue }
+    $bm = [regex]::Match($prompt, '(?im)^\s*Budget:\s*tools=(\d+)(?:\s+images=(\d+))?\s*$')
+    if (-not $bm.Success) { $budgetSemDeclarar++; continue }
+    $declaredTools = [int]$bm.Groups[1].Value
+    $declaredImages = -1
+    if ($bm.Groups[2].Success) { $declaredImages = [int]$bm.Groups[2].Value }
+    $tuid = $null
+    try { $tuid = [string]$tu.id } catch { }
+    $agentFile = Find-SubagentTranscript -TranscriptPath $transcriptPath -ToolUseId $tuid
+    if ([string]::IsNullOrWhiteSpace($agentFile) -or -not (Test-Path -LiteralPath $agentFile)) { continue }
+    $usage = Get-SubagentActualUsage -AgentJsonlPath $agentFile
+    if (-not $usage.found) { continue }
+    $budgetVerificados++
+    $descricao = ""
+    try { $descricao = [string]$tu.input.description } catch { }
+    if ([string]::IsNullOrWhiteSpace($descricao)) { $descricao = $tuid }
+    if ($usage.tools -gt $declaredTools) {
+      $budgetEstouros.Add($descricao + ": tools declarado=" + $declaredTools + " real=" + $usage.tools)
+    }
+    if ($declaredImages -ge 0 -and $usage.images -gt $declaredImages) {
+      $budgetEstouros.Add($descricao + ": images declarado=" + $declaredImages + " real=" + $usage.images)
+    }
+  }
+  $violacaoBudget = ($budgetEstouros.Count -gt 0)
+  $budgetOk = (-not $violacaoBudget)
+
   # (5) REGRA 2 - GROUNDING.
   $extMatches = [regex]::Matches($lastAssistantText, '\.(ps1|md|ya?ml|json|html|js|ts|py)\b', 'IgnoreCase').Count
   $lineMatches = [regex]::Matches($lastAssistantText, '[\w\-./\\]+:\d+').Count
@@ -494,17 +619,24 @@ try {
     clientes_sem_especialista = ($clientesSemEspecialista -join ",")
     grounding_html_ok      = (-not $violacaoGroundingHtml)
     html_artifacts_violando = ($htmlArtifactsViolando -join " | ")
+    budget_ok          = $budgetOk
+    budget_verificados = $budgetVerificados
+    budget_sem_declarar = $budgetSemDeclarar
+    budget_estouros    = ($budgetEstouros -join " | ")
   }
   $logLine = ($logEntry | ConvertTo-Json -Compress)
   $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
   [System.IO.File]::AppendAllText($logFile, $logLine + "`n", $utf8NoBom)
 
   # (7) Saida conforme o modo.
-  $anyViolation = (-not $delegaOk) -or (-not $groundingOk)
+  $anyViolation = (-not $delegaOk) -or (-not $groundingOk) -or (-not $budgetOk)
 
   if ($cfg.mode -eq 'bloqueio') {
     if ($anyViolation) {
       $reasons = New-Object System.Collections.Generic.List[string]
+      if ($violacaoBudget) {
+        $reasons.Add("Sub-agente estourou o Budget declarado no proprio briefing (law-ledger L41, clausula c): " + ($budgetEstouros -join " | ") + " - o teto e o que a delegacao escreveu na linha 'Budget: tools=N', nao boa vontade; ajuste o teto declarado ou o escopo da proxima delegacao.")
+      }
       if ($violacaoDelega) {
         $reasons.Add("Turno escreveu/editou arquivo de dominio sem chamar Agent/Task (falta delegacao) - delegue ao especialista mais capaz, ou - se foi ordem explicita do Operator pra executar direto - registre com 'scripts/register-task.ps1 ... -OperatorOrder' no mesmo turno pra abrir a valvula (ver response-guard.md).")
       }
@@ -531,6 +663,8 @@ try {
     " valvula_aberta=" + $valvulaAberta + " especialista_ok=" + (-not $violacaoEspecialista) +
     " qtd_afirmacoes=" + $qtdAfirmacoes + " chars_resposta=" + $charsResposta +
     " grounding_html_ok=" + (-not $violacaoGroundingHtml) +
+    " budget_ok=" + $budgetOk + " budget_verificados=" + $budgetVerificados +
+    " budget_sem_declarar=" + $budgetSemDeclarar +
     " informativo_sem_delegacao=" + $informativo)
   exit 0
 } catch {

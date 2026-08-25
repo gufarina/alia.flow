@@ -46,7 +46,7 @@ Tres numeros, cada um com a prova ao lado - nenhum e projecao.
 
 ![Verificacoes deterministicas](docs/assets/chart-verificacoes.svg)
 
-**Verificacoes deterministicas que rodam a custo zero de token de modelo** (238 na versao atual;
+**Verificacoes deterministicas que rodam a custo zero de token de modelo** (243 na versao atual;
 o numero exato aparece no fim do smoke) cobrem o motor completo da oficina - formato de artefato,
 Quality Gate, grafo de conhecimento, guards de veto, allow-list, integridade do nucleo e mais.
 Nenhuma chama IA; todas re-rodaveis por qualquer pessoa com acesso ao codigo.
