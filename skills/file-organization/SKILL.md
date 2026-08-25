@@ -102,6 +102,13 @@ pasta de projeto) e vazamento, igual a raiz da instalacao.
 `{tipo}-{descricao}-{AAAA-MM-DD}.{ext}`, com vocabulario de `{tipo}` FECHADO (os que dominam o uso
 real, medido no acervo): `relatorio`, `painel`, `auditoria`, `plano`, `copy`, `prova`.
 
+Excecao (decisao WARDEN, TASK-289, 25/08/2026): arquivo dentro de uma SUBPASTA de lote/prova que
+JA carrega `-AAAA-MM-DD` no proprio nome (ex.: `{project-slug}/gate-capturas-2026-08-07/gate-05.png`)
+NAO precisa repetir a data no nome de cada arquivo - a pasta ja garante a rastreabilidade por data.
+Exigir a mesma data em cada um dos N arquivos do lote e redundancia sem ganho. `smoke-test-studio.ps1`
+(secao e2) confere as duas formas: data no proprio nome OU em qualquer pasta ancestral do arquivo
+dentro de `artifacts/`.
+
 ### Superado - retirar no mesmo FECHA que cria o novo
 
 Quando um artifact e substituido, MOVER para `_retired/` do mesmo projeto no mesmo passo (FECHA)

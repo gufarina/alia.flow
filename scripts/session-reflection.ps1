@@ -127,6 +127,30 @@ $antiCapture = @(
   'connection refused', 'rede caiu', 'network error', 'econnrefused', 'command not found'
 )
 
+# Marcadores de FERRAMENTA ASSINCRONA (tag de notificacao de tarefa e afins): quando uma Task/Bash
+# em background termina, o Claude Code injeta um bloco de notificacao no turno 'user' do
+# transcript - NAO e fala do operador, e infra da plataforma. Julgamento 2026-08-17 (arquivado em
+# memory/_proposals/_archive/friction-2026-08-14-agenta01.md): um caso assim foi capturado como
+# "atrito do operador" (regex casou "de novo" dentro do path do arquivo de output da task) e
+# precisou de descarte manual. Consertado 25/08/2026 (TASK-289, WARDEN): estes marcadores sao
+# TAG DE FERRAMENTA, nunca conteudo do usuario - a linha e excluida ANTES de virar $userMsgsRaw,
+# entao nem o digest nem a deteccao de atrito (que escaneia $userMsgsRaw sem passar pela lista
+# acima, de proposito) chegam a ve-la. Diferente da lista $antiCapture (que descarta CONTEUDO real
+# do usuario que cita erro/ferramenta), aqui a linha inteira NUNCA e fala - marcador estrutural.
+$toolTagMarkers = @(
+  '<task-notification>', '<task-id>', '<local-command-stdout>', '<system-warning>',
+  '<system-reminder>', '<bash-output>'
+)
+
+function Test-ToolTag {
+  param([string]$line)
+  $l = $line.ToLowerInvariant().TrimStart()
+  foreach ($tag in $toolTagMarkers) {
+    if ($l.StartsWith($tag)) { return $true }
+  }
+  return $false
+}
+
 function Test-AntiCapture {
   param([string]$line)
   $l = $line.ToLowerInvariant()
@@ -228,6 +252,9 @@ foreach ($raw in $lines) {
     if ($etype -eq 'user') {
       # Descartar o prompt-sistema gigante de boot e ruido obvio.
       if ($clean.Length -gt 1500) { continue }
+      # Tag de ferramenta assincrona nao e fala do operador - nunca vira $userMsgsRaw (nem
+      # digest nem deteccao de atrito a veem). Ver nota da secao 3.
+      if (Test-ToolTag $clean) { $discarded.Add("[tool-tag] " + $clean); continue }
       $userMsgsRaw.Add($clean)
       if (Test-AntiCapture $clean) { $discarded.Add("[user] " + $clean); continue }
       $userMsgs.Add($clean)
@@ -309,6 +336,33 @@ function Get-FrictionHits {
 
 $frictionHits = @(Get-FrictionHits $userMsgsRaw.ToArray())
 Write-Host ("[OK] atrito detectado (regex deterministico): " + $frictionHits.Count + " linha(s).")
+
+# DEDUP DO CANAL DE FRICCAO (TASK-289, WARDEN): este hook roda no fim de CADA sessao, e RE-ESCANEIA
+# o transcript inteiro (sem dedup, de proposito - ver nota da secao PECA 2 acima) - sessao longa
+# que atravessa dias reprocessa as MESMAS linhas repetidas vezes, uma por dia. Sem isto, uma unica
+# queixa do operador virava N arquivos friction-*.md (medido: sessao b2daaef4, 19-23/08/2026, 5
+# arquivos pro mesmo item). Ledger "ja visto" reusa o padrao do .seen do digest (4.5 abaixo),
+# chave originSessionId + hash do item (nao so hash do item: o mesmo texto em SESSOES diferentes
+# ainda e sinal novo e legitimo - rsi-patterns.ps1 conta por sessao distinta).
+$seenFrictionFile = Join-Path $ProposalsDir ".seen-friction"
+$seenFriction = @()
+if (Test-Path -LiteralPath $seenFrictionFile) { $seenFriction = @([System.IO.File]::ReadAllLines($seenFrictionFile)) }
+$fricSha = [System.Security.Cryptography.SHA256]::Create()
+$newFrictionHits = New-Object System.Collections.Generic.List[object]
+$newFrictionKeys = New-Object System.Collections.Generic.List[string]
+foreach ($h in $frictionHits) {
+  $itemHash = [BitConverter]::ToString($fricSha.ComputeHash([Text.Encoding]::UTF8.GetBytes($h.Types + "|" + $h.Text))).Replace("-","").Substring(0,16)
+  $key = $latest.BaseName + "|" + $itemHash
+  if ($seenFriction -contains $key) { continue }
+  $newFrictionHits.Add($h)
+  $newFrictionKeys.Add($key)
+}
+$skippedFriction = $frictionHits.Count - $newFrictionHits.Count
+if ($skippedFriction -gt 0) {
+  Write-Host ("[OK] atrito ja visto nesta sessao (dedup): " + $skippedFriction + " item(ns) - NAO regrava.")
+}
+$frictionHits = $newFrictionHits.ToArray()
+
 if ($frictionHits.Count -gt 0) {
   $frictionName = "friction-" + $today + "-" + $id8
   $fsb = New-Object System.Text.StringBuilder
@@ -344,6 +398,8 @@ if ($frictionHits.Count -gt 0) {
     New-Item -ItemType Directory -Force -Path $ProposalsDir | Out-Null
     [System.IO.File]::WriteAllText($frictionFile, $fsb.ToString(), $utf8)
     Write-Host ("[OK] atrito gravado: " + $frictionFile)
+    [System.IO.File]::AppendAllText($seenFrictionFile, (($newFrictionKeys -join [Environment]::NewLine)) + [Environment]::NewLine, $utf8)
+    Write-Host ("[OK] " + $newFrictionKeys.Count + " chave(s) de atrito registrada(s) (anti-duplicata): " + $seenFrictionFile)
   }
 }
 Write-Host ""

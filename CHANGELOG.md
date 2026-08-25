@@ -20,6 +20,80 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.63.0] - 2026-08-25
+
+WARDEN conserta o canal de FRICCAO do RSI (TASK-289, mandato do CEO 25/08/2026: "nao quero nada
+pendente pra ser resolvido"). Achado nomeado "atrito:correcao-repetida - 9 sessao(oes) distinta(s)"
+media um padrao que nunca existiu com essa forca: o script conta por ARQUIVO datado, nao por
+recorrencia real. Medido: uma unica queixa do operador, numa sessao que atravessou 5 dias, virou 5
+arquivos `friction-*.md` porque o hook de reflexao RE-ESCANEIA o transcript inteiro a cada disparo
+sem dedup (comportamento deliberado ate agora - o comentario do proprio script dizia "de proposito"
+pra nao perder queixa real, mas nunca separava "mesmo item, mesma sessao, disparo repetido" de
+"item novo"). Contador inflado em cima de sinal real e pior que nao ter contador (a casa ja tem lei
+contra isso: um guard chegou a contar CSS como claim).
+
+**1. Dedup no canal de friccao, chave sessao+item (reuse do padrao que o canal digest ja tinha).**
+`scripts/session-reflection.ps1` ganha um ledger `.seen-friction` (mesmo padrao do `.seen` que o
+digest ja usava desde a v1.7.0, so noutro arquivo): cada item de atrito vira uma chave
+`originSessionId + hash(tipo+texto)`; se a chave ja foi vista, o item NAO entra num `friction-*.md`
+novo (a data no nome do arquivo muda a cada disparo, a chave nao - resiste a sessao atravessar
+dias). Prova pelo negativo (fixture isolada, sessao sintetica reprocessada em 2 dias diferentes com
+o MESMO item): script sem o conserto grava 1 arquivo por dia (2 arquivos pro mesmo item); script
+com o conserto grava 1 arquivo no dia 1 e recusa o dia 2 ("atrito ja visto nesta sessao (dedup): 1
+item(ns) - NAO regrava"), so o arquivo do dia 1 sobrevive.
+
+**2. Tag de ferramenta assincrona nao e fala do operador.** Um marcador de notificacao de tarefa
+em background (`<task-notification>...</task-id>...`) foi capturado como atrito real em mais de
+uma sessao - o regex casou palavras de correcao (o path do arquivo de output da tarefa continha
+"de novo") dentro do CORPO da tag. Julgamento manual de 17/08/2026 ja tinha descartado um caso
+assim a mao (arquivado com nota). `session-reflection.ps1` ganha uma lista de marcadores de tag de
+ferramenta (secao 3, ao lado da lista anti-captura existente) checada ANTES da linha virar mensagem
+de usuario - a tag nunca chega a `$userMsgsRaw`, entao nem o digest nem a deteccao de atrito a veem
+mais. Prova pelo negativo (mesma fixture): sem o conserto, "atrito detectado: 2 linha(s)" (a tag
+conta); com o conserto, "atrito detectado: 1 linha(s)" e a tag aparece em "descartado" com o rotulo
+`[tool-tag]`.
+
+**3. Item ja JULGADO nao se reconta.** `scripts/rsi-patterns.ps1` varria `_archive/` sem saber que
+um item podia ja ter sido decidido a mao (protocolo "descartar com nota", nunca deletar - o arquivo
+continua no disco pra sempre). Um caso concreto (sub-agente confundido com o operador, julgado
+DESCARTADO em 17/08/2026) continuava entrando no bucket `atrito:correcao-repetida` a cada corrida,
+inflando a contagem de sessoes distintas. Conserto: arquivo de `_archive/` com uma secao
+`## Julgamento ... DESCARTADO` e pulado inteiro (o julgamento vale pra todos os itens do arquivo).
+Prova pelo negativo rodada contra o volume real desta instancia (nao uma fixture - o proprio
+acervo de `memory/_proposals/`): script sem o conserto conta `atrito:correcao-repetida - 9
+sessao(oes) distinta(s)` (citando o arquivo julgado); script com o conserto conta 8, o arquivo
+julgado explicitamente listado como pulado ("1 arquivo(s) JA JULGADO(S)... pulado(s)").
+
+**4. Decisao de governanca (WARDEN, nao LEI - CANON confere se vira uma): regra de nome de artifact
+estava certa em ESTRUTURA, errada em EXIGIR data por ARQUIVO.** A auditoria do acervo real (ver
+`opportunities/OPP-26-arquitetura-de-arquivos-canonica.md` capitulo 2) media artifact dentro de
+subpasta sem sufixo `-AAAA-MM-DD` no proprio nome como divida, protegida por ratchet datado
+(`studio/artifacts-baseline.txt` na instancia aplicada). Um mutirao anterior mediu centenas de
+arquivos novos fora do padrao e a pergunta ficou em aberto: exigir a data em CADA arquivo e rigor
+demais quando a PASTA que o contem ja carrega a data (lote de captura/prova, ex.
+`gate-2026-08-07/prova-01.png`)? Medido: da divida total classificada nessa regra, a maioria (mais
+de dois tercos) ja morava sob uma pasta datada - a rastreabilidade por data ja existia, so nao
+repetida por arquivo. Decisao: a REGUA estava errada, nao o acervo. `scripts/smoke-test-studio.ps1`
+secao (e2) regra (b) afrouxada: passa se o proprio nome do arquivo termina em `-AAAA-MM-DD` OU se
+qualquer pasta ancestral entre `artifacts/` e o arquivo carrega `-AAAA-MM-DD` no nome. Continua
+reprovando o caso real (nem arquivo nem pasta tem data). Prova pelo negativo em fixture isolada:
+regra antiga falha o caso "pasta datada, arquivo sem data"; regra nova passa esse caso e continua
+reprovando "pasta sem data, arquivo sem data". `skills/file-organization/SKILL.md` documenta a
+excecao. Efeito numerico na instancia aplicada: o ratchet caiu de forma honesta e mensuravel assim
+que a regra nova propagar - detalhe e numero exato no `release-reviews/1.63.0.md` desta versao
+(nao citado aqui por depender da propagacao, que e exclusiva do COURIER).
+
+**5. `engine/governance/law-ledger.md`: 2 ponteiros podres corrigidos.** A nota da regra (b) acima
+deslocou linhas em `scripts/smoke-test-studio.ps1`; `scripts/law-ledger-check.ps1` acusou 2
+ponteiros (`L13`, `L21`) citando o numero antigo. Corrigidos para o numero real, `law-ledger-check.ps1`
+volta a `FAIL: 0, LEDGER CONFERE COM O DISCO`.
+
+Smoke da oficina (`scripts/smoke-test.ps1`): **262 PASS, 0 FAIL, ALL GREEN** (nenhum check novo -
+os 3 consertos e a decisao de governanca sao mudanca de COMPORTAMENTO de mecanismos existentes,
+provados pelo negativo em fixture isolada e/ou contra o volume real, nao check novo permanente no
+smoke). GUARD-NUM em `docs/CLAIMS.md` (`VERIFICACOES_DETERMINISTICAS_OFICINA`) permanece 262
+(nenhuma mudanca, ja conferido).
+
 ## [1.62.0] - 2026-08-25
 
 WARDEN torna o teto de Budget da L41 COBRAVEL (TASK-286, mandato do CEO 25/08/2026). Ate aqui a
