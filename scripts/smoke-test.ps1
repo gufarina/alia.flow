@@ -2016,6 +2016,62 @@ $cpsScriptEarly = Join-Path $root "scripts\check-public-surface.ps1"
 $cpsEarlyOut = if (Test-Path -LiteralPath $cpsScriptEarly) { (& $cpsScriptEarly -Repo $root -OnlyPaths "CHANGELOG.md" 6>&1) -join "`n" } else { "" }
 Check "CHANGELOG.md (oficina): nenhuma identidade de Client real vazada (check roda ANTES do empacotamento, nao so depois)" ($cpsEarlyOut -match "SUPERFICIE LIMPA")
 
+# --- Cacada de credencial (TASK-302, 26/08/2026): furo MEDIDO numa publicacao real - (1) e (1.5)
+# de check-public-surface.ps1 so olham CAMINHO e IDENTIDADE, nenhum dos dois pegaria uma chave de
+# API embutida. Prova pelo NEGATIVO, como o metodo do proprio WARDEN exige: planta credencial
+# real -> confere REPROVADO -> desfaz -> confere SUPERFICIE LIMPA de volta. Mais um par pra provar
+# que MENCAO (dentro de arquivo de teste) nunca bloqueia sozinha - so vira WARN.
+Write-Host ""
+Write-Host "-- Cacada de credencial (TASK-302): prova pelo negativo, planta e desfaz --"
+$credFixRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("credhunt-" + $PID)
+if (Test-Path -LiteralPath $credFixRoot) { Remove-Item -Recurse -Force -LiteralPath $credFixRoot -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Force -Path (Join-Path $credFixRoot "src") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $credFixRoot "tests") | Out-Null
+$utf8Cred = New-Object System.Text.UTF8Encoding($false)
+
+# (a) credencial REAL plantada fora de node_modules/tests -> REPROVADO
+# CONSERTO (WARDEN, 30/08/2026, achado do COURIER no gate de empacotamento): a fixture ANTES
+# escrevia a chave-fantasma como string CONTINUA no proprio fonte deste script - e este script
+# (scripts/smoke-test.ps1) viaja no pacote publico, entao o proprio check-public-surface.ps1
+# (1.6) reprovava o pacote citando ESTE arquivo, como o achado real (REPROVADO). A fixture so
+# precisa existir CONTINUA em disco no fixture temporario (fora do repo) - nunca continua no
+# texto-fonte deste .ps1. Montada em 3 pedacos que sozinhos nao batem nenhum needle (nenhum
+# comeca com "sk-ant-"/"sk-"/"nvapi-"/"gh_"/"eyJ"), so vira credencial-formato ao concatenar em
+# RUNTIME, quando escrita no arquivo da fixture.
+$credFakeAnthropic = @("sk-ant-","api03-XyZ1aB2cD3eF4gH5iJ6kL7","mN8oP9qR0sT1uV2wX3yZ4a") -join ""
+[System.IO.File]::WriteAllText((Join-Path $credFixRoot "src\config.js"),
+  "const settings = { apiKey: `"" + $credFakeAnthropic + "`" };", $utf8Cred)
+$credOutA = (& (Join-Path $root "scripts\check-public-surface.ps1") -Repo $credFixRoot 6>&1) -join "`n"
+Check "Cacada de credencial (a): chave Anthropic plantada em src/ -> REPROVADO, citando 'credencial:'" (($credOutA -match "REPROVADO") -and ($credOutA -match "credencial:"))
+
+# (b) desfaz - mesma pasta, credencial removida -> SUPERFICIE LIMPA de volta
+[System.IO.File]::WriteAllText((Join-Path $credFixRoot "src\config.js"),
+  "const settings = { apiKey: process.env.ANTHROPIC_API_KEY };", $utf8Cred)
+$credOutB = (& (Join-Path $root "scripts\check-public-surface.ps1") -Repo $credFixRoot 6>&1) -join "`n"
+Check "Cacada de credencial (b): credencial removida -> SUPERFICIE LIMPA de volta (desfeito)" ($credOutB -match "SUPERFICIE LIMPA")
+
+# (c) mesma agulha, mas dentro de tests/ (fixture de teste) -> so WARN, nunca REPROVADO (o
+# achado da propria cacada ad hoc: todo hit real era fixture/exemplo/lista de deteccao)
+[System.IO.File]::WriteAllText((Join-Path $credFixRoot "tests\fixture.spec.ts"),
+  "const testKey = `"ghp_ABCDEFGHIJ1234567890abcdef`";", $utf8Cred)
+$credOutC = (& (Join-Path $root "scripts\check-public-surface.ps1") -Repo $credFixRoot 6>&1) -join "`n"
+Check "Cacada de credencial (c): mesma agulha dentro de tests/ -> SUPERFICIE LIMPA com AVISO, nunca REPROVADO (mencao != segredo)" (($credOutC -match "SUPERFICIE LIMPA") -and ($credOutC -match "\[WARN\] credencial"))
+
+# (d) placeholder em portugues ("seu_token_aqui", o achado real ao provar este check numa doc de
+# skill de verdade) nunca bloqueia - achado que motivou ampliar a lista de marcadores EM/PT
+[System.IO.File]::WriteAllText((Join-Path $credFixRoot "src\doc-exemplo.md"),
+  "curl -d '{`"access_token`": `"seu_token_aqui`"}' https://api.exemplo.com", $utf8Cred)
+$credOutD = (& (Join-Path $root "scripts\check-public-surface.ps1") -Repo $credFixRoot 6>&1) -join "`n"
+Check "Cacada de credencial (d): placeholder em portugues (seu_..._aqui) nunca reprova (achado real, TASK-302)" ($credOutD -match "SUPERFICIE LIMPA")
+
+# (e) arquivo de credencial real por NOME (keys.json) -> REPROVADO mesmo sem precisar ler o valor
+Remove-Item -LiteralPath (Join-Path $credFixRoot "src\doc-exemplo.md") -Force -ErrorAction SilentlyContinue
+[System.IO.File]::WriteAllText((Join-Path $credFixRoot "keys.json"), "{}", $utf8Cred)
+$credOutE = (& (Join-Path $root "scripts\check-public-surface.ps1") -Repo $credFixRoot 6>&1) -join "`n"
+Check "Cacada de credencial (e): arquivo keys.json (nome, mesmo vazio) -> REPROVADO" ($credOutE -match "REPROVADO")
+
+if (Test-Path -LiteralPath $credFixRoot) { Remove-Item -Recurse -Force -LiteralPath $credFixRoot -ErrorAction SilentlyContinue }
+
 # --- TASK-213 (item 4): o "SEM MAQUINA NESTA INSTANCIA" de smoke-test.ps1 deixou de ser tabela
 # hardcoded (sempre a mesma resposta, em toda instancia) e virou Test-Path (Join-Path $root
 # "studio.example") medido no ato. (a) esta instancia (a oficina) TEM studio.example/ de verdade
@@ -2114,6 +2170,41 @@ Check "Memoria: -Validade REPROVA fato morto se passando por vigente ([FATO-MORT
 
 $mtTxt = ReadText (Join-Path $engine "governance\memory-types.md")
 Check "Memoria: a doutrina declara a janela de validade (valido_de/valido_ate/substituido_por) em memory-types.md" (($mtTxt -match 'valido_ate') -and ($mtTxt -match 'substituido_por') -and ($mtTxt -match '(?i)VIGENTE'))
+
+# --- RSI: friction-*.md tem que SAIR de staging seguindo so o protocolo padrao de boot ---
+# DEFEITO MEDIDO (WARDEN, 30/08/2026, ordem do CEO): o protocolo de reflect-check.ps1 (PROTOCOLO
+# DE BASTIDOR, passo 2) so manda rodar "promote-memory.ps1 -ArchiveInbox" - nunca menciona
+# rsi-patterns.ps1 -Write no fluxo normal. O arquivamento de friction-*.md dependia de citacao
+# num patterns-*.md JA ESCRITO em disco, e -Write era o UNICO jeito de escrever esse relatorio -
+# seguindo o protocolo ao pe da letra, friction NUNCA saia de staging (medido em producao: 9
+# friction-*.md parados havia dias, RSI vivo do smoke-test-studio.ps1 FALHANDO pra sempre).
+# Conserto: promote-memory.ps1 -ArchiveInbox agora chama rsi-patterns.ps1 -Write sozinho quando
+# ha friction pendente (scripts/promote-memory.ps1, bloco logo antes de "friction-*.md CONSUMIDO").
+# Este check reproduz o protocolo padrao EXATO (uma chamada, so -ArchiveInbox, SEM chamar
+# rsi-patterns.ps1 a parte) - se o auto-scan for removido ou quebrar, este check FALHA.
+Write-Host ""
+Write-Host "-- RSI: friction sai de staging so com -ArchiveInbox, sem comando manual separado (WARDEN, 30/08/2026) --"
+$pmScript = Join-Path $root "scripts\promote-memory.ps1"
+$frRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("fr-fixture-" + $PID)
+$frProp = Join-Path $frRoot "memory\_proposals"
+$frMem  = Join-Path $frRoot "memory"
+New-Item -ItemType Directory -Force -Path $frProp | Out-Null
+function Write-FxFriction([string]$file, [string]$sessionId) {
+  $nm = [System.IO.Path]::GetFileNameWithoutExtension($file)
+  $body = "---`r`nname: " + $nm + "`r`ndescription: fixture de atrito (smoke).`r`nmetadata:`r`n  node_type: memory`r`n  type: friction`r`n  originSessionId: " + $sessionId + "`r`n  status: proposed`r`n---`r`n`r`n# Atrito do operador - fixture`r`n`r`n## Itens (1)`r`n`r`n- severidade 3 | tipo: fixture-atrito`r`n  > trecho de exemplo, sem valor real.`r`n"
+  [System.IO.File]::WriteAllText($file, $body, $utf8NoBom76)
+}
+Write-FxFriction (Join-Path $frProp "friction-2026-08-01-aaaaaaaa.md") "aaaaaaaa-0000-0000-0000-000000000001"
+Write-FxFriction (Join-Path $frProp "friction-2026-08-02-bbbbbbbb.md") "bbbbbbbb-0000-0000-0000-000000000002"
+Write-FxFriction (Join-Path $frProp "friction-2026-08-03-cccccccc.md") "cccccccc-0000-0000-0000-000000000003"
+$frOut = (& $pmScript -ProposalsDir $frProp -MemoryDir $frMem -ArchiveInbox 6>&1) -join "`n"
+$frArchived = @(
+  (Test-Path -LiteralPath (Join-Path $frProp "_archive\friction-2026-08-01-aaaaaaaa.md")),
+  (Test-Path -LiteralPath (Join-Path $frProp "_archive\friction-2026-08-02-bbbbbbbb.md")),
+  (Test-Path -LiteralPath (Join-Path $frProp "_archive\friction-2026-08-03-cccccccc.md"))
+) | Where-Object { $_ -eq $false }
+if (Test-Path -LiteralPath $frRoot) { Remove-Item -Recurse -Force -LiteralPath $frRoot -ErrorAction SilentlyContinue }
+Check "RSI: promote-memory.ps1 -ArchiveInbox SOZINHO (sem rodar rsi-patterns.ps1 a parte) fecha o loop de friction-*.md com 3+ ocorrencias do mesmo tipo" (($frArchived.Count -eq 0) -and ($frOut -match '\[OK\] friction arquivado')) ("nao arquivado: " + $frArchived.Count + " de 3 fixtures")
 
 # --- M4: o ledger de Tasks lido como GRAFO de linhagem ---
 # O state.json ja era um grafo (base_artifact -> artifact) e ninguem o lia como grafo: responder

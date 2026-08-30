@@ -87,3 +87,37 @@ powershell -ExecutionPolicy Bypass -File scripts/check-public-surface.ps1 -Repo 
 O empacotador (`scripts/package-release.ps1`) ja chama este guarda sozinho no passo 3/3 e ABORTA
 o pacote se reprovar - mas isto nao dispensa rodar o comando de novo, na mao, no repo publico
 de destino antes do `git push` (o empacotador so confere o pacote local, nao o repo remoto).
+
+## Cacada de credencial (LEI L42, TASK-302, 26/08/2026)
+
+CAMINHO proibido (secao acima) e IDENTIDADE de Client (mesmo script, secao "(1.5)") nao sao a
+mesma coisa que CREDENCIAL. Nasceu de um furo MEDIDO numa publicacao real: o open beta do Alia
+Desktop (26/08/2026) passou limpo pelos dois checks acima E por um portao proprio do Client, mas
+nenhum deles procurava chave de API, token de sessao, ou arquivo de credencial (`keys.json`,
+`.env`, `credentials.json`, `auth.json`). O CEO teve que perguntar na hora H se a chave dele ia
+junto - uma varredura ad hoc foi inventada DEPOIS do arquivo ja publicado (achou zero credencial
+real, mas 18 ocorrencias das palavras-agulha, todas explicadas como SDK vendorizado, doc de
+exemplo ou fixture de teste do upstream).
+
+`scripts/check-public-surface.ps1` secao "(1.6) cacada de credencial real" fecha esse gap dentro
+do MESMO guard, no MESMO gate que ja roda em `package-release.ps1` passo 3/3 - sem script novo
+(reuse-first). Regra que separa SEGREDO de MENCAO (o falso positivo e o inimigo principal deste
+check - ver a licao da propria varredura ad hoc):
+
+- MENCAO (vira so AVISO, nunca bloqueia): a agulha aparece dentro de `node_modules`/`.pnpm`
+  (codigo de terceiro vendorizado), num caminho/arquivo de teste/exemplo/fixture, ou o valor
+  casado carrega um marcador de placeholder em ingles OU portugues (`example`, `fake`, `xxxx`,
+  `seu_..._aqui`, `troque`, `substitua`, `changeme`, `<...>`).
+- SEGREDO (REPROVA): a mesma agulha fora dessas zonas - chave Anthropic (`sk-ant-`), NVIDIA
+  (`nvapi-`), GitHub (`ghp_`/`github_pat_`), estilo OpenAI (`sk-`), JWT completo, header
+  `Bearer <token>`, ou campo `access_token`/`refresh_token`/`api_key`/`apiKey` COM valor real.
+- Nome de arquivo de credencial real (`keys.json`, `credentials.json`, `.credentials.json`,
+  `auth.json`, `.env` fora de `.env.example`/`.env.sample`/`.env.template`/`.env.dist`) REPROVA
+  por si so, mesmo vazio - nao tem zona cinza de mencao legitima.
+- Quando o alvo (`-Repo`) carrega binario (`.exe`/`.dll`) - caso de instalador ja empacotado -
+  o mesmo guard decodifica ASCII e UTF-16LE e roda o subconjunto de agulhas de alta confianca
+  (sem os needles de campo=valor/Bearer, ruidosos demais em binario).
+
+Prova pelo negativo (planta credencial de mentira, confere REPROVADO, desfaz, confere SUPERFICIE
+LIMPA de volta) roda dentro de `scripts/smoke-test.ps1`, secao "Cacada de credencial (TASK-302)".
+Ver `engine/governance/law-ledger.md`, L42, para o registro completo dos 5 casos provados.

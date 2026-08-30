@@ -46,10 +46,10 @@ Tres numeros, cada um com a prova ao lado - nenhum e projecao.
 
 ![Verificacoes deterministicas](docs/assets/chart-verificacoes.svg)
 
-**Verificacoes deterministicas que rodam a custo zero de token de modelo** (243 na versao atual;
-o numero exato aparece no fim do smoke) cobrem o motor completo da oficina - formato de artefato,
-Quality Gate, grafo de conhecimento, guards de veto, allow-list, integridade do nucleo e mais.
-Nenhuma chama IA; todas re-rodaveis por qualquer pessoa com acesso ao codigo.
+**Verificacoes automaticas que nao gastam nenhum token de modelo** (249 na versao atual; o
+numero exato aparece no fim do smoke) cobrem o motor inteiro: formato do que e entregue, a
+conferencia de qualidade, o mapa de conhecimento, a integridade do nucleo, e mais. Nenhuma chama
+IA; qualquer pessoa com acesso ao codigo pode rodar de novo e conferir.
 
 ```sh
 git clone https://github.com/gufarina/alia.flow.git alia-flow
@@ -92,14 +92,15 @@ A Alia recebe um pedido em linguagem comum e gira um ciclo antes de devolver qua
 3. **Refina** - o que nao passou volta para correcao e nova avaliacao, ate aprovar.
 4. **Aprende** - o resultado vira memoria do cliente; a proxima volta comeca melhor que a de hoje.
 
-A identidade e o protocolo vivem em `AGENTS.md` - arquivos abertos (`.md`, `.ps1`, `.yaml`), sem
-config travada de fornecedor. No Claude Code, `CLAUDE.md` importa esse `AGENTS.md` (a
-documentacao oficial confirma: Claude Code le `CLAUDE.md`, nao `AGENTS.md` direto); nos demais
-agentes que leem `AGENTS.md` (Codex, OpenCode, Aider, outros), o boot e o proprio arquivo, lido
-direto. Roteamento por capacidade, o Quality Gate e a memoria com validade sao contrato que a
-Alia segue, descrito em arquivos que ela carrega no boot - nao regra travada em runtime, com uma
-excecao mecanica: a porta de escrita segura (`apply-safe-output`) bloqueia de fato automacao
-escrevendo no nucleo.
+A identidade e as regras da Alia vivem em `AGENTS.md`, um arquivo de texto aberto - sem trava de
+nenhum fornecedor. No Claude Code, o `CLAUDE.md` aponta pra esse arquivo e a Alia assume sozinha;
+em outros programas que leem `AGENTS.md` (Codex, OpenCode e outros), o mesmo arquivo e lido
+direto.
+
+Hoje essas regras (escolher o especialista certo, passar pelo Quality Gate, lembrar do seu
+contexto) funcionam porque a Alia as segue, nao porque existe uma trava tecnica que a impeca de
+pular uma etapa - a unica excecao e a escrita no nucleo do sistema, que uma protecao especifica
+(`apply-safe-output`) bloqueia de verdade.
 
 ---
 
@@ -179,31 +180,6 @@ PowerShell 5.1+. Suporte a Mac/Linux e evolucao declarada (OPP-22), sem data.
 **Preciso saber programar para usar?**
 Nao para operar: voce pede em portugues comum, dentro do seu coding agent. Mas voce precisa ter
 um coding agent instalado primeiro - o Alia Flow mora dentro dele, nao roda sozinho.
-
-**A demonstracao de memoria prova que a memoria muda a saida de um agente real?**
-Nao. As duas respostas foram escritas a mao para ilustrar o raciocinio esperado; o scorer conta
-palavras-chave de forma deterministica, o que prova que o MEDIDOR funciona, nao que um agente
-real produz output diferente com e sem memoria. Rodar esse experimento de verdade e passo futuro
-declarado, nao numero anunciado.
-
-**Existe benchmark de performance (tokens, velocidade, custo)?**
-Nao fabricamos um. O que existe e verificavel: verificacao deterministica sem IA, rastreabilidade
-obrigatoria e o freio de saida com amostra real - ver [Numeros](#numeros).
-
-**O roteamento por especialista e o Quality Gate sao trava do sistema, ou so contrato que a Alia segue?**
-Contrato descrito em arquivos abertos carregados no boot. O sistema nao impede fisicamente um
-desvio, com uma excecao mecanica: a porta de escrita segura (`apply-safe-output`) bloqueia de
-fato automacao escrevendo no nucleo. O resto se sustenta pelos gates versionados e pelas
-verificacoes do smoke, nao por trava de runtime.
-
-**A allow-list de ferramentas por agente e aplicada de verdade?**
-Esta declarada em todo agente executor, mas o enforcement em runtime ainda nao existe hoje - e
-contrato lido, nao trava.
-
-**A delegacao funciona igual em qualquer coding agent?**
-So no Claude Code o fluxo completo (boot, delegacao com isolamento de contexto, Quality Gate)
-esta validado ponta a ponta. Codex e OpenCode leem o `AGENTS.md` e assumem a persona, mas a
-delegacao portavel entre coordenador e especialista ainda nao esta validada la (OPP-42).
 
 **O ciclo Task -> Artifact -> Gate -> memoria funciona so no exemplo, ou em qualquer cliente meu?**
 O ciclo completo, ponta a ponta, hoje so foi provado com o cliente de demonstracao `acme-saas`

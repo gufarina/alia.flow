@@ -153,7 +153,11 @@ foreach ($p in $props) {
 #     arquiva SO o friction-*.md que ja foi CONSUMIDO por rsi-patterns.ps1 - o sinal e o proprio
 #     nome do arquivo aparecer citado como "Fonte" dentro de um patterns-*.md ja escrito (campo
 #     $it.Fonte no relatorio, ver rsi-patterns.ps1 linha ~64/92/159). Sem essa citacao, o
-#     friction fica em staging (visivel no boot) ate ser varrido pelo menos uma vez.
+#     friction fica em staging (visivel no boot) ate ser varrido pelo menos uma vez. "Varrido pelo
+#     menos uma vez" deixou de exigir comando manual separado (rsi-patterns.ps1 -Write) desde o
+#     CONSERTO logo abaixo (WARDEN, 30/08/2026) - este script agora dispara a varredura sozinho
+#     quando ha friction pendente, porque o protocolo padrao de boot (reflect-check.ps1) nunca
+#     chamava -Write por conta propria.
 #   - patterns-*.md: NUNCA arquivado por este script. E um relatorio de DECISAO HUMANA pendente
 #     (vira candidato em engine/rsi/_candidates/ ou nao) - nao e "processado" ate um humano agir;
 #     arquivar sozinho esconderia uma decisao aberta. Diferente do desenho original do LATTICE
@@ -176,10 +180,39 @@ if ($ArchiveInbox) {
     $archived++
   }
 
+  # CONSERTO (WARDEN, 30/08/2026, ordem do CEO "defeito de motor" - friction nunca saia de
+  # staging): MEDIDO contra reflect-check.ps1 (PROTOCOLO DE BASTIDOR, passo 2) antes de mexer -
+  # o fluxo padrao de boot so instrui "scripts/promote-memory.ps1 -ArchiveInbox"; rsi-patterns.ps1
+  # -Write so aparece num aviso SEPARADO (janela de 7 dias sem varredura), nunca como parte do
+  # processamento normal de cada sessao. Como o arquivamento de friction-*.md abaixo dependia de
+  # citacao num patterns-*.md JA ESCRITO em disco, e -Write e o UNICO jeito de escrever esse
+  # relatorio, seguir o protocolo padrao ao pe da letra nunca escrevia o relatorio - friction
+  # ficava em staging para sempre, mesmo com o bucket ja acima do MinSessions. PROVADO pelo
+  # negativo em sandbox: copiando os 9 friction-*.md reais e rodando so -ArchiveInbox em loop
+  # (sem nenhum patterns-*.md em staging), os 9 voltavam identicos a cada rodada com
+  # "[STAGING] ainda NAO consumido". Conserto: -ArchiveInbox agora chama rsi-patterns.ps1 -Write
+  # ele mesmo (mesmo ProposalsDir) antes de checar citacao, sempre que ha friction pendente - o
+  # passo de deteccao deixa de depender de alguem lembrar do comando separado. A visibilidade
+  # humana nao muda (o relatorio continua persistido em disco, nunca auto-arquivado por este
+  # script - ver aviso [STAGING] de patterns-*.md logo abaixo).
+  if (-not $DryRun -and $rsiFriction.Count -gt 0) {
+    $rsiPatternsScript = Join-Path $PSScriptRoot "rsi-patterns.ps1"
+    if (Test-Path -LiteralPath $rsiPatternsScript) {
+      try {
+        Write-Host "[RSI] friction-*.md pendente - rodando rsi-patterns.ps1 -Write para fechar o loop sem comando manual separado..."
+        & $rsiPatternsScript -ProposalsDir $ProposalsDir -Write | Out-Null
+      } catch {
+        Write-Host ("[AVISO] rsi-patterns.ps1 -Write falhou (" + $_.Exception.Message + ") - friction segue em staging ate a proxima tentativa.")
+      }
+    }
+  }
+
   # friction-*.md CONSUMIDO: nome citado como "Fonte" em algum patterns-*.md (staging OU
-  # _archive - o relatorio em si pode ja ter sido arquivado numa rodada anterior).
+  # _archive - o relatorio em si pode ja ter sido arquivado numa rodada anterior). Reglob (nao
+  # reusa $rsiPatterns capturado no topo do script): a chamada acima pode ter acabado de escrever
+  # um patterns-*.md novo no staging.
   $allPatternsTxt = ""
-  $patternsEverywhere = @($rsiPatterns)
+  $patternsEverywhere = @(Get-ChildItem -LiteralPath $ProposalsDir -Filter "patterns-*.md" -File -ErrorAction SilentlyContinue)
   if (Test-Path -LiteralPath $archiveDir) {
     $patternsEverywhere += @(Get-ChildItem -LiteralPath $archiveDir -Filter "patterns-*.md" -File -ErrorAction SilentlyContinue)
   }
@@ -200,8 +233,11 @@ if ($ArchiveInbox) {
       Write-Host ("[STAGING] " + $fr.Name + " - ainda NAO consumido por rsi-patterns.ps1 (nao citado em nenhum patterns-*.md ainda); fica em staging ate a proxima varredura, visivel no boot de reflect-check.ps1.")
     }
   }
-  if ($rsiPatterns.Count -gt 0) {
-    Write-Host ("[STAGING] " + $rsiPatterns.Count + " patterns-*.md NUNCA arquivado por -ArchiveInbox - e decisao humana pendente (vira candidato RSI ou nao), nao processo automatico. Divergencia do desenho LATTICE documentada no cabecalho deste bloco.")
+  # Reglob (nao $rsiPatterns do topo): conta so o que esta em staging AGORA, incluindo o
+  # patterns-<data>.md que a chamada acima pode ter acabado de escrever.
+  $rsiPatternsStagingAgora = @(Get-ChildItem -LiteralPath $ProposalsDir -Filter "patterns-*.md" -File -ErrorAction SilentlyContinue)
+  if ($rsiPatternsStagingAgora.Count -gt 0) {
+    Write-Host ("[STAGING] " + $rsiPatternsStagingAgora.Count + " patterns-*.md NUNCA arquivado por -ArchiveInbox - e decisao humana pendente (vira candidato RSI ou nao), nao processo automatico. Divergencia do desenho LATTICE documentada no cabecalho deste bloco.")
   }
 }
 

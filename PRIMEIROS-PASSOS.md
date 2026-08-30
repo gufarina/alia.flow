@@ -19,28 +19,6 @@ A Alia mora dentro do **Claude Code** (um programa da Anthropic, criadora do Cla
 
 Ja tem o Claude Code? Pula direto pro passo 1.
 
-## Se aparecer um aviso do Windows ao abrir o instalador
-
-Quando voce baixar o instalador da Alia e der dois cliques para abrir, pode surgir uma tela azul
-do Windows dizendo que ele protegeu o seu computador. Isso e esperado. Ja explico o motivo, o que
-fazer, e um outro caminho, caso voce prefira nao passar por essa tela.
-
-![Tela do aviso do Windows](imagens/aviso-windows-1.png)
-<!-- TODO: print da tela "O Windows protegeu o seu PC", com o botao pequeno "Mais informacoes" visivel. -->
-
-**Por que aparece.** O Windows ainda nao conhece quem fez este programa. Nao e um problema no
-arquivo que voce baixou, e nao e virus: e so um cracha que este instalador ainda nao tem, porque e
-novo. Todo programa novo passa por isso ate ganhar historico.
-
-**O que fazer.** Na propria tela do aviso, clique no texto pequeno **Mais informacoes**. Uma nova
-opcao aparece: clique em **Executar assim mesmo**.
-
-![Onde clicar no aviso](imagens/aviso-windows-2.png)
-<!-- TODO: print com "Mais informacoes" marcado e, na tela seguinte, o botao "Executar assim mesmo" marcado. -->
-
-**Se preferir nao passar por essa tela**, tem outro caminho: use o pacote compactado descrito logo
-abaixo, no lugar do instalador. E a mesma Alia, so muda a forma de chegar nela.
-
 ## Instalar (3 passos, sem terminal)
 
 1. **Descompacte** este pacote numa pasta sua. Sugestao: crie a pasta

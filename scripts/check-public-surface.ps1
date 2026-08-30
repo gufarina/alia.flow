@@ -226,6 +226,130 @@ try {
         Write-Host "[INFO] Sem state.json de operador com Clients reais em nenhum ancestral - check de identidade de cliente pulado (instalacao limpa)."
     }
 
+    # ---- (1.6) cacada de credencial real (TASK-302, 26/08/2026) ----
+    # Nasceu de um furo MEDIDO numa publicacao real (open beta de um instalador do parque,
+    # 26/08/2026): os checks (1) e (1.5) so olham CAMINHO proibido e IDENTIDADE (nome de
+    # Client/operador) - nenhum dos dois pegaria uma chave de API embutida, um keys.json
+    # esquecido ou um token de sessao viajando no pacote. O CEO perguntou na hora H se a chave
+    # dele ia junto, e uma varredura ad hoc teve que ser inventada DEPOIS do arquivo ja
+    # publicado (prova salva como evidencia do proprio pacote ja publicado, fora deste repo -
+    # caminho e nome do Cliente omitidos de proposito aqui: este comentario vive DENTRO do
+    # proprio guard de superficie publica, e citar identidade de Cliente aqui violaria a lei
+    # que este script existe pra aplicar - CONSERTO WARDEN 30/08/2026, achado do COURIER no
+    # gate de empacotamento). Aquela varredura NAO achou credencial real, mas achou ~18
+    # ocorrencias das PALAVRAS-agulha - todas explicadas como lista de deteccao de segredo
+    # dentro de SDK vendorizado (node_modules), exemplo de documentacao (JSDoc, API.md) ou
+    # fixture do proprio teste automatizado do upstream. Licao: falso positivo e o inimigo
+    # principal deste check - gritar em cima de exemplo/fixture ensina a casa a ignorar o
+    # alarme (pior que nao ter check). Por isso a regra separa MENCAO (dentro de
+    # node_modules/.pnpm, ou em caminho/arquivo de teste/exemplo/fixture, ou contendo marcador
+    # de placeholder no proprio valor casado) - vira AVISO, nunca reprova - de SEGREDO (fora
+    # dessas zonas) - vira FALHA. Nome de arquivo de credencial real (keys.json, .env, etc.) e
+    # o unico caso sem zona cinza: quase nunca tem razao legitima pra ir junto do pacote
+    # publicado.
+    $credNeedlesText = @(
+        @{ n = 'Anthropic API key';         p = 'sk-ant-[A-Za-z0-9_-]{20,}' },
+        @{ n = 'NVIDIA NIM key';            p = 'nvapi-[A-Za-z0-9_-]{20,}' },
+        @{ n = 'GitHub token';              p = '\bgh[pousr]_[A-Za-z0-9]{20,}\b' },
+        @{ n = 'GitHub fine-grained token'; p = '\bgithub_pat_[A-Za-z0-9_]{20,}\b' },
+        @{ n = 'OpenAI-style key';          p = '\bsk-[A-Za-z0-9]{20,}\b' },
+        @{ n = 'JWT completo';              p = '\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b' },
+        @{ n = 'Bearer token';              p = '\bBearer\s+[A-Za-z0-9._-]{20,}' },
+        @{ n = 'token/key com valor';       p = '(?i)\b(access_token|refresh_token|api_key|apiKey)["'']?\s*[:=]\s*["''][A-Za-z0-9._-]{12,}["'']' }
+    )
+    # subset seguro pra binario: fora os dois needles de "valor de campo"/Bearer (alta chance de
+    # colisao com lixo binario decodificado que por acaso parece texto) - so prefixos exclusivos.
+    $credNeedlesBin = @($credNeedlesText | Where-Object { $_.n -notmatch '^(token/key com valor|Bearer token)$' })
+
+    function Test-CredMencao([string]$caminho, [string]$trecho) {
+        if ($caminho -match '(?i)(^|/)(node_modules|\.pnpm)(/|$)') { return $true }
+        if ($caminho -match '(?i)(^|/)(tests?|specs?|__tests__|examples?|fixtures?|mocks?)(/|$)') { return $true }
+        if ($caminho -match '(?i)\.(test|spec)\.[a-z]+$') { return $true }
+        # Marcadores de placeholder EM/PT (achado real ao provar este check: "seu_token_aqui" numa
+        # doc de skill passou direto pela lista so-em-ingles da primeira versao - a casa escreve
+        # doc em portugues, o placeholder tambem vem em portugues. Lista cresce por achado real,
+        # nao especulacao - ver TASK-302 para o caso que motivou a adicao de seu_/_aqui/troque/etc.
+        if ($trecho -match '(?i)example|fake|dummy|placeholder|xxxx+|nao-existe|chave-que|1234567890|seu[_-]|sua[_-]|meu[_-]|minha[_-]|your[_-]|_aqui\b|\baqui[_-]|troque|substitua|insira|coloque|changeme|token_aqui|chave_aqui|senha_aqui|<[^<>]{2,40}>') { return $true }
+        return $false
+    }
+
+    $credFileNames = @(
+        @{ p = '(?i)^\.env$';               m = 'arquivo de ambiente com segredo real' },
+        @{ p = '(?i)^\.env\.(?!example$|sample$|template$|dist$)[^.]+$'; m = 'variante de .env fora do padrao example/sample/template/dist' },
+        @{ p = '(?i)^keys\.json$';          m = 'arquivo de chaves' },
+        @{ p = '(?i)^credentials\.json$';   m = 'arquivo de credenciais' },
+        @{ p = '(?i)^\.credentials\.json$'; m = 'arquivo de credenciais (oculto)' },
+        @{ p = '(?i)^auth\.json$';          m = 'arquivo de autenticacao' }
+    )
+    $credFileExempt = '(?i)(example|sample|template|schema|fixture)'
+
+    $credFails = @()
+    $credWarns = @()
+
+    foreach ($rel in $arquivos) {
+        $base = $rel -replace '^.*/', ''
+        foreach ($cf in $credFileNames) {
+            if ($base -match $cf.p -and $base -notmatch $credFileExempt -and $rel -notmatch '^studio\.example/') {
+                $credFails += [pscustomobject]@{ arq = $rel; motivo = $cf.m }
+            }
+        }
+    }
+
+    $credScanExt = @(".ps1",".py",".md",".json",".yaml",".yml",".html",".js",".ts",".cjs",".mjs",".cmd",".txt")
+    $credScanFiles = $arquivos | Where-Object {
+        (($credScanExt -contains [IO.Path]::GetExtension($_)) -or ($_ -match '(?i)(^|/)\.env(\.|$)')) -and
+        ($_ -notmatch '(^|/)graphify-out/cache/') -and
+        ($_ -notmatch '^studio\.example/')
+    }
+    foreach ($rel in $credScanFiles) {
+        $full = Join-Path $repoRaiz ($rel -replace '/', [IO.Path]::DirectorySeparatorChar)
+        if (-not (Test-Path -LiteralPath $full)) { continue }
+        $conteudo = Get-Content -LiteralPath $full -Raw -ErrorAction SilentlyContinue
+        if ([string]::IsNullOrEmpty($conteudo)) { continue }
+        foreach ($needle in $credNeedlesText) {
+            $mm = [regex]::Match($conteudo, $needle.p)
+            if ($mm.Success) {
+                $trecho = $mm.Value.Substring(0, [Math]::Min(12, $mm.Value.Length)) + "..."
+                if (Test-CredMencao $rel $mm.Value) {
+                    $credWarns += [pscustomobject]@{ arq = $rel; motivo = $needle.n + " (mencao: " + $trecho + ")" }
+                } else {
+                    $credFails += [pscustomobject]@{ arq = $rel; motivo = $needle.n + " (" + $trecho + ")" }
+                }
+            }
+        }
+    }
+
+    # binario: so entra em cena quando o alvo REALMENTE tem .exe/.dll (instalador empacotado) -
+    # custo zero no pacote da oficina de hoje (release/alia-flow nao tem binario nenhum). Decodifica
+    # ASCII e UTF-16LE (Windows guarda string de PE/recurso nas duas formas - mesmo metodo da
+    # cacada ad hoc que provou a ausencia de credencial no instalador publicado).
+    $credBinFiles = $arquivos | Where-Object { $_ -match '(?i)\.(exe|dll)$' }
+    foreach ($rel in $credBinFiles) {
+        $full = Join-Path $repoRaiz ($rel -replace '/', [IO.Path]::DirectorySeparatorChar)
+        if (-not (Test-Path -LiteralPath $full)) { continue }
+        try { $bytes = [System.IO.File]::ReadAllBytes($full) } catch { continue }
+        $ascii = [System.Text.Encoding]::ASCII.GetString($bytes)
+        $uni   = [System.Text.Encoding]::Unicode.GetString($bytes)
+        foreach ($needle in $credNeedlesBin) {
+            foreach ($decoded in @($ascii, $uni)) {
+                $mm = [regex]::Match($decoded, $needle.p)
+                if ($mm.Success) {
+                    $trecho = $mm.Value.Substring(0, [Math]::Min(12, $mm.Value.Length)) + "..."
+                    $credFails += [pscustomobject]@{ arq = $rel; motivo = $needle.n + " embutida no binario (" + $trecho + ")" }
+                    break
+                }
+            }
+        }
+    }
+
+    if ($credFails.Count -eq 0 -and $credWarns.Count -eq 0) {
+        Ok ("Cacada de credencial: nenhuma agulha encontrada (" + $credScanFiles.Count + " arquivo(s) de texto, " + $credBinFiles.Count + " binario(s))")
+    } else {
+        foreach ($x in ($credFails | Sort-Object arq -Unique)) { Bad ("credencial: " + $x.arq + "  (" + $x.motivo + ")") }
+        foreach ($x in ($credWarns | Sort-Object arq -Unique)) { Warn ("credencial (mencao, nao bloqueia): " + $x.arq + "  (" + $x.motivo + ")") }
+        if ($credFails.Count -eq 0) { Ok ("Cacada de credencial: so mencao/fixture (" + $credWarns.Count + " aviso(s)), nada bloqueado") }
+    }
+
     # ---- (2) a oficina nao pode ter remoto (so faz sentido em repo git) ----
     if ($ehGit) {
         $ehOficina = $repoRaiz -match 'alia-flow-lab'
