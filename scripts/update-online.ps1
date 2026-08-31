@@ -298,14 +298,30 @@ try {
 
   # Integridade (contrato secao 5 item 6): se o pacote baixado tem MANIFEST.sha256, confere
   # ANTES de aplicar o copyset. Sem manifesto no pacote, segue normal (nao inventa exigencia).
+  # CONSERTO (code review adversarial, 31/08/2026 - mesma classe do bloqueador achado no
+  # install.ps1): o verificador que vale e o que veio DENTRO do pacote baixado (mesma versao do
+  # manifesto que ele confere), nao o da instalacao antiga - uma instalacao anterior a
+  # verify-manifest.ps1 existir nem tem o arquivo, e `& $verifyScript` num caminho inexistente
+  # derruba a atualizacao com erro cru em vez de degradar.
   $manifestPath = Join-Path $pkgDir "MANIFEST.sha256"
   if (Test-Path -LiteralPath $manifestPath) {
-    $verifyScript = Join-Path $PSScriptRoot "verify-manifest.ps1"
-    & $verifyScript -Dir $pkgDir | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-      Write-Host "[ABORTADO] integridade do pacote falhou (MANIFEST.sha256 nao bate) - nada tocado."
-      Emit-Result -fromVersion $verInst -toVersion $verPkg -eventMessage "integridade falhou" -result "error"
-      exit 1
+    $verifyScript = ""
+    $verifyDoPacote = Join-Path $pkgDir "scripts\verify-manifest.ps1"
+    if (Test-Path -LiteralPath $verifyDoPacote) {
+      $verifyScript = $verifyDoPacote
+    } elseif (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+      $localCandidato = Join-Path $PSScriptRoot "verify-manifest.ps1"
+      if (Test-Path -LiteralPath $localCandidato) { $verifyScript = $localCandidato }
+    }
+    if ([string]::IsNullOrWhiteSpace($verifyScript)) {
+      Write-Host "[AVISO] o pacote tem MANIFEST.sha256 mas nao trouxe scripts\verify-manifest.ps1 - integridade nao conferida agora (ver docs\INTEGRIDADE.md)."
+    } else {
+      & $verifyScript -Dir $pkgDir | Out-Null
+      if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ABORTADO] integridade do pacote falhou (MANIFEST.sha256 nao bate) - nada tocado."
+        Emit-Result -fromVersion $verInst -toVersion $verPkg -eventMessage "integridade falhou" -result "error"
+        exit 1
+      }
     }
   }
 

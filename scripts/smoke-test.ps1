@@ -2272,6 +2272,106 @@ if (Test-Path -LiteralPath $csScript) {
   if (Test-Path -LiteralPath $csRoot) { Remove-Item -Recurse -Force -LiteralPath $csRoot -ErrorAction SilentlyContinue }
 }
 
+# --- Consertos do code review adversarial de 31/08/2026 (prova pelo negativo) ---
+# Base para as pastas de prova destes checks. Nao pode ser $env:TEMP as cegas (em maquina com
+# nome de usuario longo ele vem no formato curto 8.3, que Set-Location recusa - a prova ficava
+# impossivel de rodar por motivo de AMBIENTE, nao de defeito) e nao pode estar DENTRO de um
+# repositorio git (o guard de superficie, em modo git, varre o repo inteiro via `git ls-files` e
+# ignora arquivo nao rastreado - a fixture plantada nunca seria lida, e o check passaria verde
+# medindo nada; foi exatamente o que aconteceu ao rodar este smoke de dentro do clone publico).
+function Get-ProvaBase([string]$rootDir) {
+  foreach ($cand in @($env:TEMP, (Split-Path $rootDir -Parent), $rootDir)) {
+    if ([string]::IsNullOrWhiteSpace($cand)) { continue }
+    if (-not (Test-Path -LiteralPath $cand)) { continue }
+    $okCd = $false
+    try { Push-Location -LiteralPath $cand -ErrorAction Stop; $okCd = $true } catch { }
+    if (-not $okCd) { continue }
+    $dentroGit = ""
+    try { $dentroGit = (& git rev-parse --is-inside-work-tree 2>&1 | Out-String).Trim() } catch { }
+    Pop-Location
+    if ($dentroGit -ne "true") { return $cand }
+  }
+  return $rootDir
+}
+$provaBase = Get-ProvaBase $root
+# Tres defeitos MEDIDOS numa revisao adversarial do motor, cada um com o freio que faltava.
+# Nenhum deles era pego por check nenhum antes - por isso entram aqui, nao so no CHANGELOG.
+Write-Host ""
+Write-Host "-- Code review adversarial 31/08/2026: os 3 consertos tem freio proprio --"
+
+# (1) install.ps1: o jeito DIVULGADO de instalar e `iwr -useb .../install.ps1 | iex`, e nesse
+# modo NAO existe arquivo de script - $PSScriptRoot e VAZIO. Resolver o verificador de
+# integridade por Join-Path $PSScriptRoot derrubava a instalacao inteira com erro cru de
+# PowerShell logo depois de baixar (o MANIFEST.sha256 esta na raiz do repo publico, entao o
+# caminho quebrado era o caminho NORMAL). Prova da causa, sem rede: o mesmo Join-Path que o
+# codigo antigo fazia, executado por iex, lanca de verdade.
+$iexPsr = Invoke-Expression '$PSScriptRoot'
+Check 'install (iex): $PSScriptRoot e mesmo vazio no modo "iwr | iex" (a causa do defeito, medida)' ([string]::IsNullOrEmpty($iexPsr)) ("PSScriptRoot=" + $iexPsr)
+$iexQuebrou = $false
+try { Invoke-Expression '$null = Join-Path $PSScriptRoot "verify-manifest.ps1"' } catch { $iexQuebrou = $true }
+Check 'install (iex): Join-Path com $PSScriptRoot vazio LANCA (era isso que matava a instalacao)' $iexQuebrou "nao lancou - a premissa do conserto mudou, reveja install.ps1"
+$instTxt3 = if (Test-Path -LiteralPath (Join-Path $root "scripts\install.ps1")) { ReadText (Join-Path $root "scripts\install.ps1") } else { "" }
+Check "install: integridade resolve o verificador do PACOTE baixado (scripts\verify-manifest.ps1 do zip)" ($instTxt3 -match [regex]::Escape('$inner.FullName "scripts\verify-manifest.ps1"')) "install.ps1 nao resolve o verificador a partir do pacote"
+Check 'install: $PSScriptRoot so entra como fallback GUARDADO (nunca cru)' (($instTxt3 -notmatch [regex]::Escape('$verifyScript = Join-Path $PSScriptRoot')) -and ($instTxt3 -match 'IsNullOrWhiteSpace\(\$PSScriptRoot\)')) 'voltou o Join-Path cru em $PSScriptRoot'
+Check "install: pacote sem pasta raiz aborta com [ERRO], nao com erro cru" ($instTxt3 -match '\$null -eq \$inner') "sem guarda de \$inner nulo"
+$upTxt3 = if (Test-Path -LiteralPath (Join-Path $root "scripts\update-online.ps1")) { ReadText (Join-Path $root "scripts\update-online.ps1") } else { "" }
+Check "update-online: mesma classe fechada (verificador do pacote + fallback guardado)" (($upTxt3 -match [regex]::Escape('$pkgDir "scripts\verify-manifest.ps1"')) -and ($upTxt3 -match 'IsNullOrWhiteSpace\(\$PSScriptRoot\)')) "update-online.ps1 ainda depende do verificador local sem guarda"
+
+# (2) git-sync.ps1: o caminho de cada arquivo dentro do commit vinha de Substring($Path.Length).
+# Com -Path relativo o corte caia no meio do caminho ABSOLUTO e o nome de usuario do Windows do
+# operador viajava pra dentro de um repositorio publico. Prova REAL (-DryRun, sem token, sem
+# rede): pasta temporaria, -Path ".", e o que ele diz que enviaria tem que ser caminho relativo.
+# A pasta de prova nasce DENTRO da raiz do motor, nao em $env:TEMP: em maquina com nome de
+# usuario longo, $env:TEMP vem no formato curto 8.3 (pasta de usuario abreviada com "~1") que
+# Set-Location recusa - e a prova ficava impossivel de rodar por motivo de ambiente, nao de
+# defeito. Some no fim do bloco.
+$gsTmpNome = "_tmp-gs-" + [System.Guid]::NewGuid().ToString("N")
+$gsTmp = Join-Path $provaBase $gsTmpNome
+New-Item -ItemType Directory -Force -Path (Join-Path $gsTmp "sub") | Out-Null
+Set-Content -LiteralPath (Join-Path $gsTmp "a.txt") -Value "a" -Encoding UTF8
+Set-Content -LiteralPath (Join-Path $gsTmp "sub\b.txt") -Value "b" -Encoding UTF8
+$gsOut = ""
+# Set-Location no processo FILHO de proposito: Push-Location aqui nao muda o diretorio de
+# trabalho nativo herdado por um powershell.exe filho, e o defeito so aparece quando o caminho
+# RELATIVO e resolvido de dentro de outra pasta.
+$gsCmd = "Set-Location -LiteralPath '" + $provaBase + "'; & '" + (Join-Path $root "scripts\git-sync.ps1") + "' -Repo 'teste/teste' -Path '" + $gsTmpNome + "' -DryRun"
+try {
+  $gsOut = (& powershell -ExecutionPolicy Bypass -NoProfile -Command $gsCmd 2>&1 | Out-String)
+} catch { $gsOut = "ERRO: " + $_.Exception.Message }
+$gsLinhas = @($gsOut -split "`r?`n" | Where-Object { $_ -match '^\s{2}\+ ' })
+Check "git-sync: -Path relativo lista os 2 arquivos da prova" ($gsLinhas.Count -eq 2) ("linhas='" + ($gsLinhas -join " | ") + "'")
+$gsVazou = @($gsLinhas | Where-Object { $_ -match '(?i)[A-Za-z]?:\\Users\\' })
+Check "git-sync: nenhum caminho absoluto de pasta de usuario no que seria enviado ao repo publico" ($gsVazou.Count -eq 0) ("vazou: " + ($gsVazou -join " | "))
+Check "git-sync: caminho enviado e relativo a pasta (a.txt / sub\b.txt), nao fatiado no meio" (($gsLinhas -join "|") -match 'a\.txt' -and ($gsLinhas -join "|") -match 'sub[\\/]b\.txt') ("linhas='" + ($gsLinhas -join " | ") + "'")
+Remove-Item -LiteralPath $gsTmp -Recurse -Force -ErrorAction SilentlyContinue
+
+# (3) check-public-surface.ps1: a cacada de credencial olhava so a PRIMEIRA ocorrencia de cada
+# agulha por arquivo. Placeholder antes da chave real (a ordem mais comum que existe) mascarava
+# a chave e o guard imprimia SUPERFICIE LIMPA. Prova pelo negativo com a fixture, copiada pra
+# uma pasta NEUTRA - dentro de scripts/fixtures/ o proprio caminho ja classificaria como mencao.
+$fxCred = Join-Path $root "scripts\fixtures\credencial-depois-do-placeholder.md"
+Check "Guard publico: fixture de credencial-depois-do-placeholder presente" (Test-Path -LiteralPath $fxCred)
+if (Test-Path -LiteralPath $fxCred) {
+  $credTmp = Join-Path $provaBase ("_tmp-cred-" + [System.Guid]::NewGuid().ToString("N"))
+  New-Item -ItemType Directory -Force -Path (Join-Path $credTmp "docs") | Out-Null
+  Copy-Item -LiteralPath $fxCred -Destination (Join-Path $credTmp "docs\config.md") -Force
+  $credOut = (& powershell -ExecutionPolicy Bypass -File (Join-Path $root "scripts\check-public-surface.ps1") -Repo $credTmp 2>&1 | Out-String)
+  $credExit = $LASTEXITCODE
+  Check "Guard publico: REPROVA chave real que vem DEPOIS de um placeholder no mesmo arquivo" (($credExit -ne 0) -and ($credOut -match '\[FAIL\] credencial')) ("exit=" + $credExit + " saida sem [FAIL] credencial")
+  Check "Guard publico: nao declara SUPERFICIE LIMPA com credencial dentro" ($credOut -notmatch 'SUPERFICIE LIMPA') "declarou limpa com credencial dentro (o furo voltou)"
+  # E o outro lado da mesma regua: so placeholder NAO pode reprovar, senao vira alarme falso e a
+  # casa aprende a ignorar o guard (mesmo criterio da fixture de vetos).
+  $credTmp2 = Join-Path $provaBase ("_tmp-cred2-" + [System.Guid]::NewGuid().ToString("N"))
+  New-Item -ItemType Directory -Force -Path (Join-Path $credTmp2 "docs") | Out-Null
+  $soPlaceholder = "# doc`r`n`r`nCole a sua chave no lugar do exemplo:`r`n`r`n    sk-ant-api03-seu_token_aqui_aqui_aqui`r`n"
+  [System.IO.File]::WriteAllText((Join-Path $credTmp2 "docs\config.md"), $soPlaceholder, (New-Object System.Text.UTF8Encoding($false)))
+  $credOut2 = (& powershell -ExecutionPolicy Bypass -File (Join-Path $root "scripts\check-public-surface.ps1") -Repo $credTmp2 2>&1 | Out-String)
+  $credExit2 = $LASTEXITCODE
+  Check "Guard publico: so placeholder NAO reprova (sem alarme falso)" (($credExit2 -eq 0) -and ($credOut2 -match 'SUPERFICIE LIMPA')) ("exit=" + $credExit2)
+  Remove-Item -LiteralPath $credTmp -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $credTmp2 -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 # --- Drift de versao: oficina vs release vs produto (M5, AVISO - nunca reprova) ---
 # So o CEO resolve drift entre as 3 versoes (publicar e decisao dele). Isto e AVISO, nao Check:
 # nunca pode reprovar o smoke, ou o proprio incentivo invertido deste cluster (tratar delegar/
@@ -2290,6 +2390,32 @@ $verRelease = if (Test-Path -LiteralPath $verReleasePath) { ((Get-Content -Liter
 $verProdutoPath = Join-Path (Split-Path (Split-Path (Split-Path $root -Parent) -Parent) -Parent) "alia-flow\VERSION"
 $verProduto = if (Test-Path -LiteralPath $verProdutoPath) { ((Get-Content -LiteralPath $verProdutoPath -ErrorAction SilentlyContinue) -join "").Trim() } else { "(ausente)" }
 Warn ("Versao: oficina=" + $verOficina + " release/alia-flow=" + $verRelease + " Projetos/alia-flow=" + $verProduto) (($verOficina -eq $verRelease) -and ($verOficina -eq $verProduto)) "drift so o CEO resolve, publicando"
+
+# CONSERTO (code review adversarial, 31/08/2026 - A MEDIDA OLHAVA O LADO ERRADO): as tres
+# superficies acima moram TODAS no mesmo disco e sao atualizadas pela mesma propagacao, entao
+# elas praticamente nunca divergem entre si - e o aviso ficava verde enquanto a UNICA superficie
+# que o mundo enxerga, o branch publicado no GitHub, ficava pra tras. MEDIDO nesta revisao: as
+# tres locais em 1.63.3 e o publico em 1.50.8, 7 commits nunca enviados. A superficie publicada
+# e a QUARTA, e e justamente a que derrapa. Aqui ela entra na conta.
+# Sem rede de proposito: le a referencia remota que o git ja tem em disco (ultimo fetch). Sem
+# git, sem repo ou sem a referencia, sai "(nao verificavel)" e nunca inventa veredito.
+$verPublicado = "(nao verificavel)"
+$commitsNaoEnviados = "?"
+# Onde mora o repositorio publico depende de ONDE este smoke esta rodando: na oficina (que por
+# LEI nao e git) ele e o irmao calculado acima; rodando de DENTRO do proprio clone publico, o
+# repositorio e a propria raiz. Sem este segundo caso o sensor saia "(nao verificavel)"
+# justamente no lugar onde a resposta e mais facil.
+$repoPublicoDir = if (Test-Path -LiteralPath (Join-Path $root ".git")) { $root } else { Split-Path -Parent $verProdutoPath }
+if (Test-Path -LiteralPath (Join-Path $repoPublicoDir ".git")) {
+  try {
+    $vp = (& git -C $repoPublicoDir show origin/main:VERSION 2>$null | Out-String).Trim()
+    if (-not [string]::IsNullOrWhiteSpace($vp)) { $verPublicado = $vp }
+    $cnt = (& git -C $repoPublicoDir rev-list --count origin/main..HEAD 2>$null | Out-String).Trim()
+    if ($cnt -match '^\d+$') { $commitsNaoEnviados = $cnt }
+  } catch { }
+}
+$publicadoOk = ($verPublicado -eq $verOficina) -and ($commitsNaoEnviados -eq "0")
+Warn ("Versao PUBLICADA (o que o mundo baixa): origin/main=" + $verPublicado + " vs oficina=" + $verOficina + " | commits nao enviados=" + $commitsNaoEnviados) $publicadoOk "so publicar resolve - as 3 superficies locais podem estar identicas e o publico ainda estar pra tras (ultimo fetch)"
 
 # --- Release Review: veredito e token unico, sempre (TASK-286) ---
 # Prova constrangedora medida nesta Task: "veredito: PASS (parcial - fechado por budget proprio,

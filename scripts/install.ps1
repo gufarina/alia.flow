@@ -235,19 +235,50 @@ try {
 
   # O zip do GitHub tem uma pasta raiz (ex: alia-flow-main/). O conteudo dela vai pra $dest.
   $inner = Get-ChildItem -Directory $tmpDir | Select-Object -First 1
+  if ($null -eq $inner) {
+    Write-Host "[ERRO] o pacote baixado nao tem a pasta raiz esperada (zip vazio ou formato inesperado) - nada tocado."
+    Write-InstallEvent -EventLogPath $EventLog -Phase "done" -Pct 100 -Message "pacote sem pasta raiz" -Result "error" -Detail ([ordered]@{ dest = $dest })
+    exit 1
+  }
 
   Write-InstallEvent -EventLogPath $EventLog -Phase "guard" -Pct 40 -Message "conferindo integridade e colisoes"
 
   # Integridade (contrato secao 5 item 6): se o pacote extraido tem MANIFEST.sha256, confere
   # ANTES de copiar. Sem manifesto no pacote, segue normal (nao inventa exigencia).
+  #
+  # CONSERTO (code review adversarial, 31/08/2026 - BLOQUEADOR DE RELEASE): a versao anterior
+  # resolvia o verificador por `Join-Path $PSScriptRoot "verify-manifest.ps1"`. No jeito
+  # DIVULGADO de instalar - `iwr -useb .../install.ps1 | iex`, a unica linha que o README manda
+  # colar - NAO EXISTE arquivo de script, entao $PSScriptRoot e VAZIO e Join-Path lanca
+  # "Cannot bind argument to parameter 'Path' because it is an empty string" (MEDIDO). Com
+  # $ErrorActionPreference = "Stop" isso derrubava a instalacao inteira com erro cru de
+  # PowerShell, sem [ERRO], logo depois de baixar e extrair - e o MANIFEST.sha256 esta na raiz
+  # do repo publico, entao o Test-Path abaixo da VERDADE em toda instalacao real. Nada era
+  # corrompido (a copia ainda nao tinha comecado), mas ninguem conseguia instalar.
+  # A correcao certa nao e so "nao quebrar": o verificador que vale e o que veio DENTRO do
+  # pacote baixado (mesma versao do manifesto que ele confere), nao o da maquina de quem roda.
   $manifestPath = Join-Path $inner.FullName "MANIFEST.sha256"
   if (Test-Path -LiteralPath $manifestPath) {
-    $verifyScript = Join-Path $PSScriptRoot "verify-manifest.ps1"
-    & $verifyScript -Dir $inner.FullName | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-      Write-Host "[ERRO] integridade do pacote falhou (MANIFEST.sha256 nao bate) - nada tocado."
-      Write-InstallEvent -EventLogPath $EventLog -Phase "done" -Pct 100 -Message "integridade falhou" -Result "error" -Detail ([ordered]@{ dest = $dest })
-      exit 1
+    $verifyScript = ""
+    $verifyDoPacote = Join-Path $inner.FullName "scripts\verify-manifest.ps1"
+    if (Test-Path -LiteralPath $verifyDoPacote) {
+      $verifyScript = $verifyDoPacote
+    } elseif (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+      $localCandidato = Join-Path $PSScriptRoot "verify-manifest.ps1"
+      if (Test-Path -LiteralPath $localCandidato) { $verifyScript = $localCandidato }
+    }
+    if ([string]::IsNullOrWhiteSpace($verifyScript)) {
+      # Fail-soft honesto: o pacote traz manifesto mas nao traz verificador. Avisa e segue - o
+      # contrario (abortar) deixaria o usuario sem instalacao nenhuma por um arquivo ausente do
+      # pacote, e a conferencia continua disponivel depois (docs/INTEGRIDADE.md).
+      Write-Host "[AVISO] o pacote tem MANIFEST.sha256 mas nao trouxe scripts\verify-manifest.ps1 - integridade nao conferida agora (ver docs\INTEGRIDADE.md)."
+    } else {
+      & $verifyScript -Dir $inner.FullName | Out-Null
+      if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERRO] integridade do pacote falhou (MANIFEST.sha256 nao bate) - nada tocado."
+        Write-InstallEvent -EventLogPath $EventLog -Phase "done" -Pct 100 -Message "integridade falhou" -Result "error" -Detail ([ordered]@{ dest = $dest })
+        exit 1
+      }
     }
   }
 

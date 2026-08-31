@@ -306,15 +306,31 @@ try {
         if (-not (Test-Path -LiteralPath $full)) { continue }
         $conteudo = Get-Content -LiteralPath $full -Raw -ErrorAction SilentlyContinue
         if ([string]::IsNullOrEmpty($conteudo)) { continue }
+        # CONSERTO (code review adversarial, 31/08/2026 - FALSO NEGATIVO MEDIDO): esta varredura
+        # olhava so a PRIMEIRA ocorrencia de cada agulha no arquivo ([regex]::Match). Bastava um
+        # placeholder aparecer ANTES da chave real - o caso mais comum do mundo, "cole a sua
+        # chave no lugar do exemplo" seguido da chave de verdade esquecida logo abaixo - para o
+        # arquivo inteiro ser classificado como "mencao" e o guard imprimir SUPERFICIE LIMPA com
+        # credencial dentro. Reproduzido em fixture: placeholder na linha 5, chave com formato
+        # real na linha 9, veredito da versao antiga = 1 aviso + "nada bloqueado".
+        # Agora TODA ocorrencia e classificada: uma unica que nao seja mencao ja REPROVA, e o
+        # aviso de mencao so sobra quando nenhuma ocorrencia do arquivo e suspeita.
         foreach ($needle in $credNeedlesText) {
-            $mm = [regex]::Match($conteudo, $needle.p)
-            if ($mm.Success) {
-                $trecho = $mm.Value.Substring(0, [Math]::Min(12, $mm.Value.Length)) + "..."
-                if (Test-CredMencao $rel $mm.Value) {
-                    $credWarns += [pscustomobject]@{ arq = $rel; motivo = $needle.n + " (mencao: " + $trecho + ")" }
-                } else {
-                    $credFails += [pscustomobject]@{ arq = $rel; motivo = $needle.n + " (" + $trecho + ")" }
-                }
+            $todas = [regex]::Matches($conteudo, $needle.p)
+            if ($todas.Count -eq 0) { continue }
+            $reais = @()
+            $mencoes = @()
+            foreach ($mm in $todas) {
+                if (Test-CredMencao $rel $mm.Value) { $mencoes += $mm } else { $reais += $mm }
+            }
+            if ($reais.Count -gt 0) {
+                $primeira = $reais[0]
+                $trecho = $primeira.Value.Substring(0, [Math]::Min(12, $primeira.Value.Length)) + "..."
+                $sufixo = if ($reais.Count -gt 1) { ", " + $reais.Count + " ocorrencia(s)" } else { "" }
+                $credFails += [pscustomobject]@{ arq = $rel; motivo = $needle.n + " (" + $trecho + $sufixo + ")" }
+            } elseif ($mencoes.Count -gt 0) {
+                $trecho = $mencoes[0].Value.Substring(0, [Math]::Min(12, $mencoes[0].Value.Length)) + "..."
+                $credWarns += [pscustomobject]@{ arq = $rel; motivo = $needle.n + " (mencao: " + $trecho + ")" }
             }
         }
     }
@@ -370,10 +386,15 @@ try {
         $gi = Join-Path $repoRaiz ".gitignore"
         if (Test-Path $gi) {
             $txt = Get-Content $gi -Raw
+            # CONSERTO (code review adversarial, 31/08/2026): o veredito deste bloco olhava o
+            # contador GLOBAL $warn, que qualquer aviso anterior (ex.: mencao de credencial) ja
+            # tinha incrementado - o PASS do .gitignore sumia por causa de um aviso de outro
+            # check. Conta so os avisos DESTE bloco.
+            $giFaltando = 0
             foreach ($alvo in @("brand/landing", "opportunities", "docs/product")) {
-                if ($txt -notmatch [regex]::Escape($alvo)) { Warn ".gitignore nao cobre: $alvo" }
+                if ($txt -notmatch [regex]::Escape($alvo)) { Warn ".gitignore nao cobre: $alvo"; $giFaltando++ }
             }
-            if ($warn -eq 0) { Ok ".gitignore cobre as categorias principais" }
+            if ($giFaltando -eq 0) { Ok ".gitignore cobre as categorias principais" }
         } else {
             Warn "sem .gitignore"
         }

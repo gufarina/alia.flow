@@ -20,6 +20,79 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.64.0] - 2026-08-31
+
+Code review ADVERSARIAL do motor, por ordem do CEO. Tres defeitos MEDIDOS (nenhum deles pego por
+check nenhum ate hoje) e uma medida que olhava o lado errado. O mais caro dos tres so existia
+porque ninguem tinha rodado o caminho que o README manda o usuario colar.
+
+**1. BLOQUEADOR DE RELEASE: o instalador do open beta quebrava no jeito DIVULGADO de instalar.**
+`scripts/install.ps1` resolvia o verificador de integridade por `Join-Path $PSScriptRoot
+"verify-manifest.ps1"`. No modo `iwr -useb .../install.ps1 | iex` - a UNICA linha que o README
+manda colar - nao existe arquivo de script, entao `$PSScriptRoot` e VAZIO e `Join-Path` lanca
+"Cannot bind argument to parameter 'Path' because it is an empty string" (MEDIDO, reproduzido
+com `Invoke-Expression`). Com `$ErrorActionPreference = "Stop"`, a instalacao morria ali com erro
+cru de PowerShell, sem `[ERRO]`, logo depois de baixar e extrair. E o gatilho e o caminho NORMAL:
+`MANIFEST.sha256` esta na raiz do repo publico, entao o `Test-Path` que abre esse bloco da
+VERDADE em toda instalacao real. Nada era corrompido (a copia ainda nao tinha comecado) - o
+usuario simplesmente nao conseguia instalar. Defeito NAO PUBLICADO: o `install.ps1` que esta no
+ar (v1.50.8) e anterior ao bloco de integridade; ele nasceu depois, na oficina, e ia estrear
+junto com esta publicacao. CONSERTO: o verificador que vale e o que veio DENTRO do pacote
+baixado (`<pacote>/scripts/verify-manifest.ps1`, mesma versao do manifesto que ele confere);
+`$PSScriptRoot` vira fallback GUARDADO; sem nenhum dos dois, avisa e segue (fail-soft honesto -
+abortar deixaria o usuario sem instalacao por um arquivo ausente do pacote). Guarda extra: pacote
+sem pasta raiz agora aborta com `[ERRO]`, nao com erro cru. `scripts/update-online.ps1` recebeu o
+mesmo conserto (a atualizacao verificava o pacote NOVO com o verificador da instalacao ANTIGA, e
+instalacao anterior a esse arquivo existir nem o tem).
+
+**2. VAZAMENTO DE CAMINHO DE MAQUINA para dentro de repositorio publico.** `scripts/git-sync.ps1`
+calculava o caminho de cada arquivo do commit por `$_.FullName.Substring($Path.Length)`. Com
+`-Path` relativo (`.`, `..\pasta`), `$Path.Length` nao corresponde ao prefixo do caminho ABSOLUTO
+que o `Get-ChildItem` devolve: o corte cai no meio do caminho e o que ia pro repositorio era
+`:\Users\<usuario>\Projetos\...` - o nome de usuario do Windows do operador viajando pra dentro
+de um repo publico, com os caminhos do commit quebrados de quebra. MEDIDO em `-DryRun`, sem token
+e sem rede. Ironia registrada: e a MESMA classe de vazamento que o guard de caminho absoluto do
+`package-release.ps1` ja reprova no pacote - so que ninguem estava olhando este caminho. CONSERTO:
+resolver o alvo para caminho completo uma unica vez (`Resolve-Path`), antes de qualquer coleta.
+
+**3. FALSO NEGATIVO na cacada de credencial - o guard dizia SUPERFICIE LIMPA com chave dentro.**
+`scripts/check-public-surface.ps1` (secao 1.6) olhava so a PRIMEIRA ocorrencia de cada agulha por
+arquivo (`[regex]::Match`). Bastava um placeholder aparecer ANTES da chave real - a ordem mais
+comum que existe, "cole a sua chave no lugar do exemplo" seguido da chave de verdade esquecida
+logo abaixo - para o arquivo inteiro ser classificado como MENCAO e o guard imprimir
+`SUPERFICIE LIMPA`. Reproduzido em fixture antes do conserto: placeholder na linha 5, chave com
+formato real na linha 9, veredito da versao antiga = "1 aviso, nada bloqueado", exit 0. CONSERTO:
+`[regex]::Matches` - TODA ocorrencia e classificada, UMA que nao seja mencao ja REPROVA, e o aviso
+de mencao so sobra quando nenhuma ocorrencia do arquivo e suspeita. O outro lado da regua foi
+provado junto: so-placeholder continua passando (alarme falso ensina a casa a ignorar o guard).
+Conserto menor no mesmo arquivo: o veredito do bloco `.gitignore` lia o contador GLOBAL de avisos,
+entao o PASS dele sumia por causa de um aviso de OUTRO check.
+
+**4. A MEDIDA DE VERSAO OLHAVA O LADO ERRADO (a 4a superficie).** O aviso de drift comparava
+oficina, `release/alia-flow` e `Projetos/alia-flow` - tres pastas do MESMO disco, atualizadas pela
+MESMA propagacao, que praticamente nunca divergem entre si. Ficava `[OK]` verde enquanto a unica
+superficie que o mundo enxerga, o branch publicado, ficava pra tras. MEDIDO nesta rodada: as tres
+locais em 1.63.3 e `origin/main` em **1.50.8**, com **7 commits nunca enviados** - 13 versoes de
+distancia entre o que a casa testa e o que o usuario baixa. A memoria do operador ja registrava
+"versao igual nas quatro superficies, o publico e o que derrapa"; o mecanismo media tres. Agora o
+smoke le tambem `origin/main:VERSION` e a contagem de commits nao enviados (sem rede - usa a
+referencia que o git ja tem em disco; sem git ou sem repo, sai "(nao verificavel)" e nunca inventa
+veredito). Continua AVISO, nunca reprova: publicar e decisao do CEO.
+
+**As provas (prova pelo negativo, como manda a casa).** 11 checks novos em `scripts/smoke-test.ps1`,
+secao "Code review adversarial 31/08/2026": a causa do defeito do instalador e MEDIDA ao vivo
+(`$PSScriptRoot` vazio sob `iex` e o `Join-Path` lancando de verdade), nao so afirmada; o git-sync
+roda de verdade em `-DryRun` a partir de outra pasta e o check reprova se aparecer caminho de
+maquina no que seria enviado; a cacada de credencial e provada nos DOIS sentidos com a fixture
+nova `scripts/fixtures/credencial-depois-do-placeholder.md`, copiada para pasta neutra (dentro de
+`scripts/fixtures/` o proprio caminho ja classificaria como mencao).
+
+Smoke da oficina: **268 -> 281 PASS, 0 FAIL, ALL GREEN**. GUARD-NUM `docs/CLAIMS.md`
+(`VERIFICACOES_DETERMINISTICAS_OFICINA`) 268 -> **281**. Versao MINOR: mecanismo novo (a 4a
+superficie entra na medida) alem das correcoes, tudo retrocompativel.
+
+---
+
 ## [1.63.3] - 2026-08-30
 
 WARDEN fecha o loop de RSI que nao tinha saida (defeito de motor, ordem do CEO). MEDIDO em

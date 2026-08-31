@@ -42,6 +42,16 @@ if ([string]::IsNullOrWhiteSpace($Path)) {
   if ($sd -eq "." -or [string]::IsNullOrWhiteSpace($sd)) { $Path = $root } else { $Path = Join-Path $root $sd }
 }
 if (-not (Test-Path -LiteralPath $Path)) { Write-Host ("[ERRO] pasta nao encontrada: " + $Path); exit 1 }
+# CONSERTO (code review adversarial, 31/08/2026 - VAZAMENTO DE CAMINHO REAL, MEDIDO): o caminho
+# de cada arquivo dentro do commit era calculado por `$_.FullName.Substring($Path.Length)`. Com
+# -Path relativo (ex.: "." ou "..\pasta"), $Path.Length NAO corresponde ao prefixo do FullName
+# absoluto que o Get-ChildItem devolve - o corte cai no meio do caminho ABSOLUTO e o que vai pro
+# repositorio publico e ":\Users\<usuario>\Projetos\..." (medido em -DryRun). Ou seja: o nome de
+# usuario do Windows do operador viajava pra dentro de um repo publico, e os caminhos do commit
+# saiam quebrados. Resolver o alvo pra caminho COMPLETO uma unica vez conserta os dois males, e
+# esta e a mesma classe de vazamento que o guard de caminho absoluto do package-release.ps1 ja
+# reprova no pacote - aqui ninguem estava olhando.
+$Path = (Resolve-Path -LiteralPath $Path).ProviderPath.TrimEnd('\', '/')
 if ([string]::IsNullOrWhiteSpace($Message)) { $Message = "Alia: backup do studio" }
 
 # --- Coleta de arquivos (ignora lixo/segredo; nunca envia o token nem .git) ---
