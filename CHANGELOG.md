@@ -20,6 +20,46 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.64.1] - 2026-08-31
+
+EMPURRAR NAO E PUBLICAR - conserto do sensor que a propria v1.64.0 estreou, medido no ATO de
+publicar ela.
+
+**O que aconteceu.** A v1.64.0 subiu: `git push` entrou, `origin/main` passou a bater com a
+oficina, e o sensor novo da 4a superficie imprimiu `[OK] Versao PUBLICADA (o que o mundo baixa):
+origin/main=1.64.0 vs oficina=1.64.0 | commits nao enviados=0`. Verde. Ao rodar a prova final -
+a linha EXATA que o README manda o usuario colar,
+`iwr -useb https://raw.githubusercontent.com/gufarina/alia.flow/main/scripts/install.ps1 | iex`,
+numa pasta vazia - a resposta foi **404: Not Found**. Confirmado por requisicao anonima:
+`api.github.com/repos/gufarina/alia.flow` -> 404, o zip de `main` -> 404, e os unicos
+repositorios PUBLICOS da conta hoje sao outros dois. O repositorio do Alia Flow e **PRIVADO**.
+
+**Por que o sensor mentiu.** Ele lia o git LOCAL: mede o que SAIU da maquina, nunca o que CHEGA
+em quem instala. Enquanto a sessao que publica esta autenticada, o repositorio privado responde
+normalmente e tudo parece publicado. E a mesma classe de defeito que a propria v1.64.0 tinha ido
+consertar (medir o lado errado), so que um nivel acima: nao adianta trocar 3 superficies locais
+por 4 se a quarta ainda e medida de dentro de casa.
+
+**O conserto.** (a) A linha offline mudou de nome: `Versao no ORIGIN (empurrada)` - nunca mais
+"o que o mundo baixa", porque nao e isso que ela mede. (b) `scripts/smoke-test.ps1` ganhou o
+switch `-Publico`: uma requisicao ANONIMA (sem cabecalho de autenticacao nenhum) a URL exata que
+o README anuncia, extraida do proprio README - a unica forma de responder "da pra instalar?" sem
+se enganar com a propria sessao. Fica OPT-IN de proposito: o smoke e offline e deterministico
+por lei; rede so entra quando alguem pede. Sem rede, sai aviso honesto ("nao deu para medir"),
+nunca veredito. 2 checks novos travam os dois lados do conserto.
+
+**O que este conserto NAO faz.** Nao torna o repositorio publico: isso e decisao do CEO e mexe
+numa escolha ja registrada de arquitetura (repositorio fechado, distribuicao pelo launcher). O
+motor agora ACUSA a contradicao entre o README, que promete instalar por uma linha, e o alcance
+real dessa linha - resolver e escolher um dos dois desfechos: abrir o repositorio, ou corrigir o
+que o README promete.
+
+Smoke da oficina: **281 -> 283 PASS, 0 FAIL, ALL GREEN**. GUARD-NUM `docs/CLAIMS.md` 281 ->
+**283**. Versao PATCH: adicao modular pequena (um switch opt-in) mais correcao de rotulo
+enganoso, sem tocar contrato nenhum.
+
+---
+
 ## [1.64.0] - 2026-08-31
 
 Code review ADVERSARIAL do motor, por ordem do CEO. Tres defeitos MEDIDOS (nenhum deles pego por

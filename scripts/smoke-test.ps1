@@ -9,7 +9,7 @@
 # numero publico fossilizar (161 -> 179 -> 185): o numero era so escrito a mao. Uso: chamado por
 # package-release.ps1 contra o PACOTE construido, antes do gate oficial (ver o script para o fluxo
 # completo: sincroniza, copia pra raiz da oficina, so entao roda o gate real sem o switch).
-param([switch]$UpdateReadme)
+param([switch]$UpdateReadme, [switch]$Publico)
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot          # raiz do alia/
@@ -2317,6 +2317,13 @@ Check "install: pacote sem pasta raiz aborta com [ERRO], nao com erro cru" ($ins
 $upTxt3 = if (Test-Path -LiteralPath (Join-Path $root "scripts\update-online.ps1")) { ReadText (Join-Path $root "scripts\update-online.ps1") } else { "" }
 Check "update-online: mesma classe fechada (verificador do pacote + fallback guardado)" (($upTxt3 -match [regex]::Escape('$pkgDir "scripts\verify-manifest.ps1"')) -and ($upTxt3 -match 'IsNullOrWhiteSpace\(\$PSScriptRoot\)')) "update-online.ps1 ainda depende do verificador local sem guarda"
 
+# (1b) EMPURRAR NAO E PUBLICAR: medido no ato de publicar a v1.64.0 - push entrou, origin/main
+# passou a bater com a oficina, e a linha do README continuou dando 404 pra qualquer pessoa
+# (repositorio privado). O sensor offline nao pode se apresentar como "o que o mundo baixa".
+$smkTxt = ReadText (Join-Path $root "scripts\smoke-test.ps1")
+Check "Publicacao: o smoke tem a sonda ANONIMA de alcance publico (-Publico, opt-in, sem credencial)" (($smkTxt -match '\[switch\]\$Publico') -and ($smkTxt -match 'Alcance publico ANONIMO')) "sem -Publico nao ha como responder 'da pra instalar?' sem se enganar com a propria sessao autenticada"
+Check "Publicacao: o sensor offline se chama 'no ORIGIN', nunca 'o que o mundo baixa' (empurrar != publicar)" ($smkTxt -match 'Versao no ORIGIN \(empurrada\)') "o rotulo voltou a prometer alcance publico que o git local nao mede"
+
 # (2) git-sync.ps1: o caminho de cada arquivo dentro do commit vinha de Substring($Path.Length).
 # Com -Path relativo o corte caia no meio do caminho ABSOLUTO e o nome de usuario do Windows do
 # operador viajava pra dentro de um repositorio publico. Prova REAL (-DryRun, sem token, sem
@@ -2415,7 +2422,47 @@ if (Test-Path -LiteralPath (Join-Path $repoPublicoDir ".git")) {
   } catch { }
 }
 $publicadoOk = ($verPublicado -eq $verOficina) -and ($commitsNaoEnviados -eq "0")
-Warn ("Versao PUBLICADA (o que o mundo baixa): origin/main=" + $verPublicado + " vs oficina=" + $verOficina + " | commits nao enviados=" + $commitsNaoEnviados) $publicadoOk "so publicar resolve - as 3 superficies locais podem estar identicas e o publico ainda estar pra tras (ultimo fetch)"
+Warn ("Versao no ORIGIN (empurrada): origin/main=" + $verPublicado + " vs oficina=" + $verOficina + " | commits nao enviados=" + $commitsNaoEnviados) $publicadoOk "so publicar resolve - as 3 superficies locais podem estar identicas e o origin ainda estar pra tras (ultimo fetch)"
+
+# EMPURRAR NAO E PUBLICAR (MEDIDO 31/08/2026, no ato de publicar a v1.64.0): o push entrou, o
+# origin/main passou a bater com a oficina - e a linha de instalar do README continuou dando
+# 404 pra qualquer pessoa, porque o repositorio e PRIVADO. Um sensor que le so o git local
+# jamais veria isso: ele mede o que SAIU da maquina, nunca o que CHEGA em quem instala. Por isso
+# a linha acima mudou de nome ("no ORIGIN", nao "o que o mundo baixa") e existe este segundo
+# passo, ANONIMO e OPT-IN (-Publico): faz uma requisicao sem credencial nenhuma a URL exata que
+# o README manda colar. E a unica forma de responder "da pra instalar?" sem se enganar com a
+# propria sessao autenticada. Fica fora do smoke padrao de proposito - o smoke e offline e
+# deterministico por lei; rede so entra quando alguem pede.
+if ($Publico) {
+  $urlInstalador = ""
+  $readmePathPub = Join-Path $root "README.md"
+  if (Test-Path -LiteralPath $readmePathPub) {
+    $mUrl = [regex]::Match((ReadText $readmePathPub), 'https://raw\.githubusercontent\.com/\S+/install\.ps1')
+    if ($mUrl.Success) { $urlInstalador = $mUrl.Value }
+  }
+  if ([string]::IsNullOrWhiteSpace($urlInstalador)) {
+    Warn "Alcance publico: URL do instalador nao encontrada no README.md" $false "sem URL para testar - o README nao anuncia instalacao por uma linha?"
+  } else {
+    $codigo = 0
+    $erroRede = ""
+    try {
+      $req = [System.Net.WebRequest]::Create($urlInstalador)
+      $req.Method = "GET"
+      $req.Timeout = 15000
+      # Sem cabecalho de autenticacao nenhum: o ponto e enxergar o que um DESCONHECIDO enxerga.
+      $resp = $req.GetResponse()
+      $codigo = [int]$resp.StatusCode
+      $resp.Close()
+    } catch [System.Net.WebException] {
+      if ($_.Exception.Response) { $codigo = [int]$_.Exception.Response.StatusCode } else { $erroRede = $_.Exception.Message }
+    } catch { $erroRede = $_.Exception.Message }
+    if ($erroRede -ne "") {
+      Warn ("Alcance publico: nao deu para medir (" + $erroRede + ")") $false "sem rede agora - isto nao e prova de que esta publicado nem de que nao esta"
+    } else {
+      Warn ("Alcance publico ANONIMO: " + $urlInstalador + " -> HTTP " + $codigo) ($codigo -eq 200) "404 aqui significa que NINGUEM consegue instalar - repositorio privado ou caminho errado. Empurrar commit nao resolve; so tornar o repo publico (decisao do CEO) ou corrigir a URL"
+    }
+  }
+}
 
 # --- Release Review: veredito e token unico, sempre (TASK-286) ---
 # Prova constrangedora medida nesta Task: "veredito: PASS (parcial - fechado por budget proprio,
