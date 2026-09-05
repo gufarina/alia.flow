@@ -166,11 +166,20 @@ O Specialist de squad vira agente INVOCAVEL via `scripts/squad-bridge.ps1`, que 
 `.claude/agents/{client}-{id}.md` a partir da fonte unica (`clients/*/squad/squad.yaml` +
 `agents/{id}.yaml` + `agents/{id}.md`) - arquivos GERADOS, nunca editados a mao (a proxima geracao
 sobrescreve). Dois modos, mesmo contrato (OPP-42, delegacao portavel): **spawn** (harness com
-sub-agente nativo, ex. Claude Code - o gerador escreve frontmatter YAML valido) e **context-load**
-(harness sem sub-agente nativo, ex. Codex/OpenCode - o coordenador carrega o briefing portavel e
-VESTE o papel, sem depender de spawn). LIMITE CONHECIDO: um agente gerado so fica acionavel em
-SESSAO NOVA (o harness le `.claude/agents/` na abertura da sessao); no meio da sessao, a saida e o
-modo context-load.
+sub-agente nativo - Claude Code via `.claude/agents/`, OpenCode via `.opencode/agent/`; o gerador
+escreve o frontmatter que cada um le) e **context-load** (harness sem sub-agente nativo, ex. Codex -
+o coordenador carrega o briefing portavel e VESTE o papel, sem depender de spawn).
+
+**O modo nao se escolhe a mao: ele se DETECTA.** `scripts/detect-harness.ps1` responde na entrada
+da sessao qual e o host e devolve `delegation_mode=spawn|context-load`; o passo DELEGA obedece esse
+campo (protocolo completo em `skills/delegate/SKILL.md`). Deteccao que falhou, ou host que nao roda
+script, cai em `context-load` - o modo que funciona em qualquer lugar. Foi a falta disso que travou
+a Alia no Codex (OPP-42, incidente de origem): ela tentou spawnar tres vezes num host sem essa
+ferramenta e caiu no fallback proibido de executar sozinha, sem papel. Nao existe mais fallback:
+sem spawn, o caminho e context-load.
+
+LIMITE CONHECIDO: um agente gerado so fica acionavel em SESSAO NOVA (o harness le a pasta de
+sub-agentes na abertura da sessao); no meio da sessao, a saida e o modo context-load.
 
 Delegar nao e so escolher quem faz - e isolar o contexto. O coordenador despacha uma Task e recebe
 de volta um resultado limpo; ele NUNCA reprocessa o bruto que o sub-agente gerou para chegar la. Tres

@@ -94,8 +94,11 @@ Write-Host ""
 
 # --- O que e PRODUTO (atualiza) vs o que e SEU (nunca aparece aqui, logo nunca e tocado) ---
 $engineDirs   = @("engine","scripts","skills","onboarding","optional-mcps")          # 100% produto: espelha
-$mergeDirs    = @(".claude","docs")                                                   # soma (preserva local: docs do produto atualizam, mas planos/docs locais do operador nao sao apagados)
-$productFiles = @("README.md","PRIMEIROS-PASSOS.md","VERSION","CHANGELOG.md","LICENSE","CREDITS.md","iniciar-alia.bat","atualizar-alia.bat",".gitattributes")
+# .opencode e .agents entram como MERGE (nao espelho) de proposito, v1.65.0: o produto atualiza o
+# comando /alia e a skill $alia, mas .opencode/agent/ pode conter Specialists que a INSTANCIA gerou
+# localmente (squad-bridge -Mode opencode) - espelhar apagaria material do operador.
+$mergeDirs    = @(".claude","docs",".opencode",".agents")                             # soma (preserva local: docs do produto atualizam, mas planos/docs locais do operador nao sao apagados)
+$productFiles = @("README.md","PRIMEIROS-PASSOS.md","VERSION","CHANGELOG.md","LICENSE","CREDITS.md","opencode.json","iniciar-alia.bat","atualizar-alia.bat",".gitattributes")
 # Camada do operador, intocada: clients/  state.json  studio.yaml  _inbox/  alia.config.json  AGENTS.md  .gitignore
 
 # --- GUARDA DE SEGURANCA DOS DADOS (nunca estragar info do usuario: clientes, estado, config) ---

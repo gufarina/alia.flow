@@ -24,7 +24,16 @@
     de agir, carregue" (knowledge[] do yaml, caminho absoluto, + GRAPH_REPORT.md se existir) +,
     para B/C, "Voce e folha" (nao re-delega).
 
-  -Mode context-load - host SEM sub-agente (ex: Codex, opencode): escreve
+  -Mode opencode - host com sub-agente NATIVO de outro formato (OpenCode): escreve
+    .opencode\agent\{client}-{id}.md com o frontmatter que O OPENCODE le (description, mode:
+    subagent, permission, e model SO quando a persona declara um id de modelo de verdade no
+    formato provider/modelo - tier "strong/standard/fast" nao e id de modelo e nunca vira model:).
+    permission e a allow-list da persona TRADUZIDA para o vocabulario do OpenCode: edit allow se a
+    persona tem Edit/Write, bash allow se tem Bash, webfetch allow se tem WebFetch/WebSearch -
+    o que a persona nao tem nasce deny. Isso promove o OpenCode de context-load para SPAWN: o
+    Specialist vira invocavel por @{client}-{id}, com escopo aplicado pelo host, nao so lido.
+
+  -Mode context-load - host SEM sub-agente (ex: Codex): escreve
     .claude\agents\{client}-{id}.context-load.md, um BRIEFING PORTAVEL sem frontmatter de Claude
     Code (nenhum host alem do Claude Code le YAML frontmatter de agente). Contem: identidade
     (role/camada/brain), o escopo de ferramentas declarado em PROSA (a mesma lista do modo spawn -
@@ -42,6 +51,15 @@
   "shared" (ou "all") -> resolve para a pasta squad\knowledge\ inteira (e o que "fatia
   compartilhada do segundo cerebro" quer dizer). Token que nao resolve em nada -> OMITIDO, com
   aviso no resumo final (nunca escreve caminho falso no briefing de um Specialist).
+
+  CAMINHO DE KNOWLEDGE - PORTAVEL POR LEI (conserto de 05/09/2026, TASK-421): o caminho escrito no
+  bloco "Antes de agir, carregue" nasce RELATIVO a $RepoRoot sempre que o arquivo alvo estiver
+  DENTRO de $RepoRoot (ex: "clients/acme-saas/squad/knowledge/graphify-out/GRAPH_REPORT.md"),
+  com barra normal. Caminho ABSOLUTO so quando o alvo estiver FORA de $RepoRoot (o studio privado
+  do operador, que nunca viaja). Motivo medido: gerando para studio.example/ - a fixture PUBLICA
+  que SHIPA no pacote - o caminho absoluto colocava a pasta de usuario do Windows dentro de 6 arquivos
+  publicados, e o guard de path do package-release.ps1 reprovou o empacotamento (passo 3/3). Vale
+  para os TRES modos (spawn, opencode, context-load) - a conversao acontece num ponto so.
 
   Validacao de MCP: toda tool que comeca com "mcp__" e conferida contra os servidores reais
   declarados em .mcp.json (na raiz do repo). Servidor real -> mantem. Correspondencia obvia (ex:
@@ -63,7 +81,7 @@ param(
     [switch]$DryRun,
     [string]$Client,
     [string]$RepoRoot,
-    [ValidateSet('spawn', 'context-load')]
+    [ValidateSet('spawn', 'context-load', 'opencode')]
     [string]$Mode = 'spawn'
 )
 
@@ -74,7 +92,10 @@ if (-not $RepoRoot) {
 }
 
 $clientsDir = Join-Path $RepoRoot 'clients'
-$outDir = Join-Path $RepoRoot '.claude\agents'
+# cada host le a sua propria pasta de sub-agente. spawn/context-load escrevem em .claude\agents
+# (o segundo so um briefing portavel, sem frontmatter); o modo opencode escreve na pasta que o
+# OpenCode le de verdade.
+$outDir = if ($Mode -eq 'opencode') { Join-Path $RepoRoot '.opencode\agent' } else { Join-Path $RepoRoot '.claude\agents' }
 
 if (-not (Test-Path $clientsDir)) {
     Write-Error "nao achei $clientsDir"
@@ -85,6 +106,22 @@ if (-not (Test-Path $outDir)) {
     if (-not $DryRun) {
         New-Item -ItemType Directory -Path $outDir -Force | Out-Null
     }
+}
+
+# ---- caminho portavel (ver cabecalho, "CAMINHO DE KNOWLEDGE - PORTAVEL POR LEI") ----
+# Dentro de $RepoRoot -> relativo a raiz, com barra normal. Fora -> absoluto, como sempre foi.
+$RepoRootFull = ((Resolve-Path -LiteralPath $RepoRoot).Path).TrimEnd('\', '/')
+
+function ConvertTo-PortablePath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $full = $Path
+    try { $full = [System.IO.Path]::GetFullPath($Path) } catch { }
+    $prefix = $RepoRootFull + [System.IO.Path]::DirectorySeparatorChar
+    if ($full.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return ($full.Substring($prefix.Length) -replace '\\', '/')
+    }
+    return $full
 }
 
 # ---- lista real de tools do Claude Code (whitelist) ----
@@ -454,7 +491,10 @@ foreach ($clientDir in $clientDirs) {
             if ($hasGraph -and (-not ($knowledgeLines -contains $graphReport))) {
                 [void]$knowledgeLines.Add($graphReport)
             }
-            $knowledgeLines = @($knowledgeLines | Select-Object -Unique)
+            # dedupe primeiro (comparacao entre caminhos absolutos), depois torna PORTAVEL - o
+            # que vai pro arquivo gerado e o caminho relativo a $RepoRoot quando o alvo mora dentro
+            # dele. Um ponto so, valendo para os tres modos.
+            $knowledgeLines = @($knowledgeLines | Select-Object -Unique | ForEach-Object { ConvertTo-PortablePath $_ })
 
             $name = ("$clientId-$agentId").ToLower()
 
@@ -480,6 +520,51 @@ foreach ($clientDir in $clientDirs) {
                     foreach ($kl in $knowledgeLines) { [void]$sections.Add("- $kl") }
                 }
 
+                if ($camada -ne 'A') {
+                    [void]$sections.Add('')
+                    [void]$sections.Add('## Voce e folha')
+                    [void]$sections.Add('')
+                    [void]$sections.Add('Nao re-delegue e nao acione outro agente. Ao concluir, devolva Artifact (arquivo, path ou URL) e um resumo objetivo para quem acionou este agente.')
+                }
+            }
+            elseif ($Mode -eq 'opencode') {
+                # OpenCode tem sub-agente NATIVO, so que com outro frontmatter e outra pasta.
+                # Traduz a mesma fonte unica para o vocabulario dele.
+                $permEdit = if (($validTools -contains 'Edit') -or ($validTools -contains 'Write')) { 'allow' } else { 'deny' }
+                $permBash = if ($validTools -contains 'Bash') { 'allow' } else { 'deny' }
+                $permWeb = if (($validTools -contains 'WebFetch') -or ($validTools -contains 'WebSearch')) { 'allow' } else { 'deny' }
+
+                # model SO quando a persona declara um id real de modelo (provider/modelo). Os
+                # valores de TIER usados no yaml (strong/standard/fast) nao sao id de modelo em
+                # host nenhum - escreve-los aqui geraria config invalida no OpenCode.
+                $declaredModel = Get-ScalarValue $data 'model' ''
+
+                [void]$sections.Add('---')
+                [void]$sections.Add("description: $description")
+                [void]$sections.Add('mode: subagent')
+                if ($declaredModel -match '^[\w.-]+/[\w.:-]+$') {
+                    [void]$sections.Add("model: $declaredModel")
+                }
+                [void]$sections.Add('permission:')
+                [void]$sections.Add("  edit: $permEdit")
+                [void]$sections.Add("  bash: $permBash")
+                [void]$sections.Add("  webfetch: $permWeb")
+                [void]$sections.Add('---')
+                [void]$sections.Add('')
+                [void]$sections.Add($body.Trim())
+                [void]$sections.Add('')
+                [void]$sections.Add('## Escopo de ferramentas declarado')
+                [void]$sections.Add('')
+                [void]$sections.Add("$toolsLine")
+                [void]$sections.Add('')
+                [void]$sections.Add('## Antes de agir, carregue (obrigatorio)')
+                [void]$sections.Add('')
+                if ($knowledgeLines.Count -eq 0) {
+                    [void]$sections.Add('- (nenhum knowledge declarado no yaml deste agente)')
+                }
+                else {
+                    foreach ($kl in $knowledgeLines) { [void]$sections.Add("- $kl") }
+                }
                 if ($camada -ne 'A') {
                     [void]$sections.Add('')
                     [void]$sections.Add('## Voce e folha')
@@ -528,7 +613,7 @@ foreach ($clientDir in $clientDirs) {
 
             $finalContent = ($sections -join "`n").TrimEnd() + "`n"
 
-            $fileSuffix = if ($Mode -eq 'spawn') { '.md' } else { '.context-load.md' }
+            $fileSuffix = if ($Mode -eq 'context-load') { '.context-load.md' } else { '.md' }
             $outPath = Join-Path $outDir "$name$fileSuffix"
             $isNew = -not (Test-Path $outPath)
             $writeNeeded = $true

@@ -20,6 +20,113 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.65.0] - 2026-09-05
+
+ONDE EU ESTOU - a Alia descobre em qual coding agent esta rodando e se adapta antes de trabalhar.
+Fecha os Deltas 2 e 3 da OPP-42, abertos desde 19/06.
+
+**O buraco.** A OPP-42 nasceu de um teste real do CEO: ele abriu a Alia no Codex, ela seguiu o
+protocolo ate DELEGA e TRAVOU - tentou spawnar sub-agente tres vezes num host que nao tem essa
+ferramenta e caiu no fallback proibido de executar sozinha, sem papel. O Delta 1 (os dois modos em
+`orchestration.md`) saiu na v1.46.0, mas os Deltas 2 e 3 nunca sairam: nao havia deteccao de host
+nenhuma no motor (a unica leitura de ambiente em todo o repo era `$env:CLAUDE_PROJECT_DIR` num
+teste de hook), e nao havia `skills/delegate`. Resultado medido antes desta versao: ZERO artefato
+em disco para OpenCode ou Codex - sem `opencode.json`, sem `.opencode/`, sem `.agents/`. So o
+`AGENTS.md` em prosa. A bandeira "roda em qualquer agente" era mais larga que a evidencia.
+
+**O que mudou.**
+
+1. `scripts/detect-harness.ps1` (novo) - responde onde a Alia esta em seis campos
+   (`harness`, `spawn`, `hooks`, `skills_dir`, `delegation_mode`, `signal`). Sinal forte primeiro:
+   `CLAUDECODE=1` -> claude-code, `CODEX_SANDBOX*` -> codex; depois marcador de pasta; nada
+   reconhecido -> `unknown` + `context-load`. Nunca falha (exit 0 sempre): deteccao errada nao pode
+   travar trabalho, e o desconhecido cai justamente no modo que funciona em qualquer host.
+   Honestidade embutida: como TODA instalacao passou a ter `.claude/` + `.opencode/` + `.agents/`,
+   marcador de pasta dentro do repo deixou de distinguir host - quando os marcadores sao ambiguos o
+   script diz `unknown` em vez de chutar, e explica isso no campo `signal`.
+2. Palavra de acordar universal - mensagem que comeca com `alia`, `/alia`, `$alia` ou `--alia`
+   dispara o ritual em qualquer host. UMA fonte (`skills/alia/ALIA.md`), tres copias GERADAS por
+   `scripts/sync-harness-adapters.ps1` (novo): `.claude/skills/alia/SKILL.md` (Claude Code),
+   `.agents/skills/alia/SKILL.md` (Codex `$alia`, lido tambem pelo OpenCode) e
+   `.opencode/commands/alia.md` (`/alia`). O smoke reprova se o CORPO das tres divergir por hash -
+   tres textos com o mesmo nome seria a Alia se comportando diferente por host sem ninguem ver.
+   O `.claude/commands/alia.md` continua existindo (a skill vence o command de mesmo nome).
+3. `AGENTS.md` ganhou o passo 0 "Onde estou" no fast-boot, e a linha de status das duas batidas
+   passou a carregar `host: <harness> | delegacao: <modo>`.
+4. OpenCode promovido de context-load para SPAWN - `scripts/squad-bridge.ps1 -Mode opencode` (novo
+   modo, mesma fonte unica) gera `.opencode/agent/{client}-{id}.md` com o frontmatter que aquele
+   host le: `description`, `mode: subagent`, `permission` traduzido da allow-list da persona
+   (Edit/Write -> edit, Bash -> bash, WebFetch/WebSearch -> webfetch; o que a persona nao tem nasce
+   `deny`), e `model` SO quando a persona declara um id real `provider/modelo` - tier
+   "strong/standard/fast" nao e id de modelo e nunca vira `model:`. Gerados 6 Specialists de
+   `studio.example/clients/acme-saas` como prova em disco que SHIPA no pacote.
+   `opencode.json` novo na raiz declara `instructions: ["AGENTS.md"]`.
+5. `skills/delegate/SKILL.md` (novo, OPP-42 Delta 2) - o passo DELEGA portavel em 7 passos, com o
+   registro obrigatorio de `delegation_mode: context-load` na Task e o fallback proibido escrito
+   com todas as letras: "nao consegui acionar o Specialist, entao fiz eu mesma" nao existe mais.
+6. `engine/orchestration.md` (NUCLEO - editado com `guard-core.ps1 -AllowCore` depois de o guard
+   BLOQUEAR a mudanca, como manda a fronteira) - o modo de delegacao agora se DETECTA, nao se
+   escolhe a mao; a doutrina cita `detect-harness.ps1` e `skills/delegate`.
+7. Hook de `SessionStart` no Claude Code chama `detect-harness.ps1`: o readout de host chega na
+   sessao sem a Alia precisar rodar nada.
+8. Empacotamento - `package-release.ps1` passou a shipar `.opencode`, `.agents` e `opencode.json`
+   (`.claude/skills` entra pelo `.claude` que ja shipava; a exclusao de `.claude/agents` continua).
+   `update-engine.ps1` propaga `.opencode` e `.agents` como MERGE, nunca espelho: `.opencode/agent/`
+   pode conter Specialists que a INSTANCIA gerou, e espelhar apagaria material do operador.
+
+**O que NAO foi feito, e por que.** Plugin de ciclo de vida do OpenCode (`.opencode/plugins/*.js`,
+que injetaria o readout no `session.created`) ficou de fora: nao ha doc oficial verificada do
+contrato de eventos nesta sessao, e inventar API e pior que nao ter - fica como proximo passo
+declarado em `docs/COMPATIBILIDADE.md`. Instalador de `~/.codex/prompts/alia.md` (o unico caminho
+de comando customizado do Codex) tambem nao foi feito: escreve na HOME do usuario e ninguem mandou.
+E `AGENTS.md` e camada do operador em `update-engine.ps1` - o passo "Onde estou" NAO propaga
+sozinho para instancias ja instaladas; quem propaga a identidade nova e a skill `alia`, que entra
+por `skills/` e `.claude/skills/`.
+
+**Prova.** `scripts/smoke-test.ps1`: **296 PASS, 0 FAIL** (era 283; 13 checks novos). GUARD-NUM de
+`docs/CLAIMS.md` atualizado para 296. Prova pelo negativo executada em dois checks: (a) injetado
+texto divergente em `.opencode/commands/alia.md` -> `[FAIL] as 3 copias da skill 'alia' tem o MESMO
+corpo (hash SHA256)`; (b) trocado `mode: subagent` por `mode: primary` em
+`acme-saas-maya.md` -> `[FAIL] todo agente em .opencode/agent/ tem frontmatter valido do OpenCode
+-> invalido(s): acme-saas-maya.md`. Rodada quebrada: 292 PASS, 2 FAIL; restaurado, 294 PASS 0 FAIL (os 2 ultimos checks, sobre o node_modules que o proprio OpenCode instala ao rodar, entraram depois disso e levaram o total a 296).
+
+**Prova ao vivo: TENTADA E FALHOU, por defeito dos hosts.** Rodados de dentro da oficina, com o
+prompt exato `alia, onde voce esta?`: `opencode run` quebrou na migracao do banco local do proprio
+OpenCode (`SQLiteError: no such column: replacement_seq`) antes de ler qualquer arquivo nosso; e
+`codex exec --skip-git-repo-check` subiu com o workdir CERTO (a oficina) e morreu por falta de
+modelo - a config do usuario aponta um provider local em `127.0.0.1:4000` que nao esta no ar.
+Nenhuma das duas foi contornada: contornar exigiria editar config do usuario, e ninguem mandou.
+Logs literais em `docs/provas/harness-opencode-2026-09-05.txt` e `harness-codex-2026-09-05.txt`.
+Por isso `docs/CAPACIDADE-REAL.md` item 38 CONTINUA "EXISTE MAS NAO PROVADO" e nenhum claim novo
+sobre OpenCode/Codex entrou em `docs/CLAIMS.md`. Em disco esta pronto; ao vivo, nao provado.
+
+**Conserto antes do empacote.** Ao empacotar esta mesma versao, `scripts/package-release.ps1`
+REPROVOU no passo 3/3: `[ERRO] caminho absoluto de maquina vazou no pacote:
+studio.example\.opencode\agent\acme-saas-bruno.md` (e cleo, iris, maya, quinn, rex). Causa medida:
+o item 4 acima - `squad-bridge.ps1 -Mode opencode` escrevia o caminho de knowledge em ABSOLUTO por
+desenho - a pasta de usuario do Windows de quem gerou, inteira, ate o `GRAPH_REPORT.md`. Correto na maquina do operador, vazamento quando
+o alvo e `studio.example/`, a fixture PUBLICA que shipa no pacote. O gate estava certo; a fonte
+estava errada, e o conserto foi na fonte, nunca no pacote. Regra nova, valendo para os TRES modos
+do gerador (spawn, opencode, context-load): caminho de knowledge nasce RELATIVO a `$RepoRoot`
+sempre que o arquivo alvo mora DENTRO dele (ex.: `clients/acme-saas/squad/knowledge/graphify-out/
+GRAPH_REPORT.md`, com barra normal); ABSOLUTO so quando o alvo esta FORA do repo - o studio privado
+do operador, que nunca viaja. Os 6 arquivos foram REGERADOS pelo script (nunca a mao). Como o gate
+abortou antes de qualquer superficie externa receber a versao, isto entra na 1.65.0 e nao gera
+1.65.1. WARDEN acrescentou o check que pega isso na oficina, antes do empacotador: nenhum arquivo
+em `studio.example/**`, `.opencode/**` ou `.agents/**` pode conter `[A-Za-z]:\`, `/Users/` ou
+`\Users\` (54 arquivos lidos). Prova pelo negativo: um caminho de pasta de usuario do Windows plantado em
+`studio.example/_prova-negativa.md` -> `[FAIL] Superficie publica: nenhum caminho absoluto de
+maquina ... -> vazou em: studio.example\_prova-negativa.md` (296 PASS, 1 FAIL); arquivo apagado ->
+**297 PASS, 0 FAIL**. GUARD-NUM de `docs/CLAIMS.md` atualizado de 296 para 297.
+
+Segundo achado do mesmo empacote, so visivel depois de apagar `release/alia-flow/` inteiro e montar
+o pacote do zero: `detect-harness.ps1` (o item 1 desta versao) nunca tinha entrado na allowlist de
+`scripts/` do `package-release.ps1`. Como a allowlist FALHA FECHADO, o script simplesmente nao era
+copiado, e o smoke rodado DENTRO do pacote reprovava em 3 checks de Harness (275 PASS, 3 FAIL). A
+pasta antiga mascarava o defeito - ela ja tinha o arquivo de uma copia anterior, entao o empacote
+incremental passava. Allowlist corrigida; pacote fechado limpo de ponta a ponta: 3/3, smoke do
+pacote **278 PASS, 0 FAIL, 1 SKIP**, 275 arquivos no `MANIFEST.sha256`.
+
 ## [1.64.1] - 2026-08-31
 
 EMPURRAR NAO E PUBLICAR - conserto do sensor que a propria v1.64.0 estreou, medido no ATO de

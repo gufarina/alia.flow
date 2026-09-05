@@ -490,7 +490,7 @@ Write-Host "-- Guardrails (separacao de instancias) --"
 
 # (a) Raiz limpa: SO a allowlist canonica (nenhum arquivo vaza, nao so .md).
 # Layout canonico em skills/file-organization/SKILL.md. Pastas livres; dotfiles (.git*) ignorados.
-$rootAllow = @("README.md","PRIMEIROS-PASSOS.md","AGENTS.md","CLAUDE.md","CONTRIBUTING.md","CHANGELOG.md","CATALOG.md","LICENSE","CREDITS.md","VERSION","alia.config.json","iniciar-alia.bat","atualizar-alia.bat","mission-control.html","MANIFEST.sha256")
+$rootAllow = @("README.md","PRIMEIROS-PASSOS.md","AGENTS.md","CLAUDE.md","CONTRIBUTING.md","CHANGELOG.md","CATALOG.md","LICENSE","CREDITS.md","VERSION","alia.config.json","opencode.json","iniciar-alia.bat","atualizar-alia.bat","mission-control.html","MANIFEST.sha256")
 $sdir = ""
 $cfgP = Join-Path $root "alia.config.json"
 if (Test-Path $cfgP) { try { $sdir = "$((Get-Content $cfgP -Raw | ConvertFrom-Json).studio_dir)".Trim() } catch {} }
@@ -2378,6 +2378,128 @@ if (Test-Path -LiteralPath $fxCred) {
   Remove-Item -LiteralPath $credTmp -Recurse -Force -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $credTmp2 -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# --- Portabilidade multi-harness (TASK-421, v1.65.0 - fecha OPP-42 Deltas 2 e 3) ---
+# A Alia tem que saber ONDE esta antes de delegar. O incidente de origem da OPP-42 (o CEO testou no
+# Codex, ela tentou spawnar sub-agente num host que nao tem, travou e caiu no fallback proibido de
+# executar sozinha) so nao volta se o detector existir, se a palavra de acordar existir nos TRES
+# caminhos que os hosts leem de verdade, e se o passo DELEGA portavel estiver escrito.
+Write-Host ""
+Write-Host "-- Portabilidade multi-harness: deteccao de host + palavra de acordar + DELEGA portavel --"
+
+$detectPath = Join-Path $root "scripts\detect-harness.ps1"
+Check "Harness: scripts/detect-harness.ps1 existe" (Test-Path -LiteralPath $detectPath)
+
+# Roda de verdade (nao le o fonte): o contrato e a SAIDA, seis chaves. Prova pelo negativo possivel:
+# apagar uma chave do script derruba este check.
+$detectKeys = @("harness","spawn","hooks","skills_dir","delegation_mode","signal")
+$detectOut = ""
+if (Test-Path -LiteralPath $detectPath) {
+  $detectOut = (& powershell -ExecutionPolicy Bypass -File $detectPath 2>&1 | Out-String)
+}
+$detectMissing = @($detectKeys | Where-Object { $detectOut -notmatch ("(?m)^" + [regex]::Escape($_) + "=") })
+Check "Harness: detect-harness.ps1 imprime as 6 chaves (harness/spawn/hooks/skills_dir/delegation_mode/signal)" ($detectMissing.Count -eq 0) ("faltando: " + ($detectMissing -join ", "))
+
+# Host desconhecido NUNCA pode virar paralisia: o padrao seguro e context-load, o modo que funciona
+# em qualquer lugar. Testado forcando o galho de fallback (sem env de host reconhecido).
+$detectFallback = ""
+if (Test-Path -LiteralPath $detectPath) {
+  $prevCC = $env:CLAUDECODE; $prevCS = $env:CODEX_SANDBOX; $prevCSN = $env:CODEX_SANDBOX_NETWORK_DISABLED
+  $env:CLAUDECODE = $null; $env:CODEX_SANDBOX = $null; $env:CODEX_SANDBOX_NETWORK_DISABLED = $null
+  $detectFallback = (& powershell -ExecutionPolicy Bypass -File $detectPath 2>&1 | Out-String)
+  $env:CLAUDECODE = $prevCC; $env:CODEX_SANDBOX = $prevCS; $env:CODEX_SANDBOX_NETWORK_DISABLED = $prevCSN
+}
+Check "Harness: sem env de host reconhecido, o modo cai em context-load (nunca trava)" ($detectFallback -match '(?m)^delegation_mode=context-load')
+
+# A palavra de acordar em disco, nos tres caminhos que os hosts leem. Fonte unica + copias geradas.
+$aliaSource = Join-Path $root "skills\alia\ALIA.md"
+$aliaClaude = Join-Path $root ".claude\skills\alia\SKILL.md"
+$aliaAgents = Join-Path $root ".agents\skills\alia\SKILL.md"
+$aliaOpen   = Join-Path $root ".opencode\commands\alia.md"
+$aliaAll = @($aliaSource, $aliaClaude, $aliaAgents, $aliaOpen)
+$aliaMissing = @($aliaAll | Where-Object { -not (Test-Path -LiteralPath $_) })
+Check "Harness: skill 'alia' presente na fonte + nos 3 caminhos de host (.claude/skills, .agents/skills, .opencode/commands)" ($aliaMissing.Count -eq 0) ("faltando: " + (($aliaMissing | ForEach-Object { $_.Substring($root.Length + 1) }) -join ", "))
+
+# Hash do CORPO (tudo depois do frontmatter) igual nos tres. Frontmatter difere de proposito
+# (skill leva name+description; command do OpenCode so description), o CORPO nunca pode divergir -
+# tres textos diferentes com o mesmo nome e como a Alia passa a se comportar diferente por host.
+function BodyHash([string]$p) {
+  if (-not (Test-Path -LiteralPath $p)) { return "" }
+  $t = (ReadText $p) -replace "`r`n", "`n"
+  $m = [regex]::Match($t, "(?s)^---\n.*?\n---\n(.*)$")
+  $b = if ($m.Success) { $m.Groups[1].Value } else { $t }
+  $sha = [System.Security.Cryptography.SHA256]::Create()
+  return [System.BitConverter]::ToString($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($b.Trim())))
+}
+$hClaude = BodyHash $aliaClaude
+$hAgents = BodyHash $aliaAgents
+$hOpen   = BodyHash $aliaOpen
+Check "Harness: as 3 copias da skill 'alia' tem o MESMO corpo (hash SHA256) - sync-harness-adapters.ps1" (($hClaude -ne "") -and ($hClaude -eq $hAgents) -and ($hClaude -eq $hOpen)) "corpo divergente: rode scripts/sync-harness-adapters.ps1"
+
+# Adapter OpenCode com spawn real: os Specialists gerados por squad-bridge -Mode opencode.
+$openAgentDir = Join-Path $studio ".opencode\agent"
+$openAgents = @()
+if (Test-Path -LiteralPath $openAgentDir) { $openAgents = @(Get-ChildItem -LiteralPath $openAgentDir -Filter "*.md" -File) }
+Check "Harness: .opencode/agent/ tem Specialists gerados (spawn nativo no OpenCode, nao so context-load)" ($openAgents.Count -ge 5) ("encontrados: " + $openAgents.Count)
+$openBadFm = @()
+foreach ($oa in $openAgents) {
+  $oaTxt = (ReadText $oa.FullName) -replace "`r`n", "`n"
+  if (($oaTxt -notmatch "(?s)^---\n.*?\n---\n") -or ($oaTxt -notmatch "(?m)^mode: subagent$") -or ($oaTxt -notmatch "(?m)^description: \S") -or ($oaTxt -notmatch "(?m)^permission:$")) {
+    $openBadFm += $oa.Name
+  }
+}
+Check "Harness: todo agente em .opencode/agent/ tem frontmatter valido do OpenCode (description + mode: subagent + permission)" ($openBadFm.Count -eq 0) ("invalido(s): " + ($openBadFm -join ", "))
+
+# O passo DELEGA portavel (OPP-42 Delta 2) escrito, e o nucleo apontando para a deteccao.
+$delegateSkill = Join-Path $root "skills\delegate\SKILL.md"
+Check "Harness: skills/delegate/SKILL.md existe (o passo DELEGA portavel, OPP-42 Delta 2)" (Test-Path -LiteralPath $delegateSkill)
+$orchTxt = ReadText (Join-Path $engine "orchestration.md")
+Check "Harness: engine/orchestration.md cita detect-harness (o modo se DETECTA, nao se escolhe a mao)" ($orchTxt -match 'detect-harness')
+$agentsMdTxt = ReadText (Join-Path $root "AGENTS.md")
+Check "Harness: AGENTS.md tem o passo 'Onde estou' no fast-boot" (($agentsMdTxt -match 'Onde estou') -and ($agentsMdTxt -match 'detect-harness'))
+
+# Empacotamento: sem os adapters no pacote, quem instala fora do Claude Code nao recebe a Alia.
+$pkgTxt = ReadText (Join-Path $root "scripts\package-release.ps1")
+$pkgShipM = [regex]::Match($pkgTxt, '(?m)^\$shipDirs\s*=\s*@\((.+)\)')
+$pkgShipLine = if ($pkgShipM.Success) { $pkgShipM.Groups[1].Value } else { "" }
+Check "Harness: ship list de package-release.ps1 inclui .opencode e .agents" (($pkgShipLine -match '"\.opencode"') -and ($pkgShipLine -match '"\.agents"')) ("shipDirs: " + $pkgShipLine)
+
+# MEDIDO 05/09/2026: rodar `opencode run` uma vez dentro da pasta faz o proprio OpenCode instalar o
+# SDK de plugin dele em .opencode/node_modules/ (+ package.json/package-lock.json/bun.lock). Como
+# .opencode agora SHIPA, sem exclusao o pacote publico levaria a arvore de dependencias da maquina
+# de quem empacotou. Este check trava a exclusao no lugar; e tambem confere que a oficina nao esta
+# carregando esse lixo agora.
+$pkgExcludesNodeModules = ($pkgTxt -match '\$xd\s*=\s*@\([^)]*"node_modules"') -and ($pkgTxt -match '"bun\.lock"')
+Check "Harness: package-release.ps1 exclui node_modules e locks do .opencode (o OpenCode instala isso sozinho ao rodar)" $pkgExcludesNodeModules "sem a exclusao, o pacote publico leva node_modules da maquina de quem empacotou"
+$openJunk = @()
+foreach ($j in @("node_modules","package.json","package-lock.json","bun.lock")) {
+  if (Test-Path -LiteralPath (Join-Path $root (".opencode\" + $j))) { $openJunk += $j }
+}
+Check "Harness: .opencode/ da oficina esta limpo (sem node_modules/locks deixados por execucao do OpenCode)" ($openJunk.Count -eq 0) ("encontrado: " + ($openJunk -join ", "))
+
+# CONSERTO ANTES DO EMPACOTE (05/09/2026, TASK-421): squad-bridge.ps1 -Mode opencode escrevia o
+# caminho de knowledge ABSOLUTO por desenho. Certo na maquina do operador, VAZAMENTO quando o alvo
+# e studio.example/ - a fixture publica que SHIPA: os 6 .opencode/agent/*.md saiam com a pasta de
+# usuario do Windows de quem gerou dentro, e o guard de path do package-release.ps1 reprovou o 3/3. O
+# gate do empacotador so pega isso DEPOIS de montar o pacote; este check pega na fonte, na oficina.
+# Cobre as tres superficies que viajam no pacote e sao GERADAS a partir de caminho de disco.
+$absPathPattern = '(?i)([A-Za-z]:\\|/Users/|\\Users\\)'
+$absLeakDirs = @("studio.example", ".opencode", ".agents")
+$absLeaks = New-Object System.Collections.Generic.List[string]
+$absScanned = 0
+foreach ($d in $absLeakDirs) {
+  $dPath = Join-Path $root $d
+  if (-not (Test-Path -LiteralPath $dPath)) { continue }
+  $files = @(Get-ChildItem -LiteralPath $dPath -Recurse -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -notmatch '\\node_modules\\' })
+  foreach ($f in $files) {
+    $absScanned++
+    $txt = ""
+    try { $txt = [System.IO.File]::ReadAllText($f.FullName) } catch { continue }
+    if ($txt -match $absPathPattern) { $absLeaks.Add($f.FullName.Substring($root.Length + 1)) }
+  }
+}
+Check ("Superficie publica: nenhum caminho absoluto de maquina em studio.example/, .opencode/ ou .agents/ (" + $absScanned + " arquivo(s) lidos)") ($absLeaks.Count -eq 0) ("vazou em: " + (($absLeaks | Select-Object -First 8) -join ", "))
 
 # --- Drift de versao: oficina vs release vs produto (M5, AVISO - nunca reprova) ---
 # So o CEO resolve drift entre as 3 versoes (publicar e decisao dele). Isto e AVISO, nao Check:

@@ -72,8 +72,14 @@ New-Item -ItemType Directory -Force -Path $out | Out-Null
 # doc oficial code.claude.com/docs/en/memory). Sem este arquivo no pacote, quem abre a pasta no
 # Claude Code recebe um agente generico - a Alia nunca aparece (bloqueador de release medido
 # 03/ago). CLAUDE.md so importa AGENTS.md (@AGENTS.md); a fonte da identidade continua unica.
-$shipDirs  = @("engine","skills","onboarding","optional-mcps","studio.example","benchmarks",".github",".claude")
-$shipFiles = @("AGENTS.md","CLAUDE.md","README.md","PRIMEIROS-PASSOS.md","CONTRIBUTING.md","CHANGELOG.md","VERSION","LICENSE","CREDITS.md","alia.config.json","iniciar-alia.bat","atualizar-alia.bat",".gitattributes",".gitignore")
+# .opencode/ e .agents/ ship de proposito (v1.65.0, portabilidade multi-harness): sao os adapters
+# que fazem a Alia acordar em OpenCode (/alia + sub-agente nativo em .opencode/agent/) e em Codex
+# ($alia via .agents/skills/). Sem eles no pacote, quem instala fora do Claude Code recebe so o
+# AGENTS.md em prosa - a palavra de acordar nao existe e a delegacao volta a depender de spawn que
+# aquele host nao tem. .claude/skills/ entra pelo robocopy /E de ".claude" (a exclusao continua
+# sendo so .claude/agents, que e material de CLIENTE e nunca viaja).
+$shipDirs  = @("engine","skills","onboarding","optional-mcps","studio.example","benchmarks",".github",".claude",".opencode",".agents")
+$shipFiles = @("AGENTS.md","CLAUDE.md","README.md","PRIMEIROS-PASSOS.md","CONTRIBUTING.md","CHANGELOG.md","VERSION","LICENSE","CREDITS.md","alia.config.json","opencode.json","iniciar-alia.bat","atualizar-alia.bat",".gitattributes",".gitignore")
 # Excluido de proposito (dado de operador/interno): studio, opportunities, rsi-backlog, memory, release, _retired, state.json, studio.yaml
 # "scripts" saiu de $shipDirs de proposito (auditoria de superficie, 10/08/2026): a pasta inteira
 # nao entra mais por robocopy /E cego. Tem tratamento proprio logo abaixo, por ALLOWLIST - ver o
@@ -88,9 +94,20 @@ foreach ($d in $shipDirs) {
     # especialista de CLIENTE (acme-saas-*, cliente-*, etc); o produto publico nunca pode carregar
     # isso, mesmo que a oficina algum dia acumule a pasta por engano (defesa em profundidade - a
     # lei de verdade e nunca gerar isso na oficina, mas o empacotador tambem nao confia cegamente).
-    $xd = @("_retired","_dev","_drafts","release")
+    # "node_modules" na lista de exclusao NAO e paranoia: MEDIDO 05/09/2026 - basta rodar
+    # `opencode run` uma vez dentro da pasta e o proprio OpenCode instala o SDK de plugin dele em
+    # .opencode/node_modules/ (mais package.json, package-lock.json, bun.lock). Como .opencode
+    # passou a shipar na v1.65.0, sem esta exclusao o pacote publico levaria junto uma arvore de
+    # dependencias da maquina de quem empacotou.
+    $xd = @("_retired","_dev","_drafts","release","node_modules")
     if ($d -eq ".claude") { $xd += (Join-Path $src "agents") }
-    robocopy $src (Join-Path $out $d) /E /XD $xd /NFL /NDL /NP /NS /NC /NJH /NJS | Out-Null
+    $xf = @()
+    if ($d -eq ".opencode") { $xf = @("package.json","package-lock.json","bun.lock") }
+    if ($xf.Count -gt 0) {
+      robocopy $src (Join-Path $out $d) /E /XD $xd /XF $xf /NFL /NDL /NP /NS /NC /NJH /NJS | Out-Null
+    } else {
+      robocopy $src (Join-Path $out $d) /E /XD $xd /NFL /NDL /NP /NS /NC /NJH /NJS | Out-Null
+    }
     Write-Host ("    [dir]  " + $d + "\ (sem _retired/_dev/_drafts)")
   }
 }
@@ -110,7 +127,7 @@ foreach ($d in $shipDirs) {
 #   - extract-secrets.ps1    : idem - opera em studio/state.json especifico da migracao do dono.
 $scriptsAllow = @(
   "_studio.ps1","budget-check.ps1","check-public-surface.ps1","client-state.ps1","cost-per-artifact.ps1","cost-sensor.ps1","ddd-drift.ps1",
-  "debt-scan.ps1","delegation-guard.ps1","doctor.ps1","evolution-scan.ps1","git-sync.ps1",
+  "debt-scan.ps1","delegation-guard.ps1","detect-harness.ps1","doctor.ps1","evolution-scan.ps1","git-sync.ps1",
   "graph-check.ps1","graph-usage-sensor.ps1","graph-usage.ps1","guard-core.ps1","health-check.ps1",
   "import-project.ps1","install.ps1","kb-index.ps1","law-ledger-check.ps1",
   "lineage-graph.ps1","make-manifest.ps1","memory-curator.ps1","mission-control.ps1",

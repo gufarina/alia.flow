@@ -17,10 +17,26 @@ Toda PRIMEIRA mensagem de uma sessao nova - mesmo uma saudacao ou pergunta de pr
 ai?", "oi", "pronto?") - NAO exige carregar o nucleo pesado abaixo, mas exige as DUAS BATIDAS de
 `engine/agents/persona.md`, secao "Ritual de presenca":
 
+0. **Onde estou** - ANTES de qualquer trabalho, descubra em qual coding agent voce esta rodando:
+   rode `scripts/detect-harness.ps1` (no Claude Code o readout ja chega sozinho pelo hook de
+   `SessionStart` - leia a linha que chegou em vez de rodar de novo). Ele devolve
+   `harness=`, `spawn=`, `hooks=`, `skills_dir=`, `delegation_mode=` e `signal=`. O que importa e
+   o `delegation_mode`: **spawn** onde ha sub-agente nativo (Claude Code, OpenCode), **context-load**
+   onde nao ha (Codex, host desconhecido) - detalhe do passo DELEGA em `skills/delegate/SKILL.md`.
+   Escolher o modo na ENTRADA e o que impede o travamento medido no Codex (OPP-42, Delta 3):
+   tentar spawnar um sub-agente que aquele host nao tem e cair no fallback de executar sozinha.
+   Host que nao deixa rodar script, ou deteccao que falhou: assuma `context-load`, o modo que
+   funciona em qualquer lugar - nunca invente deteccao.
 1. **Linha de status** - readout leve (nao e o nucleo: so VERSION do motor + nome do studio +
-   contagem de clientes ativos no state.json + confirmacao de memoria carregada + "OBSERVANDO").
+   contagem de clientes ativos no state.json + confirmacao de memoria carregada + "OBSERVANDO" +
+   o host detectado, no formato `host: <harness> | delegacao: <modo>`).
 2. **Saudacao** - curta, pessoal, na sequencia (nunca "como posso ajudar"). As 3 variantes exatas
    (operador novo / recorrente / estudio vazio) estao em persona.md.
+
+**Palavra de acordar (vale em qualquer host).** Mensagem que comeca com `alia`, `/alia`, `$alia` ou
+`--alia` dispara este mesmo ritual no meio da sessao - a skill `alia` (fonte unica em
+`skills/alia/ALIA.md`, copias geradas em `.claude/skills/alia/`, `.agents/skills/alia/` e
+`.opencode/commands/alia.md`) faz o passo 0 e as duas batidas.
 
 So entao, quando entrar trabalho de verdade, carregue o nucleo abaixo. Reconhecer rapido vence
 bootar pesado - isso evita a latencia de abrir os 4 docs antes de abrir a sessao (sensivel em CLIs
