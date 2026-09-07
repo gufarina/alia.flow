@@ -459,7 +459,11 @@ $docsDir = Join-Path $root "docs"
 if (Test-Path $docsDir) {
   $asciiScan += Get-ChildItem -Path $docsDir -Recurse -Include *.md -File -ErrorAction SilentlyContinue
 }
-$rootFiles = @("README.md","AGENTS.md","CLAUDE.md","CHANGELOG.md","VERSION","alia.config.json")
+# README.md NAO entra nesta lista (mandato do CEO, 07/09/2026): a lei ASCII protege ARQUIVO DE
+# MAQUINA, nunca o que a PESSOA LE, e o README publico e lido por gente. A protecao de encoding
+# que a lei dava ao README passa para o check dedicado logo abaixo (BOM, UTF-8 invalido, 0xFFFD,
+# travessao, emoji) - acento/cedilha/til passam a ser permitidos SO ali.
+$rootFiles = @("AGENTS.md","CLAUDE.md","CHANGELOG.md","VERSION","alia.config.json")
 foreach ($rf in $rootFiles) {
   $rp = Join-Path $root $rf
   if (Test-Path $rp) { $asciiScan += Get-Item -LiteralPath $rp -ErrorAction SilentlyContinue }
@@ -471,6 +475,32 @@ foreach ($file in $asciiScan) {
   if ($hit) { $nonAscii += $file.FullName }
 }
 Check ("Encoding: zero non-ASCII (lei do CEO) em " + $asciiScan.Count + " arquivos") ($nonAscii.Count -eq 0) ("infratores (" + $nonAscii.Count + "): " + ($nonAscii -join ", "))
+
+# --- Encoding do README.md (mandato do CEO, 07/09/2026): sem acento nao vale mais aqui, porque
+# README.md e lido por GENTE, nao e arquivo de maquina. O que a lei ASCII protegia de verdade era
+# encoding sao, entao o README ganha check proprio, dedicado, que reprova por: UTF-8 invalido, BOM,
+# caractere de substituicao (0xFFFD, sinal de acento ja corrompido), travessao em/en dash (o CEO
+# odeia travessao) e emoji. Acento/cedilha/til SAO PERMITIDOS aqui, e SO aqui.
+$readmeEncPath = Join-Path $root "README.md"
+$readmeProblemas = @()
+if (Test-Path -LiteralPath $readmeEncPath) {
+  $readmeBytes = [System.IO.File]::ReadAllBytes($readmeEncPath)
+  if (($readmeBytes.Count -ge 3) -and ($readmeBytes[0] -eq 0xEF) -and ($readmeBytes[1] -eq 0xBB) -and ($readmeBytes[2] -eq 0xBF)) {
+    $readmeProblemas += "BOM"
+  }
+  $strictUtf8 = New-Object System.Text.UTF8Encoding($false, $true)
+  $readmeValidUtf8 = $true
+  try { [void]$strictUtf8.GetString($readmeBytes) } catch { $readmeValidUtf8 = $false }
+  if (-not $readmeValidUtf8) { $readmeProblemas += "UTF-8 invalido" }
+  $readmeTxtEnc = ReadText $readmeEncPath
+  if ($readmeTxtEnc.IndexOf([char]0xFFFD) -ge 0) { $readmeProblemas += "0xFFFD (substituicao)" }
+  if ($readmeTxtEnc.IndexOf([char]0x2014) -ge 0) { $readmeProblemas += "em dash (U+2014)" }
+  if ($readmeTxtEnc.IndexOf([char]0x2013) -ge 0) { $readmeProblemas += "en dash (U+2013)" }
+  if (($readmeTxtEnc -match '[\uD800-\uDBFF][\uDC00-\uDFFF]') -or ($readmeTxtEnc -match '\p{So}')) { $readmeProblemas += "emoji" }
+} else {
+  $readmeProblemas += "arquivo ausente"
+}
+Check "Encoding: README.md (lido por gente) sem BOM, UTF-8 valido, sem 0xFFFD, sem travessao, sem emoji - acento permitido" ($readmeProblemas.Count -eq 0) ("problemas: " + ($readmeProblemas -join ", "))
 
 # --- Cadeado de versao: VERSION tem que bater com a ultima entrada do CHANGELOG (impede drift) ---
 $verFile = ""
@@ -2650,7 +2680,10 @@ $expectedFinalCount = $script:pass + $script:fail + $numChecksNesteBloco
 
 $readmePath = Join-Path $root "README.md"
 $readmeTxt = ReadText $readmePath
-$readmeM = [regex]::Match($readmeTxt, '\((\d+) na versao atual')
+# Regex casa as duas grafias, "versao" e "versao" com til - README.md agora pode ter acento
+# (mandato do CEO, 07/09/2026); til escapado como sequencia unicode do .NET regex (nao o
+# caractere literal) porque este proprio arquivo .ps1 segue a lei ASCII (ver Check acima).
+$readmeM = [regex]::Match($readmeTxt, '\((\d+) na vers(?:a|\u00e3)o atual')
 $readmeVal = -1
 if ($readmeM.Success) { $readmeVal = [int]$readmeM.Groups[1].Value }
 if ($claimsExists) {
@@ -2660,7 +2693,10 @@ if ($claimsExists) {
     # Causa raiz do fossil (161 -> 179 -> 185): o numero era escrito a mao, muda toda vez que um
     # check novo entra. Aqui, e so aqui (modo -UpdateReadme, chamado pelo empacotador), a linha e
     # REESCRITA pro total real deste contexto - nunca acontece num smoke normal sem o switch.
-    $newReadmeTxt = [regex]::Replace($readmeTxt, '\(\d+ na versao atual', "(" + $expectedFinalCount + " na versao atual")
+    # Preserva a grafia ("versao" ou com til) ja presente no README - so o numero muda, o texto
+    # ao redor (acentuado ou nao) nunca e reescrito por este sync.
+    $readmeEvaluator = [System.Text.RegularExpressions.MatchEvaluator]{ param($m) "(" + $expectedFinalCount + $m.Groups[1].Value }
+    $newReadmeTxt = [regex]::Replace($readmeTxt, '\(\d+( na vers(?:a|\u00e3)o atual)', $readmeEvaluator)
     [System.IO.File]::WriteAllText($readmePath, $newReadmeTxt, (New-Object System.Text.UTF8Encoding($false)))
     Write-Host ("[SYNC] Numero publico: README.md corrigido automaticamente de " + $readmeVal + " para " + $expectedFinalCount + " (-UpdateReadme)")
     $readmeVal = $expectedFinalCount

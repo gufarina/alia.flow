@@ -20,6 +20,43 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.66.0] - 2026-09-07
+
+README.md SAI DA LEI ASCII - mandato do CEO ("falta os acentos ta tudo errado"): a lei ASCII
+protege arquivo de maquina, nunca o que a pessoa LE, e o README publico e lido por gente.
+
+**O conflito.** O check "Encoding: zero non-ASCII (lei do CEO)" varria README.md junto com
+AGENTS.md/CLAUDE.md/CHANGELOG.md/VERSION/alia.config.json - todos arquivo de maquina de verdade.
+README.md nao e: e a vitrine que o operador LE no GitHub. Reprovar acento ali contradiz o mandato
+de 09/08/2026 (persona.md, "Como eu falo": conversa e entregavel humano usam portugues correto,
+com acento).
+
+**O conserto (estreitar, nao furar).**
+- `$rootFiles` (Encoding: zero non-ASCII) perde `README.md` - todo o resto continua ASCII puro.
+- Check NOVO dedicado a README.md repoe a protecao real que a lei ASCII dava: encoding sao, nao
+  ausencia de acento. Reprova por UTF-8 invalido, BOM, caractere de substituicao (0xFFFD, sinal
+  de acento ja corrompido), travessao em/en dash (U+2014/U+2013 - o CEO odeia travessao) e emoji.
+  Acento/cedilha/til passam a ser PERMITIDOS ali, e so ali. Provado pelo negativo nas 5 condicoes:
+  quebrado um a um (em dash, en dash, emoji, 0xFFFD, BOM, mais UTF-8 invalido via sequencia de
+  bytes malformada), cada quebra confirmada FAIL, desfeita, PASS de volta confirmado.
+- Regex do numero publico ("N na versao atual", usado no Check do README e no modo `-UpdateReadme`)
+  passa a casar as duas grafias, com e sem til - README acentuado nao quebra mais a trava calado.
+  O sync (`-UpdateReadme`) agora preserva a grafia existente (so o numero muda, nunca o texto ao
+  redor), provado com bytes UTF-8 do resultado.
+
+**Contador.** Oficina sobe de 297 para 298 checks (+1 check novo, README.md dedicado). GUARD-NUM
+em `docs/CLAIMS.md` atualizado para 298. `engine/governance/law-ledger.md` teve 6 ponteiros de
+linha corrigidos (+30 linhas antes deles) - `law-ledger-check.ps1` confirma LEDGER CONFERE COM O
+DISCO. Propagacao para o produto (`Projetos/alia-flow`, contexto sem CLAIMS.md, README shipado com
+acento de verdade) e responsabilidade do COURIER, apos o gate verde: rodar o smoke la e usar o
+total real reportado (PASS + FAIL) como o novo N de "N na versao atual" - nunca herdar o 298 da
+oficina (contextos diferentes, LEI 2 de client-truth.md).
+
+Smoke da oficina: 298 PASS, 0 FAIL, ALL GREEN.
+
+---
+
+
 ## [1.65.0] - 2026-09-05
 
 ONDE EU ESTOU - a Alia descobre em qual coding agent esta rodando e se adapta antes de trabalhar.
