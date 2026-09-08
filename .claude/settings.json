@@ -1,69 +1,79 @@
 {
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Read|Grep|Glob|Bash|PowerShell",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/graph-usage-sensor.ps1\"",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/delegation-guard.ps1\"",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "matcher": "startup",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/reflect-check.ps1\"",
-            "timeout": 30
-          },
-          {
-            "type": "command",
-            "command": "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/detect-harness.ps1\"",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/session-reflection.ps1\"",
-            "timeout": 120
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/response-guard.ps1\"",
-            "timeout": 15
-          }
-        ]
-      }
-    ]
-  }
+    "hooks":  {
+                  "PreToolUse":  [
+                                     {
+                                         "matcher":  "Read|Grep|Glob|Bash|PowerShell",
+                                         "hooks":  [
+                                                       {
+                                                           "type":  "command",
+                                                           "command":  "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/graph-usage-sensor.ps1\"",
+                                                           "timeout":  10
+                                                       }
+                                                   ]
+                                     },
+                                     {
+                                         "matcher":  "Edit|Write|NotebookEdit|Task",
+                                         "hooks":  [
+                                                       {
+                                                           "type":  "command",
+                                                           "command":  "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/delegation-gate.ps1\"",
+                                                           "timeout":  10
+                                                       }
+                                                   ]
+                                     }
+                                 ],
+                  "UserPromptSubmit":  [
+                                           {
+                                               "matcher":  "",
+                                               "hooks":  [
+                                                             {
+                                                                 "type":  "command",
+                                                                 "command":  "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/delegation-guard.ps1\"",
+                                                                 "timeout":  10
+                                                             }
+                                                         ]
+                                           }
+                                       ],
+                  "SessionStart":  [
+                                       {
+                                           "matcher":  "startup",
+                                           "hooks":  [
+                                                         {
+                                                             "type":  "command",
+                                                             "command":  "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/reflect-check.ps1\"",
+                                                             "timeout":  30
+                                                         },
+                                                         {
+                                                             "type":  "command",
+                                                             "command":  "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/detect-harness.ps1\"",
+                                                             "timeout":  10
+                                                         }
+                                                     ]
+                                       }
+                                   ],
+                  "SessionEnd":  [
+                                     {
+                                         "matcher":  "",
+                                         "hooks":  [
+                                                       {
+                                                           "type":  "command",
+                                                           "command":  "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/session-reflection.ps1\"",
+                                                           "timeout":  120
+                                                       }
+                                                   ]
+                                     }
+                                 ],
+                  "Stop":  [
+                               {
+                                   "matcher":  "",
+                                   "hooks":  [
+                                                 {
+                                                     "type":  "command",
+                                                     "command":  "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/response-guard.ps1\"",
+                                                     "timeout":  15
+                                                 }
+                                             ]
+                               }
+                           ]
+              }
 }

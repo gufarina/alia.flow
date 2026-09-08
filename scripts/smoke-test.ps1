@@ -335,6 +335,21 @@ Check "Paradas: mission-control.ps1 tem KPI/secao de paradas (StaleDays)" $mcSta
 $orchTxt = ReadText (Join-Path $engine "orchestration.md")
 Check "Paradas: LEI 'olhos da Alia' em orchestration.md (no bastidor)" (($orchTxt -match '(?i)olhos da Alia') -and ($orchTxt -match '(?i)bastidor'))
 
+# --- Docs-gate (LEI 5 de client-truth.md, 07/09/2026): doc curada acompanha o release ---
+# Prova pelo negativo com fixture: 3 Clients falsos - fresh (OK), stale (README mais velho que o
+# MINOR, CHANGELOG datado em 2999 pra nao depender de relogio) e ficha (client.md sem a versao).
+Write-Host ""
+Write-Host "-- Docs-gate: docs-check.ps1 (LEI 5, docs fecham a entrega) --"
+$dcScript = Join-Path $root "scripts\docs-check.ps1"
+$dcFixture = Join-Path $root "scripts\fixtures\docs-gate"
+Check "Docs-gate: docs-check.ps1 + fixture presentes" ((Test-Path $dcScript) -and (Test-Path $dcFixture))
+if ((Test-Path $dcScript) -and (Test-Path $dcFixture)) {
+  $dcOut = (& $dcScript -Path $dcFixture -ClientsDir "fixture-clients" 6>&1) -join "`n"; $dcExit = $LASTEXITCODE
+  $dcOk = ($dcExit -eq 1) -and ($dcOut -match '(?m)^\[OK\]\s+fresh') -and ($dcOut -match '(?m)^\[STALE\]\s+stale') -and ($dcOut -match '(?m)^\[FICHA\]\s+ficha')
+  Check "Docs-gate: docs-check.ps1 reprova ficha atrasada e doc podre e aprova doc fresca (fixture)" $dcOk ("exit: " + $dcExit)
+}
+Check "Docs-gate: package-release.ps1 embarca docs-check.ps1 (allowlist)" ((ReadText (Join-Path $root "scripts\package-release.ps1")) -match '"docs-check\.ps1"')
+
 # --- T13 LOOP DESIGNER ---
 Write-Host "-- T13 Loop Designer --"
 Check "Loop Designer: feature spec existe" (Test-Path (Join-Path $engine "features\loop-designer.md"))
@@ -1362,12 +1377,24 @@ function New-RgTranscript {
     # AssistantBlocks: array ORDENADO de tool_use (id, name, input); cada um vira 2 linhas (o
     # tool_use do assistant + o tool_result do "user" seguinte) - o mesmo par que response-guard.ps1
     # espera pra achar Write/Edit/Task no turno (ver Get-ToolUsesFromContent no script real).
-    param([string]$Path, [string]$UserText, [array]$AssistantBlocks, [string]$FinalText)
+    # $FirstTurn (default false, WARDEN 07/09/2026, REGRA 4 RITUAL): por padrao, esta fabrica
+    # representa um turno QUALQUER de uma sessao ja em andamento - prepende um exchange sintetico
+    # anterior (user + assistant so-texto, sem tool_use) pra que $assistantCountTotal do script
+    # real fique > 1 e o turno NAO seja tratado como o primeiro da sessao (a REGRA 4 e so pro
+    # 1o turno; sem este prelude, TODA fixture de turno unico pareceria "primeiro turno" por
+    # construcao, mesmo testando REGRA 1/2/3). So os cenarios que testam a REGRA 4 de proposito
+    # passam -FirstTurn pra pular o prelude.
+    param([string]$Path, [string]$UserText, [array]$AssistantBlocks, [string]$FinalText, [switch]$FirstTurn)
     $lines = New-Object System.Collections.Generic.List[string]
+    if (-not $FirstTurn) {
+        $lines.Add((@{ type = "user"; message = @{ role = "user"; content = @(@{ type = "text"; text = "turno anterior (fixture)" }) } } | ConvertTo-Json -Depth 8 -Compress))
+        $lines.Add((@{ type = "assistant"; message = @{ role = "assistant"; content = @(@{ type = "text"; text = "host: claude-code | delegacao: spawn`n`nresposta do turno anterior" }) } } | ConvertTo-Json -Depth 8 -Compress))
+    }
     $lines.Add((@{ type = "user"; message = @{ role = "user"; content = @(@{ type = "text"; text = $UserText }) } } | ConvertTo-Json -Depth 8 -Compress))
     foreach ($tu in $AssistantBlocks) {
         $lines.Add((@{ type = "assistant"; message = @{ role = "assistant"; content = @(@{ type = "tool_use"; id = $tu.id; name = $tu.name; input = $tu.input }) } } | ConvertTo-Json -Depth 8 -Compress))
-        $lines.Add((@{ type = "user"; message = @{ role = "user"; content = @(@{ type = "tool_result"; tool_use_id = $tu.id; content = @(@{ type = "text"; text = "ok" }) }) } } | ConvertTo-Json -Depth 8 -Compress))
+        $tuResult = if ($tu.result) { [string]$tu.result } else { "ok" }
+        $lines.Add((@{ type = "user"; message = @{ role = "user"; content = @(@{ type = "tool_result"; tool_use_id = $tu.id; content = @(@{ type = "text"; text = $tuResult }) }) } } | ConvertTo-Json -Depth 8 -Compress))
     }
     $lines.Add((@{ type = "assistant"; message = @{ role = "assistant"; content = @(@{ type = "text"; text = $FinalText }) } } | ConvertTo-Json -Depth 8 -Compress))
     [System.IO.File]::WriteAllText($Path, ($lines -join "`n") + "`n", $rgUtf8)
@@ -1520,6 +1547,149 @@ $rgLog10Txt = if (Test-Path -LiteralPath $rgLog2) { ReadText $rgLog2 } else { ""
 Check "Response Guard (REGRA 3 BUDGET): delegacao SEM linha canonica 'Budget: tools=N' NAO acusa (teto em prosa e ilegivel por maquina, de proposito) e fica SEM-BUDGET-DECLARADO no log" (($rgOut10 -notmatch '"decision":"block"') -and ($rgLog10Txt -match '"budget_sem_declarar":1')) ("saida: " + $rgOut10 + " | log: " + $rgLog10Txt)
 
 if (Test-Path -LiteralPath $rgRoot2) { Remove-Item -Recurse -Force -LiteralPath $rgRoot2 -ErrorAction SilentlyContinue }
+
+# --- Guarda no ato (DELEGA + RITUAL) - WARDEN, TASK 07/09/2026, incidente sessao 4f2b4cf2 ---
+# 3 mecanismos: (i) REGRA 1 do response-guard.ps1 agora confere ORDEM (escrita antes da
+# delegacao continua violacao mesmo com Task depois no mesmo turno); (ii) NOVA REGRA 4 (RITUAL)
+# do response-guard.ps1 (primeira resposta da sessao sem a linha de status bloqueia); (iii) o
+# NOVO scripts/delegation-gate.ps1 (hook PreToolUse, bloqueia a escrita ANTES de acontecer, nao
+# so no Stop). Cada cenario e prova pelo negativo (quebra, confere o FAIL, desfaz, confere o PASS).
+Write-Host ""
+Write-Host "-- Guarda no ato: REGRA 1 (ordem) + REGRA 4 (RITUAL) + delegation-gate.ps1 (prova pelo negativo) --"
+$rgRoot3 = Join-Path ([System.IO.Path]::GetTempPath()) ("rg-ato-fixture-" + $PID)
+if (Test-Path -LiteralPath $rgRoot3) { Remove-Item -Recurse -Force -LiteralPath $rgRoot3 -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Force -Path $rgRoot3 | Out-Null
+$rgLog3 = Join-Path $rgRoot3 "log.jsonl"
+$rgCfg3 = Join-Path $rgRoot3 "response-guard.yaml"
+[System.IO.File]::WriteAllText($rgCfg3, "mode: bloqueio`nmin_claims: 3`nmin_chars_informativo: 1500`n", $rgUtf8)
+function Invoke-ResponseGuard3 {
+    param([string]$TranscriptPath, [string]$SessionId)
+    $payload = (@{ session_id = $SessionId; transcript_path = $TranscriptPath.Replace('\', '/'); stop_hook_active = $false } | ConvertTo-Json -Compress)
+    if (Test-Path -LiteralPath $rgLog3) { Remove-Item -LiteralPath $rgLog3 -Force -ErrorAction SilentlyContinue }
+    return ($payload | & powershell -ExecutionPolicy Bypass -File $rgScript -LogPath $rgLog3 -ConfigPath $rgCfg3 2>&1) -join "`n"
+}
+
+# (i-negativo) Write em engine/ ANTES da chamada Task no mesmo turno -> BLOQUEIA (delegacao tardia
+# nao lava escrita anterior).
+$rgOrdemPath = Join-Path $rgRoot3 "engine\ordem.md"
+$rgT11 = Join-Path $rgRoot3 "t11.jsonl"
+New-RgTranscript -Path $rgT11 -UserText "mexa no motor" `
+    -AssistantBlocks @(
+        @{ id = "o1"; name = "Write"; input = @{ file_path = $rgOrdemPath; content = "escrito antes da delegacao" } },
+        @{ id = "o2"; name = "Task"; input = @{ subagent_type = "warden"; prompt = "so depois" } }
+    ) -FinalText "Pronto."
+$rgOut11 = Invoke-ResponseGuard3 -TranscriptPath $rgT11 -SessionId "RG-T11"
+Check "Response Guard (REGRA 1, ordem, negativo): Write em engine/ ANTES do Task no mesmo turno BLOQUEIA mesmo com delegacao depois" (($rgOut11 -match '"decision":"block"') -and ($rgOut11 -match 'falta delegacao')) ("saida: " + $rgOut11)
+
+# (i-positivo, desfaz o cenario acima): mesma escrita, Task ANTES do Write -> PASSA.
+$rgT12 = Join-Path $rgRoot3 "t12.jsonl"
+New-RgTranscript -Path $rgT12 -UserText "mexa no motor" `
+    -AssistantBlocks @(
+        @{ id = "o1"; name = "Task"; input = @{ subagent_type = "warden"; prompt = "primeiro delega" } },
+        @{ id = "o2"; name = "Write"; input = @{ file_path = $rgOrdemPath; content = "escrito depois da delegacao" } }
+    ) -FinalText "Pronto."
+$rgOut12 = Invoke-ResponseGuard3 -TranscriptPath $rgT12 -SessionId "RG-T12"
+Check "Response Guard (REGRA 1, ordem, positivo): Task ANTES do Write no mesmo turno PASSA" ($rgOut12 -notmatch '"decision":"block"') ("saida: " + $rgOut12)
+
+# (ii-negativo) transcript de 1 SO turno (a resposta atual e a 1a assistant da sessao) sem a linha
+# de status -> BLOQUEIA (REGRA 4, RITUAL).
+$rgT13 = Join-Path $rgRoot3 "t13.jsonl"
+New-RgTranscript -Path $rgT13 -UserText "oi" -AssistantBlocks @() -FinalText "Oi! Tudo certo por aqui, vamos comecar." -FirstTurn
+$rgOut13 = Invoke-ResponseGuard3 -TranscriptPath $rgT13 -SessionId "RG-T13"
+Check "Response Guard (REGRA 4 RITUAL, negativo): 1o turno da sessao sem linha de status BLOQUEIA" (($rgOut13 -match '"decision":"block"') -and ($rgOut13 -match '\[RITUAL\]')) ("saida: " + $rgOut13)
+
+# (ii-positivo, desfaz o cenario acima): mesmo 1o turno, COM a linha de status -> PASSA.
+$rgT14 = Join-Path $rgRoot3 "t14.jsonl"
+New-RgTranscript -Path $rgT14 -UserText "oi" -AssistantBlocks @() -FinalText "host: claude-code | delegacao: spawn`n`nOi! Tudo certo por aqui, vamos comecar." -FirstTurn
+$rgOut14 = Invoke-ResponseGuard3 -TranscriptPath $rgT14 -SessionId "RG-T14"
+Check "Response Guard (REGRA 4 RITUAL, positivo): mesmo 1o turno COM linha de status PASSA" ($rgOut14 -notmatch '"decision":"block"') ("saida: " + $rgOut14)
+
+# (iv-negativo) Detector de delegacao vazia (07/09/2026, aviso, nunca bloqueia): Task com
+# tool_result curto e sem referencia a arquivo -> loga "delegacao vazia".
+$rgT15 = Join-Path $rgRoot3 "t15.jsonl"
+New-RgTranscript -Path $rgT15 -UserText "delegue isso" `
+    -AssistantBlocks @(@{ id = "v1"; name = "Task"; input = @{ subagent_type = "warden"; prompt = "faca" }; result = "feito" }) `
+    -FinalText "host: claude-code | delegacao: spawn`n`nPronto."
+$rgOut15 = Invoke-ResponseGuard3 -TranscriptPath $rgT15 -SessionId "RG-T15"
+$rgLog15 = Get-Content -LiteralPath $rgLog3 -Raw | ConvertFrom-Json
+Check "Response Guard (delegacao vazia, negativo): Task com result curto/sem arquivo loga delegacao_vazia=true, NUNCA bloqueia" (($rgOut15 -notmatch '"decision":"block"') -and ($rgLog15.delegacao_vazia -eq $true)) ("saida: " + $rgOut15 + " | log: " + ($rgLog15 | ConvertTo-Json -Compress))
+
+# (iv-positivo, desfaz o cenario acima): mesmo Task, result longo com caminho de arquivo -> sem aviso.
+$rgT16 = Join-Path $rgRoot3 "t16.jsonl"
+$rgLongResult = "Artifact entregue em clients/brax/artifacts/relatorio-completo-com-detalhes.md apos revisar todo o escopo pedido, mapear cada criterio do Quality Gate ponto a ponto e confirmar que nao ha pendencia nenhuma restante para o fechamento desta Task."
+New-RgTranscript -Path $rgT16 -UserText "delegue isso" `
+    -AssistantBlocks @(@{ id = "v2"; name = "Task"; input = @{ subagent_type = "warden"; prompt = "faca" }; result = $rgLongResult }) `
+    -FinalText "host: claude-code | delegacao: spawn`n`nPronto."
+$rgOut16 = Invoke-ResponseGuard3 -TranscriptPath $rgT16 -SessionId "RG-T16"
+$rgLog16 = Get-Content -LiteralPath $rgLog3 -Raw | ConvertFrom-Json
+Check "Response Guard (delegacao vazia, positivo): Task com result longo e caminho de arquivo NAO loga delegacao_vazia" ($rgLog16.delegacao_vazia -eq $false) ("log: " + ($rgLog16 | ConvertTo-Json -Compress))
+
+if (Test-Path -LiteralPath $rgRoot3) { Remove-Item -Recurse -Force -LiteralPath $rgRoot3 -ErrorAction SilentlyContinue }
+
+# (iii) delegation-gate.ps1 - hook PreToolUse novo, bloqueia no ATO (nao so no Stop).
+$dgScript = Join-Path $root "scripts\delegation-gate.ps1"
+Check "delegation-gate.ps1 existe" (Test-Path -LiteralPath $dgScript)
+
+$dgRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dg-fixture-" + $PID)
+if (Test-Path -LiteralPath $dgRoot) { Remove-Item -Recurse -Force -LiteralPath $dgRoot -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Force -Path $dgRoot | Out-Null
+$dgMarker = Join-Path $dgRoot "marker.jsonl"
+$dgState = Join-Path $dgRoot "state.json"
+function Invoke-DelegationGate {
+    param([string]$Payload, [switch]$Off)
+    $offFile = Join-Path $root ".claude\delegation-gate.off"
+    if ($Off) { [System.IO.File]::WriteAllText($offFile, "off", $rgUtf8) }
+    elseif (Test-Path -LiteralPath $offFile) { Remove-Item -LiteralPath $offFile -Force -ErrorAction SilentlyContinue }
+    try {
+        return ($Payload | & powershell -ExecutionPolicy Bypass -File $dgScript -Root $root -MarkerPath $dgMarker -StateFile $dgState 2>&1) -join "`n"
+    } finally {
+        if (Test-Path -LiteralPath $offFile) { Remove-Item -LiteralPath $offFile -Force -ErrorAction SilentlyContinue }
+    }
+}
+
+# (iii-a, negativo) Write em engine/x.md pelo loop principal, sessao sem Task nenhum -> deny.
+if (Test-Path -LiteralPath $dgMarker) { Remove-Item -LiteralPath $dgMarker -Force -ErrorAction SilentlyContinue }
+$dgPayloadA = (@{ session_id = "DG-A"; transcript_path = ($dgRoot.Replace('\', '/') + "/DG-A.jsonl"); tool_name = "Write"; tool_input = @{ file_path = "engine/x.md" } } | ConvertTo-Json -Compress)
+$dgOutA = Invoke-DelegationGate -Payload $dgPayloadA
+Check "delegation-gate.ps1 (negativo): Write em engine/ pelo loop principal, sem Task na sessao, BLOQUEIA (permissionDecision:deny)" (($dgOutA -match '"permissionDecision":"deny"') -and ($dgOutA -match '\[DELEGA\]')) ("saida: " + $dgOutA)
+
+# (iii-b, positivo, desfaz o (a)): mesmo payload, mas transcript_path aponta pra
+# .../subagents/... (layout de sub-agente) -> allow (sem JSON no stdout).
+$dgPayloadB = (@{ session_id = "DG-A"; transcript_path = ($dgRoot.Replace('\', '/') + "/DG-A/subagents/agent-1.jsonl"); tool_name = "Write"; tool_input = @{ file_path = "engine/x.md" } } | ConvertTo-Json -Compress)
+$dgOutB = Invoke-DelegationGate -Payload $dgPayloadB
+Check "delegation-gate.ps1 (positivo): mesmo payload com transcript_path em .../subagents/... LIBERA (sem deny)" ([string]::IsNullOrWhiteSpace($dgOutB)) ("saida: " + $dgOutB)
+
+# (iii-c) Write em memory/ -> sempre libera (exclusao legitima, nunca e execucao de dominio).
+$dgPayloadC = (@{ session_id = "DG-C"; transcript_path = ($dgRoot.Replace('\', '/') + "/DG-C.jsonl"); tool_name = "Write"; tool_input = @{ file_path = "memory/nota.md" } } | ConvertTo-Json -Compress)
+$dgOutC = Invoke-DelegationGate -Payload $dgPayloadC
+Check "delegation-gate.ps1: Write em memory/ LIBERA sempre (exclusao legitima)" ([string]::IsNullOrWhiteSpace($dgOutC)) ("saida: " + $dgOutC)
+
+# (iii-d) com .claude/delegation-gate.off presente -> LIBERA mesmo o cenario (a).
+$dgOutD = Invoke-DelegationGate -Payload $dgPayloadA -Off
+Check "delegation-gate.ps1: interruptor .claude/delegation-gate.off desliga o bloqueio (mesmo cenario do (a) libera)" ([string]::IsNullOrWhiteSpace($dgOutD)) ("saida: " + $dgOutD)
+
+# (iii-e, desfaz o (a) por delegacao real): Task registrado na MESMA sessao antes da escrita -> libera.
+if (Test-Path -LiteralPath $dgMarker) { Remove-Item -LiteralPath $dgMarker -Force -ErrorAction SilentlyContinue }
+$dgPayloadTask = (@{ session_id = "DG-E"; transcript_path = ($dgRoot.Replace('\', '/') + "/DG-E.jsonl"); tool_name = "Task"; tool_input = @{ subagent_type = "warden" } } | ConvertTo-Json -Compress)
+Invoke-DelegationGate -Payload $dgPayloadTask | Out-Null
+$dgPayloadE = (@{ session_id = "DG-E"; transcript_path = ($dgRoot.Replace('\', '/') + "/DG-E.jsonl"); tool_name = "Write"; tool_input = @{ file_path = "engine/x.md" } } | ConvertTo-Json -Compress)
+$dgOutE = Invoke-DelegationGate -Payload $dgPayloadE
+Check "delegation-gate.ps1 (desfaz o (a)): Task registrado antes na mesma sessao LIBERA a escrita de dominio seguinte" ([string]::IsNullOrWhiteSpace($dgOutE)) ("saida: " + $dgOutE)
+
+if (Test-Path -LiteralPath $dgRoot) { Remove-Item -Recurse -Force -LiteralPath $dgRoot -ErrorAction SilentlyContinue }
+
+$dgSettingsWired = $false
+if (Test-Path -LiteralPath $settingsPath) {
+  try {
+    $settingsJson2 = (ReadText $settingsPath) | ConvertFrom-Json
+    foreach ($ptEntry in @($settingsJson2.hooks.PreToolUse)) {
+      foreach ($h2 in @($ptEntry.hooks)) {
+        if ("$($h2.command)" -match 'delegation-gate\.ps1') { $dgSettingsWired = $true }
+      }
+    }
+  } catch { }
+}
+Check "delegation-gate.ps1: hook PreToolUse LIGADO em .claude/settings.json (nao so projetado)" $dgSettingsWired "projetado-mas-desligado reprova - o check tem que provar que esta LIGADO no settings, nao so que o arquivo existe"
 
 # --- Artifact Ladder: o pacote da escada de frugalidade de SAIDA (WEAVER, cluster OPP-79/1.54.0) --
 # Furo pego pelo Gate: 8 arquivos entraram na oficina (artifact-ladder.md, engineering.md, tools.md,

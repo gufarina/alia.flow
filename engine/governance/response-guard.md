@@ -18,7 +18,10 @@ operador. Uma auditoria mediu a lacuna: a lei foi violada em menos de 24h com o 
 ja ligado. Lembrete no boot nao e enforcement - o freio precisa estar no pedal, nao so no manual.
 `response-guard.ps1` (hook de Stop) e esse pedal: roda a cada turno, sobre o que de fato aconteceu.
 
-## As 2 regras (deterministicas, sem LLM, sem rede)
+## As regras (deterministicas, sem LLM, sem rede)
+
+Nasceu com 2 (DELEGA/GROUNDING); ganhou REGRA 3 BUDGET (TASK-286, law-ledger L41 clausula c, so
+documentada no cabecalho do script + law-ledger.md) e REGRA 4 RITUAL (07/09/2026, abaixo).
 
 1. **DELEGA** - se o turno escreveu/editou arquivo de dominio (`clients/`, `engine/`, `docs/`,
    `skills/`, `scripts/`, `AGENTS.md`, `CLAUDE.md`, raiz - fora de
@@ -31,6 +34,12 @@ ja ligado. Lembrete no boot nao e enforcement - o freio precisa estar no pedal, 
    squad GERADO pra aquele `<id>` (`.claude/agents/<id>-*.md`), delegar a um agente generico deixa
    de bastar - precisa ser um Specialist daquele Client (`subagent_type` com prefixo `<id>-`).
    Client sem squad gerado segue no comportamento antigo. A VALVULA desarma esta extensao tambem.
+   CONSERTO (07/09/2026, incidente sessao 4f2b4cf2, law-ledger L45/L46): ate aqui a regra so
+   conferia SE existiu Agent/Task em QUALQUER ponto do turno - uma delegacao no FIM do turno
+   "lavava" toda escrita de dominio que ja tinha acontecido ANTES dela. Agora a ORDEM importa:
+   so conta como delegacao valida a que aconteceu ANTES da escrita que ela deveria cobrir. Escrita
+   de dominio com indice MENOR que a primeira chamada Agent/Task do turno (ou sem delegacao
+   nenhuma) e violacao, mesmo que uma delegacao apareca depois no mesmo turno.
 2. **GROUNDING** - se o texto da resposta final tem 3 ou mais afirmacoes de peso (referencia a
    arquivo por extensao, ou padrao `arquivo:linha`) e nenhum rotulo de proveniencia (`[MEDIDO`,
    `[INFERIDO`, `[LIDO`) aparece em algum ponto do texto, e violacao. Espelha o criterio 6
@@ -41,6 +50,15 @@ ja ligado. Lembrete no boot nao e enforcement - o freio precisa estar no pedal, 
    heuristica roda tambem sobre todo `.html` escrito em `clients/*/artifacts/` - claim tecnico sem
    rotulo no proprio html e violacao. Calibrado pra nao acusar pagina de marketing legitima: o
    gatilho e a PRESENCA do claim tecnico, nao a ausencia do rotulo em qualquer pagina.
+4. **RITUAL** (07/09/2026, incidente sessao 4f2b4cf2, law-ledger L46) - so dispara quando o turno
+   avaliado e o PRIMEIRO turno assistant da SESSAO INTEIRA (conta quantas entradas `type='assistant'`
+   existem em todo o transcript lido pelo hook, nao so na janela do turno atual; <=1 = primeiro
+   turno). Nesse caso, o texto final precisa casar a linha de status do "Ritual de presenca"
+   (AGENTS.md/persona.md): `host:\s*\S+\s*\|\s*delegac[a~]o:\s*\S+` (aceita "delegacao" com ou
+   sem til). Ausente -> bloqueio com motivo `[RITUAL] primeira resposta sem a linha de status
+   (persona.md, Ritual de presenca)`. Limitacao aceita: so cobre o PRIMEIRO turno da sessao
+   dentro da janela de ate 2000 linhas que o hook le - nao re-audita a saudacao de `/alia` no meio
+   de uma sessao ja em andamento (isso e prosa/skill, nao maquina).
 
 ## Os 2 modos e a rampa
 
@@ -101,3 +119,37 @@ aceito de proposito: o guard e barato e deterministico porque ele so mede a FORM
 CONTEUDO - julgar conteudo continua sendo trabalho de julgamento (Gate, revisao humana), nao de
 regex. NUNCA trave nem derrube a sessao do operador: qualquer erro no guard e exit 0 silencioso -
 essa regra dura vale mais que pegar mais um caso.
+
+## Detector de delegacao vazia (07/09/2026, estudo oh-my-openagent)
+
+Modo AVISO SEMPRE, nunca bloqueia: toda chamada `Agent`/`Task` do turno cujo `tool_result` tem
+menos de 200 caracteres OU nenhuma referencia a arquivo (mesma heuristica de extensao/`arquivo:linha`
+da REGRA 2) grava `delegacao_vazia:true` e a lista em `delegacoes_vazias` no
+`response-guard-log.jsonl` - sinal de sub-agente que "respondeu" sem entregar nada concreto, para
+quem le o log decidir se cobra de volta. Nao vira nova REGRA numerada porque nunca bloqueia.
+
+## Mapa de pontos de enforcement (LATTICE, 07/09/2026)
+
+Toda LEI do law-ledger.md age em UM destes 4 pontos - nomear o ponto e o que impede confundir
+"lembrete" com "bloqueio":
+
+- PROMPT (UserPromptSubmit/SessionStart) - lembra a lei ANTES do pedido, nunca bloqueia.
+  Ex: delegation-guard.ps1.
+- ATO (PreToolUse, ou gate dentro do proprio script de publicacao) - bloqueia ANTES do ato
+  terminar. Ex: graph-usage-sensor.ps1 (PreToolUse real); package-release.ps1 passo 0/3
+  (gate de publicar). So 4 leis do motor tem ATO hoje: L27, L34, L42, L45 (delegation-gate.ps1,
+  ATO desde 07/09/2026).
+- FIM (hook de Stop, response-guard.ps1) - confere DEPOIS que o turno ja aconteceu. Este
+  arquivo documenta as REGRAS 1/2/3 (L14, L33, L39, L41).
+- SMOKE - so roda quando smoke-test*.ps1/law-ledger-check.ps1 e chamado a mao; nunca ativo
+  numa sessao viva. E onde vive a maioria das leis do motor hoje.
+
+Medido em 07/09/2026 (LATTICE): das 40 leis ativas, 37 so eram cobradas DEPOIS do estrago
+(FIM/SMOKE/NENHUM) e 3 ANTES (ATO). Furo conhecido: PreToolUse so cobria
+Read|Grep|Glob|Bash|PowerShell (.claude/settings.json) - Write/Edit nao tinham guarda no ATO.
+FECHADO em 07/09/2026 por `scripts/delegation-gate.ps1` (L45): Write/Edit/NotebookEdit de dominio
+agora tem guarda no ATO tambem, com a granularidade de SESSAO declarada (mais fraca que a REGRA 1
+do response-guard.ps1, que isola o TURNO - ver L45 no law-ledger.md para a limitacao exata).
+
+Regra pra lei nova: ao registrar uma LEI no law-ledger.md, declare tambem o PONTO (PROMPT/
+ATO/FIM/SMOKE/NENHUM) na mesma linha - lei sem ponto e lei sem prova de quando ela age.

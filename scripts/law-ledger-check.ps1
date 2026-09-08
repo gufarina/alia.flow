@@ -322,6 +322,11 @@ if (Test-Path -LiteralPath $clientTruthPath) {
     $l08Cabecalho = $ctTxt.Contains("LEI 4 - Reuse-first")
     $l08Mandato = $ctTxt.Contains("INVENTARIAR")
     Check "L08 formato: client-truth.md declara LEI 4 (reuse-first) com o mandato INVENTARIAR antes de criar" ($l08Cabecalho -and $l08Mandato)
+
+    # L43 - Docs fecham a entrega: cabecalho da LEI 5 + o portao nomeado (docs-check.ps1).
+    $l43Cabecalho = $ctTxt.Contains("LEI 5 - Docs fecham a entrega")
+    $l43Portao = $ctTxt.Contains("scripts/docs-check.ps1")
+    Check "L43 formato: client-truth.md declara LEI 5 (docs fecham a entrega) apontando docs-check.ps1" ($l43Cabecalho -and $l43Portao)
 } else {
     Bad ("client-truth.md nao encontrado em " + $clientTruthPath + " - L05/L07/L08 sem como conferir formato")
 }
@@ -369,6 +374,8 @@ $l31AntiPadrao = "Anti-padrao (nunca faco):"
 if (Test-Path -LiteralPath $personaRootPath) {
     $personaRootTxt = [System.IO.File]::ReadAllText($personaRootPath)
     Check "L31 formato: persona.md (raiz) declara o marcador de LEI da resposta por decisao + o anti-padrao" ($personaRootTxt.Contains($l31Marcador) -and $personaRootTxt.Contains($l31AntiPadrao))
+    # L44 - economia de token (mandato do CEO, 07/09/2026): marcador + anti-padrao, mesmo molde de L31.
+    Check "L44 formato: persona.md (raiz) declara o marcador de LEI da economia de token + o anti-padrao" ($personaRootTxt.Contains("> LEI: trabalho como dev senior preguicoso") -and $personaRootTxt.Contains("disparar varias rodadas curtas do mesmo processo"))
 } else {
     Bad ("persona.md (raiz) nao encontrado em " + $personaRootPath + " - L31 sem como conferir formato")
 }

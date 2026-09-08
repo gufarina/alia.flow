@@ -361,10 +361,24 @@ try {
   $excludeSubstrings = @('memory/', '_proposals/', '_backups/', 'scratchpad', 'state.json', 'artifacts/coordination/')
   $sinalDominio = $false
   $houveDelegacao = $false
-  foreach ($tu in $allToolUses) {
+  # CONSERTO (07/09/2026, incidente sessao 4f2b4cf2, causa-raiz R2 do 5 Whys): ate aqui a REGRA 1
+  # so conferia SE existiu QUALQUER Agent/Task em algum ponto do turno - uma delegacao no FIM do
+  # turno "lavava" toda escrita de dominio que ja tinha acontecido ANTES dela. Agora a ORDEM
+  # importa: so conta como delegacao valida a que aconteceu ANTES da escrita de dominio que ela
+  # cobre. $primeiraDelegacaoIdx marca a posicao (na ordem do transcript) da primeira chamada
+  # Agent/Task do turno; toda escrita de dominio com indice MENOR que essa (ou sem delegacao
+  # nenhuma no turno) conta como sinal_dominio.
+  $primeiraDelegacaoIdx = -1
+  for ($i = 0; $i -lt $allToolUses.Count; $i++) {
+    $tname = $null
+    try { $tname = [string]$allToolUses[$i].name } catch { }
+    if ($tname -eq 'Agent' -or $tname -eq 'Task') { $primeiraDelegacaoIdx = $i; break }
+  }
+  $houveDelegacao = ($primeiraDelegacaoIdx -ge 0)
+  for ($i = 0; $i -lt $allToolUses.Count; $i++) {
+    $tu = $allToolUses[$i]
     $tname = $null
     try { $tname = [string]$tu.name } catch { }
-    if ($tname -eq 'Agent' -or $tname -eq 'Task') { $houveDelegacao = $true }
     if ($tname -eq 'Write' -or $tname -eq 'Edit' -or $tname -eq 'NotebookEdit') {
       $fp = $null
       try { $fp = [string]$tu.input.file_path } catch { }
@@ -375,7 +389,8 @@ try {
         $norm = $fp.Replace('\', '/').ToLowerInvariant()
         $excluded = $false
         foreach ($ex in $excludeSubstrings) { if ($norm.Contains($ex)) { $excluded = $true; break } }
-        if (-not $excluded) { $sinalDominio = $true }
+        $escritaAntesDaDelegacao = ($primeiraDelegacaoIdx -lt 0) -or ($i -lt $primeiraDelegacaoIdx)
+        if ((-not $excluded) -and $escritaAntesDaDelegacao) { $sinalDominio = $true }
       }
     }
   }
@@ -426,7 +441,10 @@ try {
   }
   $valvulaAberta = $ordemDetectada -and $ordemRegistrada
 
-  $violacaoDelega = $sinalDominio -and (-not $houveDelegacao) -and (-not $valvulaAberta)
+  # sinal_dominio ja incorpora a ordem (escrita ANTES da primeira delegacao, ou sem delegacao
+  # nenhuma) - nao precisa mais conferir "-not $houveDelegacao" aqui (delegacao TARDIA nao zera
+  # violacao que ja aconteceu antes dela).
+  $violacaoDelega = $sinalDominio -and (-not $valvulaAberta)
 
   # (4c) REGRA 1 ESTENDIDA - ESPECIALISTA OBRIGATORIO (decisao de governanca 11/08/2026, revisao
   # adversarial LATTICE/WEAVER/CANON; lei em engine/orchestration.md, law-ledger L33).
@@ -597,6 +615,48 @@ try {
 
   $charsResposta = $lastAssistantText.Length
 
+  # (5c) REGRA 4 - RITUAL (07/09/2026, incidente sessao 4f2b4cf2, causa-raiz R3 do 5 Whys): o
+  # "ritual de presenca" (linha de status + saudacao, AGENTS.md/persona.md) so vivia em prosa -
+  # nenhum guarda media o texto da primeira resposta. So dispara quando o turno avaliado E o
+  # PRIMEIRO turno assistant da SESSAO inteira (nao so da janela lida): conta quantas entradas
+  # type='assistant' existem em TODO o transcript lido ($objects, nao so $turnLines) - se for
+  # 0 ou 1 (a propria resposta atual), este e o primeiro turno.
+  $assistantCountTotal = 0
+  foreach ($o in $objects) {
+    $ot = $null
+    try { $ot = $o.type } catch { }
+    if ($ot -eq 'assistant') { $assistantCountTotal++ }
+  }
+  $primeiroTurno = ($assistantCountTotal -le 1)
+  # regex da linha de status (AGENTS.md, "Ritual de presenca"): host: <harness> | delegacao: <modo>
+  # - acento via $aTil (ja declarado acima, reuse) pra casar "delegacao" ou "delegacao" com til.
+  $statusLineRegex = 'host:\s*\S+\s*\|\s*delegac[a' + $aTil + ']o:\s*\S+'
+  $temLinhaStatus = [bool]([regex]::IsMatch($lastAssistantText, $statusLineRegex, 'IgnoreCase'))
+  $violacaoRitual = $primeiroTurno -and (-not $temLinhaStatus) -and ($lastAssistantIdx -ge 0)
+
+  # (5d) DETECTOR DE DELEGACAO VAZIA (07/09/2026, estudo oh-my-openagent "empty-task-response-
+  # detector"). Modo AVISO SEMPRE - nunca bloqueia, so grava no mesmo log. Toda chamada Agent/Task
+  # do turno cujo tool_result tem menos de 200 caracteres OU nenhuma referencia a arquivo (mesma
+  # heuristica de extensao/arquivo:linha da REGRA 2) e "delegacao vazia" - sinal de sub-agente que
+  # nao entregou nada concreto.
+  $delegacoesVazias = New-Object System.Collections.Generic.List[string]
+  foreach ($tu in $allToolUses) {
+    $tname = $null
+    try { $tname = [string]$tu.name } catch { }
+    if ($tname -ne 'Agent' -and $tname -ne 'Task') { continue }
+    $tuid = $null
+    try { $tuid = [string]$tu.id } catch { }
+    foreach ($tr in $allToolResults) {
+      if ($tr.tool_use_id -ne $tuid) { continue }
+      $rtext = [string]$tr.text
+      $temArquivo = [regex]::IsMatch($rtext, '\.(ps1|md|ya?ml|json|html|js|ts|py)\b|[\w\-./\\]+:\d+', 'IgnoreCase')
+      if ($rtext.Length -lt 200 -or (-not $temArquivo)) {
+        $delegacoesVazias.Add($tuid + " (" + $rtext.Length + " chars)")
+      }
+    }
+  }
+  $delegacaoVazia = ($delegacoesVazias.Count -gt 0)
+
   # (6) LOG: uma linha JSON por turno, sempre - independente do modo (e o entregavel principal
   # do M1: mede aderencia antes de virar bloqueio).
   $logFile = if (-not [string]::IsNullOrWhiteSpace($LogPath)) { $LogPath } else { Join-Path (Join-Path $root "studio") "response-guard-log.jsonl" }
@@ -623,13 +683,18 @@ try {
     budget_verificados = $budgetVerificados
     budget_sem_declarar = $budgetSemDeclarar
     budget_estouros    = ($budgetEstouros -join " | ")
+    ritual_ok          = (-not $violacaoRitual)
+    primeiro_turno     = $primeiroTurno
+    tem_linha_status   = $temLinhaStatus
+    delegacao_vazia    = $delegacaoVazia
+    delegacoes_vazias  = ($delegacoesVazias -join " | ")
   }
   $logLine = ($logEntry | ConvertTo-Json -Compress)
   $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
   [System.IO.File]::AppendAllText($logFile, $logLine + "`n", $utf8NoBom)
 
   # (7) Saida conforme o modo.
-  $anyViolation = (-not $delegaOk) -or (-not $groundingOk) -or (-not $budgetOk)
+  $anyViolation = (-not $delegaOk) -or (-not $groundingOk) -or (-not $budgetOk) -or $violacaoRitual
 
   if ($cfg.mode -eq 'bloqueio') {
     if ($anyViolation) {
@@ -649,6 +714,9 @@ try {
       if ($violacaoGroundingHtml) {
         $reasons.Add("Artifact HTML entregue tem claim tecnico sem rotulo de proveniencia: " + ($htmlArtifactsViolando -join " | ") + " - rotule [MEDIDO]/[INFERIDO]/[LIDO] no proprio html antes de fechar (REGRA 2 estendida, quality-gate.yaml criterio 6).")
       }
+      if ($violacaoRitual) {
+        $reasons.Add("[RITUAL] primeira resposta sem a linha de status (persona.md, Ritual de presenca)")
+      }
       $blockObj = [ordered]@{ decision = "block"; reason = ($reasons -join " ") }
       Write-Output ($blockObj | ConvertTo-Json -Compress)
       exit 0
@@ -665,7 +733,8 @@ try {
     " grounding_html_ok=" + (-not $violacaoGroundingHtml) +
     " budget_ok=" + $budgetOk + " budget_verificados=" + $budgetVerificados +
     " budget_sem_declarar=" + $budgetSemDeclarar +
-    " informativo_sem_delegacao=" + $informativo)
+    " informativo_sem_delegacao=" + $informativo +
+    " ritual_ok=" + (-not $violacaoRitual) + " primeiro_turno=" + $primeiroTurno)
   exit 0
 } catch {
   # Freio que quebra passa a gritar (TASK-213): antes disto um erro aqui (ex.: transcript_path

@@ -72,6 +72,33 @@ Client. O ativo oficial existente VENCE a recriacao - sempre.
 - So se cria do zero quando o inventario PROVOU que nao existe - e o novo ativo entra na
   pasta de marca do Client na mesma Task (LEI 1, alimentar).
 
+## LEI 5 - Docs fecham a entrega: doc curada sem portao e doc que apodrece
+
+> LEI: toda doc curada do Client que a LEI 1 manda carregar (PRD, README, ficha do Client em
+> client.md, visao de produto do squad) e atualizada NA MESMA versao que muda o produto. Release
+> MINOR sem tocar as docs curadas = release incompleto; ficha do Client citando versao velha =
+> ficha errada. O portao e maquina, nunca lembrete: `scripts/docs-check.ps1`.
+
+Nasceu de um caso real (07/09/2026, mandato do CEO): num Client, o que tinha portao automatico
+(CHANGELOG, catalogo de dados, DESIGN.md) estava em dia; o que nao tinha (PRD, README, ficha do
+Client, visao de produto) ficou 5 semanas e 4 features pra tras. Doc atrasada com cara de fonte
+curada e PIOR que doc nenhuma - a LEI 1 manda carregar a fonte, e a fonte mente.
+
+Regras duras:
+- **Ficha bate com o codigo.** `clients/<id>/client.md` cita literalmente a versao publicada do
+  codigo (package.json ou VERSION do `codePath`). Nao cita = [FICHA], reprova.
+- **Doc curada acompanha o MINOR.** README e PRD do `codePath` (mais o que o client.md listar em
+  `**docsGate:**`) foram tocados DEPOIS do ultimo release x.y.0 do CHANGELOG. Mais velhos =
+  [STALE], reprova. PATCH nao cobra doc (correcao nao muda o produto).
+- **Quem publica fecha a doc.** O passo FECHA da Task que sobe MINOR inclui rodar
+  `scripts/docs-check.ps1 -Client <id>` e deixar [OK] antes do tag/push. Doc que "fecha depois"
+  e a divida que esta LEI existe pra impedir.
+- **Divida vai pra baseline datada, nunca pro esquecimento.** O smoke da instancia usa
+  `studio/docs-gate-baseline.txt` como ratchet: linha so entra com data, Task e motivo, e so pode
+  sair. Doc podre nova fora da baseline reprova na hora.
+- Limite medido do portao: ele mede TOQUE (ultimo commit ou mtime), nao conteudo. Tocar a doc sem
+  atualizar o que mudou engana a maquina e nao engana o Gate (criterio 6, Fundamentada).
+
 ## Reforcos de fronteira (ja eram lei; aqui ganham o gatilho que faltou)
 
 - **Coordenador nao executa dominio.** Antes de produzir qualquer artefato de dominio

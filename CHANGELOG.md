@@ -20,6 +20,118 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.68.0] - 2026-09-07
+
+GUARDA NO ATO: a delegacao e o ritual deixam de ser prosa e viram maquina ANTES do estrago
+(mandato do CEO, 07/09/2026, depois de uma quebra real de guardrail pela propria coordenadora).
+
+**O incidente.** Na mesma sessao da 1.67.0, a Alia recebeu um pedido grande, pulou o ritual de
+presenca e escreveu ~10 arquivos de engine/, scripts/ e docs/ com a propria mao, sem Task e sem
+Specialist. Nenhum mecanismo parou. O operador interveio.
+
+**5 Whys (causas MEDIDAS, cada uma virou mecanismo):**
+1. Escreveu dominio sem delegar -> porque nada bloqueia no ATO de escrever: PreToolUse so cobria
+   Read|Grep|Glob|Bash|PowerShell (mapa). Write/Edit passavam livres.
+2. O guarda de Stop (response-guard.ps1) nao pegou -> porque roda so no FIM do turno (turno longo
+   faz tudo antes) e a REGRA 1 era satisfeita por QUALQUER Agent no turno: um Agent no fim
+   "lavava" 30 escritas anteriores.
+3. Pulou o ritual -> porque o ritual vivia so em prosa (skills/alia + persona.md); nenhum guarda
+   media o texto da primeira resposta.
+4. Nao registrou Task -> porque REGISTRA tambem so era cobrado no Stop; a valvula de ordem
+   explicita exige register-task -OperatorOrder e nada lembrava isso no ato.
+5. Raiz comum (auditoria LATTICE): das 40 leis ativas, 37 so eram cobradas DEPOIS do estrago
+   (Stop/smoke/prosa) e 3 ANTES (ato). O harness lembrava no inicio e media no fim; o meio
+   nao tinha freio.
+
+**O conserto (WARDEN, provado pelo negativo, 5 provas):**
+- `scripts/delegation-gate.ps1` (NOVO, PreToolUse `Edit|Write|NotebookEdit|Task`, L45 no
+  ledger): escrita de dominio (engine/, scripts/, skills/, docs/, clients/, raiz) pela
+  coordenadora sem delegacao registrada na sessao -> `permissionDecision: deny` com o caminho de
+  saida (delegar ao Specialist ou `register-task.ps1 -OperatorOrder`). memory/, _proposals/,
+  _backups/, .claude/, studio/ e baselines nunca bloqueiam. Interruptor de emergencia igual ao
+  do mapa (`ALIA_DELEGATION_GATE_OFF=1` ou `.claude/delegation-gate.off`). Fail-open em erro.
+  MEDIDO: o payload PreToolUse de um sub-agente traz o MESMO session_id/transcript_path do turno
+  pai (4 linhas capturadas) - o host nao distingue quem chama; por isso o gate marca a sessao
+  (`studio/delegation-seen.jsonl`) e honra `/subagents/` no transcript_path se algum host mandar.
+  Granularidade declarada: sessao, nao turno - o response-guard continua o freio fino.
+- `scripts/response-guard.ps1`: REGRA 1 passa a exigir ORDEM - escrita de dominio ANTES do
+  primeiro Agent/Task do turno e violacao (delegar depois nao lava). NOVA REGRA 4 (RITUAL, L46):
+  primeira resposta da sessao sem a linha de status `host: X | delegacao: Y` bloqueia o turno.
+  Detector de delegacao VAZIA (estudo do concorrente, abaixo): Agent cujo resultado tem menos de
+  200 caracteres ou nenhuma referencia a arquivo -> aviso no log do guard, nunca bloqueio.
+- Ligado em `.claude/settings.json` da instancia, da oficina e do pacote publico (mesmo padrao do
+  sensor do mapa). `package-release.ps1` embarca o gate.
+- `engine/governance/response-guard.md` ganha o **Mapa de pontos de enforcement**
+  (PROMPT/ATO/FIM/SMOKE) e a regra: lei nova declara o PONTO na linha do ledger. L43-L46 ja
+  declaram.
+- Fixture do docs-check renomeada (`fixture-clients`) + param `-ClientsDir`: o pacote reprovava
+  na superficie publica porque `clients/*/client.md` de fixture casava "material de cliente".
+
+**Estudo oh-my-openagent (pesquisa com fonte lida, 5 docs do repo).** 14 mecanismos
+comparados: 8 JA TEMOS (orquestrador + folha sem re-delegacao, injecao de regras por pasta,
+planner que so escreve plano, categorias de roteamento, wisdom/reflexao, guard de sobrescrita,
+wake-word, "no nested teams"), 4 NAO SE APLICAM (hashline edit, MCP embutido em skill, Team Mode
+com mailbox, compactacao preemptiva - tudo capacidade do host OpenCode), 2 INCORPORADOS/
+DECLARADOS: detector de delegacao vazia (feito, acima) e freio de Task parada por turno
+("todo enforcer": turno que termina com Task in_progress sem fechar nem perguntar) - declarado
+como proximo passo, custo M, fica pra 1.69.0. Teto declarado de paralelismo (P) idem.
+
+Smoke da oficina: 314 PASS, 0 FAIL, ALL GREEN (301 na 1.67.0 -> 314: 11 checks do guarda no
+ato e ritual + 2 do detector). Revisao: release-reviews/1.68.0.md (WARDEN).
+
+---
+
+## [1.67.0] - 2026-09-07
+
+CALIBRACAO DE DOCUMENTACAO VIRA MAQUINA + LEI DA ECONOMIA DE TOKEN (mandato do CEO, 07/09/2026).
+
+**O caso.** Num Client real do operador, o que tinha portao automatico (CHANGELOG, catalogo de dados,
+DESIGN.md) estava em dia; o que nao tinha ficou pra tras: PRD e README de 02/08 sem saber de 4
+features lancadas, ficha do Client (client.md) dizendo v0.4.0 com o codigo em 0.4.9, visao de
+produto do squad de julho. A LEI 1 (client-truth.md) manda CARREGAR a fonte curada antes de
+produzir - e a fonte mentia. Sintoma de calibracao, nao de disciplina: o que nao tem portao
+apodrece. Portao se faz com maquina, nao com lembrete.
+
+**O conserto.**
+- `engine/governance/client-truth.md` ganha a **LEI 5 - Docs fecham a entrega** (L43 no ledger):
+  ficha do Client cita a versao publicada do codigo; README/PRD do codePath (+ o que o client.md
+  listar em `**docsGate:**`) tocados DEPOIS do ultimo release MINOR; divida so em baseline datada.
+- `scripts/docs-check.ps1` (NOVO) e o portao: le `**codePath:**` de cada `clients/<id>/client.md`,
+  a versao do package.json/VERSION e o ultimo x.y.0 do CHANGELOG do codigo, e reprova [FICHA]
+  (versao nao citada) ou [STALE] (doc mais velha que o MINOR, data = ultimo commit git ou mtime).
+  Client sem codePath/CHANGELOG sai [N/A], nunca reprova. Varre so raiz e docs/ (medido: varrer
+  o codePath inteiro passava de 2 min por causa de node_modules).
+- `scripts/smoke-test.ps1` prova pelo negativo com `scripts/fixtures/docs-gate/` (3 Clients
+  falsos: fresh=OK, stale=README mais velho que um MINOR datado em 2999, ficha=client.md sem a
+  versao) - 3 checks novos. `scripts/smoke-test-studio.ps1` secao (l.3) roda o portao contra os
+  Clients REAIS com ratchet em `studio/docs-gate-baseline.txt` (mesmo molde do mapa) - FICHA/STALE
+  novo fora da baseline reprova. Rodado contra o studio: pegou exatamente o caso real ([FICHA]
+  0.4.9 nao citada + README de 02/08 atras do 0.4.0 de 06/09); o Client entra na baseline com a
+  TASK-484 como fechamento.
+- `engine/agents/persona.md` ganha a **LEI da economia de token** (L44): dev senior preguicoso -
+  so o essencial, na primeira passada; leio uma vez; decisao tomada nao se reabre; uma ida ao
+  operador por rodada; escopo = pedido (BLOATWORK = Fail); delegacao em lote com brief fechado;
+  prova pelo texto antes da imagem. Nasceu de uma sessao real com idas e vindas repetidas do
+  mesmo processo. `law-ledger-check.ps1` cobra o formato (marcador + anti-padrao), como L31.
+- `package-release.ps1` embarca `docs-check.ps1` (allowlist) - check novo no smoke garante.
+- `law-ledger.md`: L43 + L44 registrados; 10 ponteiros de linha corrigidos (os blocos novos
+  deslocaram smoke-test.ps1 em 15 linhas, smoke-test-studio.ps1 em 19, persona.md em 24).
+
+**Limite declarado.** O portao mede TOQUE (ultimo commit/mtime), nao conteudo - tocar a doc sem
+atualizar o que mudou engana a maquina, nao o Gate (criterio 6). Atualizar as docs desse Client em si
+e trabalho do Client (TASK-484), nao do motor.
+
+**Estudo (oh-my-openagent, code-yeongyu).** Plugin de orquestracao multi-modelo pro OpenCode.
+Reaproveitavel como IDEIA, nao como codigo (e plugin de host; a Alia e host-agnostica): (a)
+"skill-embedded MCPs" - MCP sobe sob demanda, escopado a task, e morre: ja e o desenho de
+`optional-mcps/`, confirma a direcao; (b) teto de agentes em background: ja e regra do WEAVER
+(paralelismo sem teto = Fail); (c) IntentGate antes de rotear: ja e `/alinhar`; (d) hash-anchored
+edits e 54 hooks de ciclo de vida: capacidade do host, fora do motor. Nada novo pra importar hoje.
+
+Smoke da oficina: ver release-reviews/1.67.0.md.
+
+---
+
 ## [1.66.0] - 2026-09-07
 
 README.md SAI DA LEI ASCII - mandato do CEO ("falta os acentos ta tudo errado"): a lei ASCII
@@ -55,7 +167,6 @@ oficina (contextos diferentes, LEI 2 de client-truth.md).
 Smoke da oficina: 298 PASS, 0 FAIL, ALL GREEN.
 
 ---
-
 
 ## [1.65.0] - 2026-09-05
 
