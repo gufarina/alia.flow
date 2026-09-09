@@ -49,7 +49,8 @@
 #>
 param(
   [Parameter(Mandatory=$true)][string]$Client,
-  [Parameter(Mandatory=$true)][string]$Title,
+  [string]$Title = "",
+  [string]$Id = "",
   [string]$Project = "",
   [string]$Specialist = "",
   [string]$Artifact = "",
@@ -129,9 +130,132 @@ foreach ($t in $existing) {
   if ($m.Success) { $n = [int]$m.Groups[1].Value; if ($n -gt $maxNum) { $maxNum = $n } }
 }
 $nextNum = [math]::Max($maxNum + 1, $existing.Count + 1)
-$id = "TASK-{0:D3}" -f $nextNum
-while ($usedIds.ContainsKey($id)) { $nextNum++; $id = "TASK-{0:D3}" -f $nextNum }
+$newId = "TASK-{0:D3}" -f $nextNum
+while ($usedIds.ContainsKey($newId)) { $nextNum++; $newId = "TASK-{0:D3}" -f $nextNum }
 $now = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+# ================================================================================================
+# -Id <TASK-nnn>: MODO ATUALIZA (LOTE 4, TASK-509). Antes, pivo de meio de tarefa (mudar status/
+# titulo/custo de uma Task ja existente) nao tinha caminho pelo script - exigia editar o JSON a
+# mao. Id inexistente com -Id NUNCA cria (erro claro); sem -Id o comportamento de sempre (CREATE,
+# abaixo) nao muda nem uma linha. So atualiza os campos que vieram no comando (via
+# $PSBoundParameters) - o resto da Task fica como estava. Mudanca de status pra "done" continua
+# exigindo -GateVerdict (revisao) e -Tokens/-ToolUses (Specialist delegado, M5 abaixo) - mesmas
+# regras do registro novo, verificadas de novo no ato do update. Titulo antigo nunca some sem
+# rastro: vai para title_history (capado nos ultimos 5 pivos).
+# ================================================================================================
+if (-not [string]::IsNullOrWhiteSpace($Id)) {
+  $idx = -1
+  for ($i = 0; $i -lt $existing.Count; $i++) { if ("$($existing[$i].id)" -eq $Id) { $idx = $i; break } }
+  if ($idx -lt 0) {
+    Write-Host ("[ERRO] -Id '" + $Id + "' nao encontrado em " + $StateFile + ": -Id nunca cria, so atualiza Task existente.")
+    exit 1
+  }
+  $task = $existing[$idx]
+
+  $effTitle       = if ($PSBoundParameters.ContainsKey('Title'))        { $Title }        else { "$($task.title)" }
+  $effStatus      = if ($PSBoundParameters.ContainsKey('Status'))       { $Status }        else { "$($task.status)" }
+  $effSpecialist  = if ($PSBoundParameters.ContainsKey('Specialist'))   { $Specialist }    else { "$($task.specialist)" }
+  $effArtifact    = if ($PSBoundParameters.ContainsKey('Artifact'))     { $Artifact }      else { "$($task.artifact)" }
+  $effBase        = if ($PSBoundParameters.ContainsKey('BaseArtifact')) { $BaseArtifact }  else { "$($task.base_artifact)" }
+  $effSession     = if ($PSBoundParameters.ContainsKey('SessionId'))    { $SessionId }     else { "$($task.session)" }
+  $effGate        = if ($PSBoundParameters.ContainsKey('GateVerdict'))  { $GateVerdict }   else { "$($task.gate_verdict)" }
+  $effType        = if ($PSBoundParameters.ContainsKey('Type'))        { $Type }          else { "$($task.type)" }
+  $effOpOrder     = if ($PSBoundParameters.ContainsKey('OperatorOrder')) { $OperatorOrder.IsPresent } else { [bool]$task.operator_order }
+  $effTokens      = if ($PSBoundParameters.ContainsKey('Tokens'))       { $Tokens }        else { $(if ($null -ne $task.tokens) { [int]$task.tokens } else { -1 }) }
+  $effToolUses    = if ($PSBoundParameters.ContainsKey('ToolUses'))     { $ToolUses }      else { $(if ($null -ne $task.tool_uses) { [int]$task.tool_uses } else { -1 }) }
+  $effBudget      = if ($PSBoundParameters.ContainsKey('Budget'))       { $Budget }        else { $(if ($null -ne $task.budget) { [int]$task.budget } else { -1 }) }
+
+  if ([string]::IsNullOrWhiteSpace($effSpecialist)) {
+    Write-Host "[ERRO] Task sem -Specialist (nem na Task existente, nem no update): quem executou tem que estar declarado."
+    exit 1
+  }
+  if ($effSpecialist -eq "alia") {
+    if (-not $effOpOrder) {
+      Write-Host "[ERRO] -Specialist alia sem -OperatorOrder: a unica excecao legitima e ordem explicita do Operator (engine/orchestration.md)."
+      exit 1
+    }
+  } elseif ($squadIds.Count -gt 0 -and -not ($squadIds -contains $effSpecialist)) {
+    Write-Host ("[ERRO] -Specialist '" + $effSpecialist + "' nao consta no squad de '" + $Client + "'. Ids validos: " + ($squadIds -join ", "))
+    exit 1
+  }
+
+  if ($effType -eq "revisao" -and $effStatus -eq "done" -and [string]::IsNullOrWhiteSpace($effGate)) {
+    Write-Host "[ERRO] Task de revisao fechada como done sem -GateVerdict: revisao sem verdito nao fecha."
+    exit 1
+  }
+
+  # CUSTO OBRIGATORIO NO FECHA (M5) - mesma trava do CREATE (ver bloco abaixo), verificada de novo
+  # no ato do UPDATE: pivotar uma Task delegada pra "done" sem custo e o mesmo furo.
+  if (($effStatus -eq "done" -or $effStatus -eq "review") -and $effSpecialist -ne "alia" -and ($effTokens -lt 0 -or $effToolUses -lt 0)) {
+    Write-Host ("[ERRO] Task " + $effStatus + " de '" + $effSpecialist + "' sem -Tokens/-ToolUses: custo e obrigatorio no fecha. Tire o numero da notificacao que a ferramenta de agente devolve a Alia ao fim da delegacao (tokens + tool_uses) e repita com -Tokens/-ToolUses.")
+    exit 1
+  }
+
+  $budgetExceeded = $false
+  if ($effTokens -ge 0 -and $effBudget -ge 0 -and $effTokens -gt $effBudget) { $budgetExceeded = $true }
+
+  $agentIdEff = "$($task.agent_id)"
+  if ($effSpecialist -eq "alia") { $agentIdEff = "alia" } elseif ($squadIds -contains $effSpecialist) { $agentIdEff = ("$Client-$effSpecialist").ToLower() }
+
+  $titleHistory = @()
+  if ($task.PSObject.Properties.Name -contains "title_history") { $titleHistory = @($task.title_history) }
+  if ($PSBoundParameters.ContainsKey('Title') -and $Title -ne "$($task.title)") {
+    $titleHistory = @($titleHistory + [PSCustomObject]@{ title = "$($task.title)"; at = $now })
+    if ($titleHistory.Count -gt 5) { $titleHistory = @($titleHistory | Select-Object -Last 5) }
+  }
+
+  $task.title          = $effTitle
+  $task.status         = $effStatus
+  $task.specialist     = $effSpecialist
+  $task.agent_id       = $agentIdEff
+  $task.type           = $effType
+  $task.artifact       = $effArtifact
+  $task.base_artifact  = $effBase
+  $task.session        = $effSession
+  $task.gate_verdict   = $effGate
+  $task.operator_order = $effOpOrder
+  foreach ($propName in @("tokens","tool_uses","budget","budget_exceeded","title_history","updated")) {
+    if (-not ($task.PSObject.Properties.Name -contains $propName)) { $task | Add-Member -NotePropertyName $propName -NotePropertyValue $null -Force }
+  }
+  $task.tokens          = $(if ($effTokens -ge 0) { $effTokens } else { $null })
+  $task.tool_uses       = $(if ($effToolUses -ge 0) { $effToolUses } else { $null })
+  $task.budget          = $(if ($effBudget -ge 0) { $effBudget } else { $null })
+  $task.budget_exceeded = $budgetExceeded
+  $task.title_history   = @($titleHistory)
+  $task.updated         = $now
+
+  $existing[$idx] = $task
+
+  Write-Host "=== Update Task ==="
+  Write-Host ("state: " + $StateFile)
+  Write-Host ("atualizada: " + $Id + " | " + $Client + " | " + $effTitle)
+  if ($titleHistory.Count -gt 0) { Write-Host ("titulo anterior guardado: " + ($titleHistory | Select-Object -Last 1).title) }
+
+  if ($DryRun) {
+    Write-Host "[DRY-RUN] nao gravou."
+    exit 0
+  }
+
+  $json.tasks = @($existing)
+  if ($json.PSObject.Properties.Name -contains "updated") { $json.updated = (Get-Date).ToString("yyyy-MM-dd") }
+  $out = $json | ConvertTo-Json -Depth 32
+  [System.IO.File]::WriteAllText($StateFile, $out, $utf8)
+
+  $check = [System.IO.File]::ReadAllText($StateFile) | ConvertFrom-Json
+  $matchCount = @(@($check.tasks) | Where-Object { $_.id -eq $Id }).Count
+  if ($matchCount -ne 1) {
+    Write-Host "[ERRO] validacao pos-escrita falhou: id duplicado ou ausente apos update. Confira o state.json."
+    exit 1
+  }
+  Write-Host ("[OK] tarefa atualizada: " + $Id + " | total de tarefas: " + @($check.tasks).Count)
+  exit 0
+}
+
+if ([string]::IsNullOrWhiteSpace($Title)) {
+  Write-Host "[ERRO] Task nova sem -Title: obrigatorio no registro (sem -Id nao ha Task existente pra atualizar)."
+  exit 1
+}
 
 if ([string]::IsNullOrWhiteSpace($Project)) {
   Write-Host "[ERRO] Task sem -Project: a hierarquia e Cliente > Projeto > Tarefa. A LEI da rastreabilidade exige a linhagem completa no registro."
@@ -183,12 +307,17 @@ if ($Specialist -eq "alia") {
 
 }
 
-# CUSTO NO ATO (M4, baseline de custo): Task fechada (done/review) por um Specialist que nao a
-# alia SEM -Tokens/-ToolUses recebe AVISO forte (nao trava - o baseline historico ainda nao existe
-# pra virar exigencia dura; quando existir, isto vira erro). -Budget e opcional; quando os tres
-# valores existem e tokens estoura o orcamento, grava budget_exceeded:true e avisa no ato.
+# CUSTO OBRIGATORIO NO FECHA (M5, TASK-509): Task fechada (done/review) por um Specialist que
+# nao a alia SEM -Tokens/-ToolUses agora TRAVA (nao mais aviso) - o baseline de custo ja existe
+# (504 Tasks registradas, studio/cost-log.jsonl) e sem custo por Task o RSI nao promove com
+# evidencia. So vale NO ATO deste registro - Tasks ja fechadas sem custo ANTES desta versao NAO
+# viram erro retroativo (mesmo espirito das outras regras "no ato" deste script). Ordem do
+# operador executada pela Alia (-Specialist alia) fica ISENTA - ela nao tem notificacao de
+# subagente pra tirar o numero. -Budget e opcional; quando os tres valores existem e tokens
+# estoura o orcamento, grava budget_exceeded:true e avisa no ato.
 if (($Status -eq "done" -or $Status -eq "review") -and $Specialist -ne "alia" -and ($Tokens -lt 0 -or $ToolUses -lt 0)) {
- Write-Host ("[AVISO] Task " + $Status + " de '" + $Specialist + "' sem -Tokens/-ToolUses: registre o custo no ato (ainda nao trava - vira trava quando o baseline existir).")
+  Write-Host ("[ERRO] Task " + $Status + " de '" + $Specialist + "' sem -Tokens/-ToolUses: custo e obrigatorio no fecha. Tire o numero da notificacao que a ferramenta de agente devolve a Alia ao fim da delegacao (tokens + tool_uses) e repita com -Tokens/-ToolUses.")
+  exit 1
 }
 $budgetExceeded = $false
 if ($Tokens -ge 0 -and $Budget -ge 0 -and $Tokens -gt $Budget) {
@@ -207,7 +336,7 @@ if ($Specialist -eq "alia") {
 }
 
 $task = [PSCustomObject][ordered]@{
-  id             = $id
+  id             = $newId
   client         = $Client
   project        = $Project
   title          = $Title
@@ -229,7 +358,7 @@ $task = [PSCustomObject][ordered]@{
 
 Write-Host "=== Register Task ==="
 Write-Host ("state: " + $StateFile)
-Write-Host ("nova:  " + $id + " | " + $Client + " | " + $Title)
+Write-Host ("nova:  " + $newId + " | " + $Client + " | " + $Title)
 
 if ($Tokens -ge 0 -or $ToolUses -ge 0 -or $Budget -ge 0) {
  Write-Host ("custo: tokens=" + $task.tokens + " | tool_uses=" + $task.tool_uses + " | budget=" + $task.budget + " | budget_exceeded=" + $task.budget_exceeded)
@@ -253,11 +382,11 @@ $out = $json | ConvertTo-Json -Depth 32
 
 # Validacao pos-escrita: re-parse e confere que tasks e um array com o id novo.
 $check = [System.IO.File]::ReadAllText($StateFile) | ConvertFrom-Json
-$matchCount = @(@($check.tasks) | Where-Object { $_.id -eq $id }).Count
+$matchCount = @(@($check.tasks) | Where-Object { $_.id -eq $newId }).Count
 $tasksOk = (@($check.tasks).Count -ge 1) -and ($matchCount -eq 1)
 if (-not $tasksOk) {
   Write-Host "[ERRO] validacao pos-escrita falhou: tasks nao ficou consistente. Confira o state.json."
   exit 1
 }
-Write-Host ("[OK] tarefa registrada: " + $id + " | total de tarefas: " + @($check.tasks).Count)
+Write-Host ("[OK] tarefa registrada: " + $newId + " | total de tarefas: " + @($check.tasks).Count)
 exit 0

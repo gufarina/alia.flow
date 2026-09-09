@@ -34,7 +34,7 @@ try {
  # (0) Payload do hook - so le stdin quando redirecionado (hook real ou teste por pipe).
  $raw = ""
  if ([Console]::IsInputRedirected) {
- $readTask = [Console]::In.ReadToEndAsync
+ $readTask = [Console]::In.ReadToEndAsync()
  $raw = if ($readTask.Wait(2000)) { $readTask.Result } else { "" }
  }
  $sessionId = ""

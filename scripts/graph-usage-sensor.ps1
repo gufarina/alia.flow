@@ -211,6 +211,18 @@ try {
   # tratados igual daqui pra baixo: o que importa e o TOKEN dentro do $normCmd, nao o shell.
   $isShellTool = ($tool -eq 'Bash' -or $tool -eq 'PowerShell')
 
+  # WARDEN 09/09/2026: FALSO POSITIVO MEDIDO - comando que so roda scripts/task-context.ps1
+  # (consulta de Task, nao varredura de codebase) injetou 2,5 KB do mapa de um Client. Comando que
+  # SO RODA script da propria casa (scripts/*.ps1 deste studio - raiz studio-farina/scripts/
+  # ou clients/alia-flow-lab/scripts/) nao conta como varredura, mesmo se o comando filtra a
+  # saida do script com grep/select-string (isso filtra TEXTO do proprio script, nao varre
+  # codebase). Nunca afrouxa comando que tambem cita outro Client (clients/<id>/, id != alia-flow-lab) -
+  # so exclui quando o alvo do .ps1 e a propria casa.
+  $isOwnScriptCmd = $false
+  if ($isShellTool -and $normCmd -match '(^|[/"''\s])scripts/[a-z0-9_.-]+\.ps1\b' -and $normCmd -notmatch 'clients/(?!alia-flow-lab/)[a-z0-9_-]+/') {
+    $isOwnScriptCmd = $true
+  }
+
   if ($tool -eq 'Read' -or $tool -eq 'Grep' -or $tool -eq 'Glob') {
     if ($normPath -match 'graph_report\.md') { $kind = 'map'; $match = 'graph-report' }
     elseif ($normPath -match 'graph\.json')  { $kind = 'map'; $match = 'graph-json' }
@@ -222,7 +234,7 @@ try {
     elseif ($normCmd -match 'graphify-out')                { $kind = 'map'; $match = 'graphify-out' }
   }
 
-  if ($kind -eq '') {
+  if ($kind -eq '' -and -not $isOwnScriptCmd) {
     if ($tool -eq 'Grep' -or $tool -eq 'Glob') {
       $kind = 'scan'; $match = $tool.ToLowerInvariant()
     }

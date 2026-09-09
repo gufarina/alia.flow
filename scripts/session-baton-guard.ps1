@@ -13,7 +13,7 @@ try {
  $raw = ""
  if ([Console]::IsInputRedirected) {
  try {
- $readTask = [Console]::In.ReadToEndAsync
+ $readTask = [Console]::In.ReadToEndAsync()
  if ($readTask.Wait(5000)) { $raw = $readTask.Result } else { $raw = "" }
  } catch { $raw = "" }
  }

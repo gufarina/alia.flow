@@ -59,7 +59,7 @@ Biblioteca de referencia do nucleo (abrir a fatia quando o nucleo.md remeter):
 - engine/governance/public-surface.md - a LEI do que pode existir no git (produto publico, nunca material de dev do cliente).
 - engine/governance/response-guard.md - o freio na PORTA DE SAIDA da resposta (hook de Stop, `response-guard.ps1`): as 2 regras (DELEGA/GROUNDING), os 2 modos (aviso/bloqueio) e a valvula de excecao por ordem do Operator.
 - engine/governance/law-ledger.md - registro de toda LEI declarada no motor: onde vive, que teste cobre, COBERTA ou SEM TESTE.
-- scripts/session-start.ps1 - hook de SessionStart (startup/resume/compact): injeta nucleo.md + bastao mais recente + pendencias.
+- scripts/session-start.ps1 - hook de SessionStart (startup/resume/compact): injeta nucleo.md + pendencias + o bastao mais recente de studio/baton/ quando existir (teto 1.800 bytes).
 - scripts/pre-tool-use.ps1 - UM spawn por Edit/Write/Task: chama delegation-gate + secret-write-guard em-processo.
 - scripts/harness-baseline.ps1 - mede e congela o custo do harness (studio/harness-baseline.txt); -Check e a catraca (L50).
 - scripts/session-baton.ps1 - grava o bastao de sessao (PreCompact/SessionEnd), contrato de bastao.md, teto 500 tokens.
@@ -69,6 +69,7 @@ Biblioteca de referencia do nucleo (abrir a fatia quando o nucleo.md remeter):
 
 - engine/features/forja.md - linha de producao autonoma em 5 estacoes (FUNDIR, MOLDAR, TEMPERAR, PROVAR, GUARDAR) + bastao entre estacoes + notas AS/NB para evolucao de motor.
 - engine/features/bastao.md - doutrina do handoff <=500 tokens entre estacoes/agentes (contrato de campos, cadeia, sugestao de proximo comando) + engine/features/bastao-template.yaml (molde).
+- engine/features/project-ficha.md - o modelo da ficha de Project (camada do meio): 6 campos, heranca do Client por referencia, quando NAO criar ficha.
 - engine/workflows/story-cycle.md - o protocolo de 5 passos aplicado a dev (da intencao ao Artifact).
 - engine/workflows/qa-loop.md - ciclo de correcao quando o Gate da Fail.
 - engine/workflows/command-chaining.md - um comando orquestra N skills em sequencia.

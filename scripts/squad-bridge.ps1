@@ -405,7 +405,9 @@ function New-BeforeActingBlock {
  [string[]]$KnowledgeLines,
  [string]$BudgetToolCalls,
  [string]$OutputMaxLines,
- [string]$EvidenceTags
+ [string]$EvidenceTags,
+ [string]$AuthorityDecides,
+ [string]$AuthorityEscalatesTo
 )
 
  $lines = New-Object System.Collections.ArrayList
@@ -443,13 +445,23 @@ function New-BeforeActingBlock {
  [void]$lines.Add('## Orcamento')
  [void]$lines.Add('')
  [void]$lines.Add("Maximo $BudgetToolCalls chamadas. Estourou, pare e entregue o que tem.")
+}
+
+ # ---- Contrato de saida (max_lines/evidence_tags): TODA camada, inclusive A - Gateway
+ # tambem declara teto de linhas (TASK-509). ----
  [void]$lines.Add('')
  [void]$lines.Add('## Contrato de saida')
  [void]$lines.Add('')
  $tagList = ($EvidenceTags -replace "[\[\]]", "" -split ",\s*" | ForEach-Object { "[" + $_.Trim() + "]" }); $tagTxt = if ($tagList.Count -gt 1) { (($tagList[0..($tagList.Count-2)]) -join ", ") + " ou " + $tagList[-1] } else { $tagList -join "" }
  [void]$lines.Add("Maximo $OutputMaxLines linhas. Cada fato leva um rotulo: $tagTxt.")
  [void]$lines.Add('Afirmacao sem marca nao entra.')
-}
+
+ # ---- Autoridade (TASK-509, 6a definicao): o que decide sozinho e a quem escala. TODA camada. ----
+ [void]$lines.Add('')
+ [void]$lines.Add('## Autoridade')
+ [void]$lines.Add('')
+ [void]$lines.Add("Decide sozinho: $AuthorityDecides.")
+ [void]$lines.Add("Escala para: $AuthorityEscalatesTo.")
 
  return $lines
 }
@@ -483,7 +495,20 @@ if ($MigrateContract) {
  if ($camadaM -ne 'A' -and $camadaM -ne 'B' -and $camadaM -ne 'C') { $camadaM = 'B' }
 
  $defBudget = if ($camadaM -eq 'C') { 8 } else { 20 }
- $defLines = if ($camadaM -eq 'C') { 25 } else { 60 }
+ $defLines = switch ($camadaM) { 'C' { 25 }; 'A' { 100 }; default { 60 } }
+ # defaults GENERICOS de authority por camada (TASK-509) - migracao preenche isto so como
+ # ponto de partida; CADA persona migrada precisa de ajuste a mao citando o dominio REAL dela
+ # (o generico serve pra nao travar 54 arquivos de uma vez, nunca como texto final).
+ $defDecides = switch ($camadaM) {
+ 'A' { 'roteamento das Tasks e veredito do Quality Gate' }
+ 'C' { 'o que a lente deste Specialist cobre' }
+ default { 'as decisoes dentro do dominio deste Specialist' }
+ }
+ $defEscalatesTo = switch ($camadaM) {
+ 'A' { 'Operator, quando a decisao sai do escopo do squad' }
+ 'C' { 'o Specialist B do mesmo squad, fora da lente' }
+ default { 'o Gateway do squad, quando sai do dominio' }
+ }
 
  $knowledgeEntriesM = Get-ListValue $dataM 'knowledge'
  $addedFields = New-Object System.Collections.ArrayList
@@ -502,6 +527,8 @@ if ($MigrateContract) {
  [void]$addedFields.Add('budget')
 }
 
+}
+
  if (-not ($rawM -match '(?m)^output_contract:')) {
  [void]$appendLines.Add('output_contract:')
  [void]$appendLines.Add(" max_lines: $defLines")
@@ -509,11 +536,22 @@ if ($MigrateContract) {
  [void]$addedFields.Add('output_contract')
 }
 
-}
-
  if (-not ($rawM -match '(?m)^grounding:')) {
  [void]$appendLines.Add('grounding: client.md')
  [void]$addedFields.Add('grounding')
+}
+
+ if (-not ($rawM -match '(?m)^authority:') -and -not ($rawM -match '(?m)^decides:')) {
+ [void]$appendLines.Add('authority:')
+ [void]$appendLines.Add(" decides: $defDecides")
+ [void]$appendLines.Add(" escalates_to: $defEscalatesTo")
+ [void]$addedFields.Add('authority (GENERICO - ajuste a mao)')
+}
+
+ elseif (-not ($rawM -match '(?m)^escalates_to:')) {
+ # tinha authority/escalates_to velho (escalar so, sem decides) - completa o que falta
+ [void]$appendLines.Add("decides: $defDecides")
+ [void]$addedFields.Add('decides (GENERICO - ajuste a mao)')
 }
 
  if ($appendLines.Count -gt 0) {
@@ -646,17 +684,27 @@ foreach ($clientDir in $clientDirs) {
             $knowledgeEntries = Get-ListValue $data 'knowledge'
             $rawTools = Get-ListValue $data 'tools'
 
- # ---- contrato do especialista (auditoria-harness-v2.html, secao 03): entry_point,
- # budget.tool_calls, output_contract.max_lines/evidence_tags, grounding. Ausencia PARA
- # o processo para AQUELE agente (throw, capturado pelo try/catch do loop) - sem bundle,
- # sem bypass. Camada A dispensa budget/output_contract, mas exige grounding tambem. ----
+ # ---- contrato do especialista (auditoria-harness-v2.html, secao 03; TASK-509 acrescenta a 6a
+ # definicao, authority): entry_point, budget.tool_calls, output_contract.max_lines/evidence_tags,
+ # grounding, authority.decides/escalates_to. Ausencia PARA o processo para AQUELE agente (throw,
+ # capturado pelo try/catch do loop) - sem bundle, sem bypass. Camada A dispensa so
+ # budget.tool_calls (Gateway nao tem teto de chamadas); output_contract e authority sao
+ # obrigatorios em TODA camada, inclusive A - Gateway tambem declara teto de linhas e limite de
+ # autoridade. ----
  $entryPointRaw = Get-ScalarValue $data 'entry_point' ''
  $budgetToolCalls = Get-ScalarValue $data 'tool_calls' ''
  $outputMaxLines = Get-ScalarValue $data 'max_lines' ''
  $evidenceTags = Get-ScalarValue $data 'evidence_tags' ''
  $groundingRaw = Get-ScalarValue $data 'grounding' ''
+ $authorityDecides = Get-ScalarValue $data 'decides' ''
+ $authorityEscalatesTo = Get-ScalarValue $data 'escalates_to' ''
  $defBudgetContract = if ($camada -eq 'C') { 8 } else { 20 }
- $defLinesContract = if ($camada -eq 'C') { 25 } else { 60 }
+ $defLinesContract = switch ($camada) { 'C' { 25 }; 'A' { 100 }; default { 60 } }
+ $defAuthority = switch ($camada) {
+ 'A' { @{ decides = 'roteamento das Tasks e veredito do Quality Gate'; escalates_to = 'Operator, quando a decisao sai do escopo do squad' } }
+ 'C' { @{ decides = 'o que a lente deste Specialist cobre'; escalates_to = 'o Specialist B do mesmo squad, fora da lente' } }
+ default { @{ decides = 'as decisoes dentro do dominio deste Specialist'; escalates_to = 'o Gateway do squad, quando sai do dominio' } }
+ }
 
  if ($knowledgeEntries.Count -gt 0) {
  $mapPathCheck = Join-Path $knowledgeDir 'MAP.md'
@@ -675,18 +723,26 @@ foreach ($clientDir in $clientDirs) {
  throw "falta 'budget.tool_calls' no yaml. Default sugerido para camada $camada`: $defBudgetContract"
 }
 
+}
+
  if (-not $outputMaxLines) {
- throw "falta 'output_contract.max_lines' no yaml. Default sugerido para camada $camada`: $defLinesContract"
+ throw "falta 'output_contract.max_lines' no yaml (obrigatorio em toda camada, inclusive A). Sugestao para camada $camada`: $defLinesContract"
 }
 
  if (-not $evidenceTags) {
- throw "falta 'output_contract.evidence_tags' no yaml. Default sugerido: [MEDIDO, LIDO, INFERIDO]"
-}
-
+ throw "falta 'output_contract.evidence_tags' no yaml. Sugestao: [MEDIDO, LIDO, INFERIDO]"
 }
 
  if (-not $groundingRaw) {
  throw "falta 'grounding' no yaml (obrigatorio em toda camada, inclusive A/Gateway). Sugestao: grounding: client.md"
+}
+
+ if (-not $authorityDecides) {
+ throw "falta 'authority.decides' no yaml (obrigatorio em toda camada - o que este agente fecha sozinho). Sugestao para camada $camada`: $($defAuthority.decides)"
+}
+
+ if (-not $authorityEscalatesTo) {
+ throw "falta 'authority.escalates_to' no yaml (obrigatorio em toda camada - a quem sobe e em que caso). Sugestao para camada $camada`: $($defAuthority.escalates_to)"
 }
 
             # ---- description ----
@@ -816,7 +872,7 @@ foreach ($clientDir in $clientDirs) {
                 [void]$sections.Add('')
                 [void]$sections.Add($body.Trim())
                 [void]$sections.Add('')
- foreach ($bl in (New-BeforeActingBlock -Camada $camada -EntryPointPath $entryPointPath -GroundingPath $groundingPath -KnowledgeLines $knowledgeLines -BudgetToolCalls $budgetToolCalls -OutputMaxLines $outputMaxLines -EvidenceTags $evidenceTags)) { [void]$sections.Add($bl) }
+ foreach ($bl in (New-BeforeActingBlock -Camada $camada -EntryPointPath $entryPointPath -GroundingPath $groundingPath -KnowledgeLines $knowledgeLines -BudgetToolCalls $budgetToolCalls -OutputMaxLines $outputMaxLines -EvidenceTags $evidenceTags -AuthorityDecides $authorityDecides -AuthorityEscalatesTo $authorityEscalatesTo)) { [void]$sections.Add($bl) }
 
                 if ($camada -ne 'A') {
                     [void]$sections.Add('')
@@ -859,7 +915,7 @@ foreach ($clientDir in $clientDirs) {
                 [void]$sections.Add('')
                 [void]$sections.Add("$toolsLine")
                 [void]$sections.Add('')
- foreach ($bl in (New-BeforeActingBlock -Camada $camada -EntryPointPath $entryPointPath -GroundingPath $groundingPath -KnowledgeLines $knowledgeLines -BudgetToolCalls $budgetToolCalls -OutputMaxLines $outputMaxLines -EvidenceTags $evidenceTags)) { [void]$sections.Add($bl) }
+ foreach ($bl in (New-BeforeActingBlock -Camada $camada -EntryPointPath $entryPointPath -GroundingPath $groundingPath -KnowledgeLines $knowledgeLines -BudgetToolCalls $budgetToolCalls -OutputMaxLines $outputMaxLines -EvidenceTags $evidenceTags -AuthorityDecides $authorityDecides -AuthorityEscalatesTo $authorityEscalatesTo)) { [void]$sections.Add($bl) }
 
                 if ($camada -ne 'A') {
                     [void]$sections.Add('')

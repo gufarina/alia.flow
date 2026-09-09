@@ -264,6 +264,26 @@ $decOut  = @($decisions | Select-Object -Last 20)
 $id8 = $latest.BaseName -replace '[^A-Za-z0-9]', ''
 if ($id8.Length -gt 8) { $id8 = $id8.Substring(0, 8) }
 
+# ETIQUETA DE CAMADA (LOTE 5, TASK-509): toda proposta nasce com a camada de origem, pra correcao
+# nao nascer na camada errada (isso mascara o problema - engine/rsi/rsi.md, guardrail 1). Regra
+# deterministica por palavra-chave (mesmo espirito das outras heuristicas deste arquivo),
+# prioridade fixa quando mais de uma bate: task > especialista > client > nucleo > memoria >
+# project > nao-classificado (a mais especifica primeiro).
+function Get-CamadaOrigem {
+  param([string]$texto)
+  $l = $texto.ToLowerInvariant()
+  if ($l -match 'task-\d+') { return "task" }
+  if ($l -match 'especialista|specialist|squad-bridge|agent_id|squad\.yaml') { return "especialista" }
+  if ($l -match 'clients[\/][a-z0-9-]+') { return "client" }
+  if ($l -match 'engine[\/](constitution|orchestration|glossary|agents[\/]persona)|nucleo do (engine|motor)') { return "nucleo" }
+  if ($l -match 'memoria|memory[\/]|_index\.md') { return "memoria" }
+  if ($l -match 'projeto|project') { return "project" }
+  return "nao-classificado"
+}
+$camadaTexto = ($userMsgsRaw -join " ") + " " + ($decisions -join " ")
+$camadaOrigem = Get-CamadaOrigem $camadaTexto
+
+
 # ---------------------------------------------------------------------------------------------
 # PECA 2 (RSI, canal do dono): deteccao de atrito - regex/heuristica DETERMINISTICA, sem chamada
 # de modelo (o hook roda no fim de toda sessao, com timeout). Roda ANTES do gate de dedup do
@@ -366,6 +386,7 @@ if ($frictionHits.Count -gt 0) {
   [void]$fsb.AppendLine("metadata:")
   [void]$fsb.AppendLine("  node_type: memory")
   [void]$fsb.AppendLine("  type: friction")
+  [void]$fsb.AppendLine("  camada: " + $camadaOrigem)
   [void]$fsb.AppendLine("  originSessionId: " + $latest.BaseName)
   [void]$fsb.AppendLine("  status: proposed")
   [void]$fsb.AppendLine("---")
@@ -447,6 +468,7 @@ $sb = New-Object System.Text.StringBuilder
 [void]$sb.AppendLine("metadata:")
 [void]$sb.AppendLine("  node_type: memory")
 [void]$sb.AppendLine("  type: reference")
+[void]$sb.AppendLine("  camada: " + $camadaOrigem)
 [void]$sb.AppendLine("  originSessionId: " + $latest.BaseName)
 [void]$sb.AppendLine("  status: proposed")
 [void]$sb.AppendLine("---")

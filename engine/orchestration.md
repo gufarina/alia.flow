@@ -27,6 +27,11 @@ protocolo ja falhou no passo DELEGA.
    abaixo do piso executa e declara a suposicao; do piso pra cima roda UMA rodada de alinhamento
    (max 4 perguntas, max 2 rodadas, cada uma com recomendacao) ANTES de registrar e delegar.
    *Sem Client = sem Task.* *Alinhamento e sub-passo do IDENTIFICA, nunca um sexto passo.*
+   *Project NOVO nasce com ficha* em `clients/<id>/projects/<slug>.md` (modelo em
+   [engine/features/project-ficha.md](features/project-ficha.md)); Project que ja existe e so
+   citado. Client com um projeto so: a ficha pode ser uma secao do proprio `client.md` - nao crie
+   arquivo para inventar hierarquia. A ficha do Project herda o Client por REFERENCIA: identidade,
+   restricoes, squad e `codePath` moram no `client.md` e nunca se repetem embaixo.
 2. **REGISTRA** - a Task no estado (`studio/state.json`) **antes** de delegar. *Sem registro = nao aconteceu.*
 3. **DELEGA** - ao Specialist **mais capaz** para a Task (roteamento por capacidade, abaixo). A Alia **nunca** executa dominio.
 4. **MONITORA** - cobra progresso e o **Artifact** (evidencia). Sem avanco em 3 abordagens -> escala.

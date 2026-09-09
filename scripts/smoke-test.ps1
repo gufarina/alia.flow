@@ -3299,6 +3299,29 @@ if (Test-Path -LiteralPath $sbPath) {
  Check "L51: scripts/squad-bridge.ps1 existe" $false
 }
 
+# L52a: nenhum script de scripts/ usa ReadToEndAsync sem parenteses (bug medido em
+# pre-tool-use.ps1/session-baton-guard.ps1/session-baton.ps1 - guardava a REFERENCIA ao metodo
+# em vez de CHAMAR; consertado pelo WARDEN em 09/09/2026, guarda pra nao voltar).
+$readToEndAsyncBad = @()
+Get-ChildItem -LiteralPath $PSScriptRoot -Filter "*.ps1" -File | ForEach-Object {
+ $txt = ReadText $_.FullName
+ # Exige o ponto antes do nome do metodo (sintaxe de chamada real) pra nunca confundir com a
+ # PROSA deste proprio check, que so cita o nome do metodo sem chamar (sem ponto na frente).
+ if ($txt -match '\.ReadToEndAsync(?!\()') { $readToEndAsyncBad += $_.Name }
+}
+Check "L52a: nenhum scripts/*.ps1 usa ReadToEndAsync sem parenteses" ($readToEndAsyncBad.Count -eq 0) ("arquivos com o bug: " + ($readToEndAsyncBad -join ", "))
+
+# L52b: session-start.ps1 nao contem a linha de lei duplicada "[ALIA - lei de operacao]"
+# (WARDEN 09/09/2026: duplicava DELEGA + fonte-antes-de-varrer, ja cobertos por nucleo.md
+# injetado por completo no mesmo boot).
+$ssPath52 = Join-Path $PSScriptRoot "session-start.ps1"
+if (Test-Path -LiteralPath $ssPath52) {
+ $ssTxt52 = ReadText $ssPath52
+ Check "L52b: session-start.ps1 NAO contem a linha de lei duplicada '[ALIA - lei de operacao]'" ($ssTxt52 -notmatch [regex]::Escape('[ALIA - lei de operacao]'))
+} else {
+ Check "L52b: scripts/session-start.ps1 existe" $false
+}
+
 
 
 # --- Numero publico: README.md (produto) e GUARD-NUM (oficina) - cada um trava so contra o

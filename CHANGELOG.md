@@ -20,6 +20,70 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.71.0] - 2026-09-09
+
+EXECUCAO DA AUDITORIA DE HARNESS v3: 3 BUGS DE HOOK CONSERTADOS (P0), CONTRATO DO ESPECIALISTA
+COMPLETO COM AUTORIDADE (L52), FICHA DE PROJECT (L53), CUSTO OBRIGATORIO NO FECHA (L54), RATCHET
+DE LINHAGEM (L55), JANELA FRIA MENOR.
+
+- **Os 3 bugs nascidos na 1.70.0 (P0, WARDEN).** `pre-tool-use.ps1`, `session-baton-guard.ps1` e
+  `session-baton.ps1` chamavam `[Console]::In.ReadToEndAsync` SEM parenteses - guardavam a
+  referencia ao metodo em vez de chamar. Efeito medido: o bastao travava com "does not contain a
+  method named 'Wait'" e NUNCA gravou arquivo (3 sessoes encerradas depois da fiacao, zero bastao);
+  o guarda de segredo recebia entrada vazia pelo hook fundido e ficava cego; o portao de delegacao
+  so funcionava porque rele a entrada por conta propria. Consertado nos 3. Prova por CARGA REAL:
+  bastao gravou 376 bytes (teto 1.800 OK); guarda de segredo NEGOU Write com segredo e liberou
+  conteudo limpo (cofre de teste criado e apagado); portao negou escrita em `engine/` sem Task e
+  liberou com Task de ordem do Operator. Check novo no smoke impede o retorno do padrao.
+- **Contrato do especialista com autoridade (L52, WEAVER).** `authority.decides` e
+  `authority.escalates_to` viram obrigatorios em toda camada; `squad-bridge.ps1` reprova persona
+  sem eles (throw, sem bypass) e `-MigrateContract` preenche default por camada. Migradas as 66
+  personas do parque: 66/66 com authority, decides, escalates_to, output_contract, entry_point e
+  grounding; budget em 56 (as 10 camada A nao levam teto de chamadas, por desenho). O gatilho `*`
+  (que nao distingue nada) saiu dos 2 Gateways que o tinham - a regra "toda Task passa pelo
+  Gateway" e do nucleo, nao precisa de curinga.
+- **Client alia-launcher sai da quarentena (WEAVER, decisao do CEO).** Ganhou `client.md`,
+  `squad/knowledge/` e squad enxuto de 3: BEACON (Gateway, produto e Gate), HULL (Rust/Tauri,
+  deteccao e empacotamento) e GLOW (UI ditherpunk do wizard). Todas as personas nascem com as 6
+  definicoes.
+- **Ficha de Project (L53, LATTICE).** `engine/features/project-ficha.md`: 6 campos, heranca do
+  Client por REFERENCIA, e a regra de quando NAO criar ficha. Pendurada no IDENTIFICA de
+  `orchestration.md` e indexada no MAP.md. Motivo medido: `Project` era string livre; dos 10
+  Clients so um tinha pasta `projects/`, e a unica ficha existente redeclarava `codePath` e squad
+  que ja moram na ficha do Client. Migracao do acervo (95 pares) NAO e em massa, por desenho.
+- **Pivo de meio de Task e custo (L54, ARCHIVE).** `register-task.ps1 -Id <TASK-nnn>` ATUALIZA em
+  vez de criar (id inexistente e erro, nunca cria; titulo antigo vai para `title_history`, capado
+  em 5). Bug achado no teste e corrigido: o parametro novo `-Id` colidia com a variavel local `$id`
+  da geracao de id (PowerShell nao distingue caixa), o que transformava toda chamada sem `-Id` num
+  falso update. Custo no FECHA: Task delegada (specialist != alia) nao fecha done/review sem
+  `-Tokens`/`-ToolUses`; Alia por ordem do Operator fica isenta; as 505 Tasks ja registradas nao
+  viram erro retroativo.
+- **Elo solto do RSI (ARCHIVE).** `scripts/rsi-promote-pattern.ps1`: transforma um relatorio de
+  padrao em candidato em `engine/rsi/_candidates/<slug>/` com manifesto (o que muda, por que, como
+  reverter, qual padrao originou) - SO depois do sim humano, nunca promove nem aplica. O digesto de
+  sessao (`session-reflection.ps1`) passa a gravar `camada:` no frontmatter (nucleo, client,
+  project, task, especialista, memoria) - correcao na camada errada mascara o problema.
+- **Janela fria menor.** A linha de lei que `session-start.ps1` injetava a cada boot repetia byte a
+  byte o bloco "DELEGA e a valvula" do nucleo, ja injetado no mesmo evento: removida. O boot passa
+  a injetar o bastao mais recente de `studio/baton/` quando existir (teto 1.800 bytes, fail-soft) -
+  o que o MAP.md ja prometia e o hook nao entregava. Na instancia, a regra do grafo caiu de 10,4 KB
+  para 6,5 KB: o historico (incidentes datados, tabela de estado dos mapas, decisao sobre MCP)
+  saiu para `docs/graphify-integration-historico.md` e a regra viva ficou inteira.
+- **Sensor de grafo honesto (WARDEN).** Comando que so roda script da propria casa
+  (`scripts/*.ps1`) deixa de contar como varredura e nao dispara injecao de mapa - o falso positivo
+  medido na auditoria (mapa de um Client injetado numa consulta de Task). Varredura real (`rg`, `grep`,
+  `glob`) continua contando e injetando.
+- **Ratchet de linhagem (L55).** `ORFAS` (entregou sem declarar `-BaseArtifact`) ganha baseline
+  datado de 31, que SO ENCOLHE - Task nova sem base reprova na hora. Fechar a divida historica
+  exigiria INVENTAR a base de Tasks antigas, e fabricar linhagem e pior que registrar a divida.
+  Mesmo padrao do `SEM_GATE_BASELINE` e dos baselines de graph-map/artifacts.
+- **Regra ASCII revogada: ultimos resquicios.** A frase "Sem acentos, sem emojis" saiu de 7
+  `client.md` do parque e da epigrafe da regra do grafo - a regra caiu em 09/09 (1.70.0) e esses
+  textos ainda a afirmavam.
+- **Law ledger.** L52-L55 registradas (54 no total); 7 ponteiros de linha corrigidos apos as
+  edicoes em `orchestration.md` e `smoke-test-studio.ps1` - `law-ledger-check.ps1` volta a
+  CONFERIR COM O DISCO.
+
 ## [1.70.0] - 2026-09-09
 
 CONTRATO DO ESPECIALISTA COM ORCAMENTO (L48), CUSTO NA TASK (L49), BASELINE DO HARNESS (L50),
