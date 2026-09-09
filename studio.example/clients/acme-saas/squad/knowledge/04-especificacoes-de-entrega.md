@@ -3,7 +3,7 @@
 > Contrato de CONSISTENCIA do Client: as regras objetivas que TODA peca deste squad respeita, para
 > que tudo que sair - landing, story, email, painel - pareca feito pela mesma mao. Consultar ANTES de
 > produzir (como o examples/ para reuso). O Squad Owner cobra a aderencia no Quality Gate.
-> Convencao em engine/squad-system.md ("Especificacoes de entrega"). Sem acentos, sem emojis.
+> Convencao em engine/squad-system.md ("Especificacoes de entrega").
 
 ## Design (identidade visual)
 - Paleta: preto #000, branco #fff, um unico acento (rosa #f5569b) em fill chapado.

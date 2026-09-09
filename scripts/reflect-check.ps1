@@ -16,13 +16,17 @@
   ainda, sem esperar o smoke ou o promote-memory.ps1 (que so roda sob demanda) pra notar.
 
   O stdout e adicionado ao contexto pelo Claude Code. NUNCA bloqueia o boot: exit 0 sempre,
-  envolto em try/catch. Sem acentos, sem emojis.
+ envolto em try/catch.
 #>
+# WARDEN 09/09/2026: wrapped em funcao Invoke-ReflectCheck para chamada em-processo por
+# scripts/session-start.ps1 (reduz spawns de SessionStart). Rodar direto continua identico.
+param([string]$ProposalsDir = "")
+function Invoke-ReflectCheck {
 param([string]$ProposalsDir = "")
 try {
   $root = Split-Path -Parent $PSScriptRoot
   if ([string]::IsNullOrWhiteSpace($ProposalsDir)) { $ProposalsDir = Join-Path $root "memory\_proposals" }
-  if (-not (Test-Path -LiteralPath $ProposalsDir)) { exit 0 }
+ if (-not (Test-Path -LiteralPath $ProposalsDir)) { return }
 
   # CONSERTO (TASK-285, auditoria RSI TASK-284): rsi-patterns.ps1 (PECA 3, DETECTA) so roda se
   # alguem lembra de digitar o comando - nao havia lembrete de TEMPO DECORRIDO, so de relatorio
@@ -40,13 +44,16 @@ try {
     if (Test-Path -LiteralPath $patternsArchiveDir) {
       $allPatterns.AddRange(@(Get-ChildItem -LiteralPath $patternsArchiveDir -Filter "patterns-*.md" -File -ErrorAction SilentlyContinue))
     }
+
     if ($allPatterns.Count -gt 0) {
       $lastScan = ($allPatterns | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
       $diasDesde = [math]::Floor(((Get-Date) - $lastScan.LastWriteTime).TotalDays)
       if ($diasDesde -gt $SCAN_WINDOW_DIAS) {
         Write-Host ("[ALIA - bastidor] " + $diasDesde + " dias desde a ultima varredura de padrao (" + $lastScan.Name + ") - janela observada ~" + $SCAN_WINDOW_DIAS + "d. scripts/rsi-patterns.ps1 -Write pode achar algo novo.")
       }
+
     }
+
   } catch {}
 
   $pending = @(Get-ChildItem -LiteralPath $ProposalsDir -Filter "reflection-inbox-*.md" -File -ErrorAction SilentlyContinue)
@@ -64,7 +71,7 @@ try {
     Where-Object { $_.Name -notlike "prop-*" -and $_.Name -notlike "reflection-inbox-*" -and
                    $_.Name -notlike "friction-*" -and $_.Name -notlike "patterns-*" })
 
-  if ($pending.Count -eq 0 -and $frictionPending.Count -eq 0 -and $patternsPending.Count -eq 0 -and $unknownFormat.Count -eq 0) { exit 0 }
+ if ($pending.Count -eq 0 -and $frictionPending.Count -eq 0 -and $patternsPending.Count -eq 0 -and $unknownFormat.Count -eq 0) { return }
 
   # Idade do item mais ANTIGO parado entre os 3 tipos conhecidos (em dias). >2 dias = o loop
   # apodreceu: BANDEIRA VERMELHA. Formato desconhecido fica de fora da idade (nao sabemos o
@@ -81,6 +88,7 @@ try {
     } else {
       Write-Host ("[ALIA - bastidor] " + $totalCount + " item(ns) de sessoes anteriores aguardando processamento em memory/_proposals/ (" + $pending.Count + " digest, " + $frictionPending.Count + " atrito, " + $patternsPending.Count + " padrao):")
     }
+
     foreach ($f in $pending) { Write-Host ("  - " + $f.Name) }
     foreach ($f in $frictionPending) { Write-Host ("  - " + $f.Name + " [ATRITO]") }
     foreach ($f in $patternsPending) { Write-Host ("  - " + $f.Name + " [PADRAO - decisao humana: vira candidato RSI ou nao]") }
@@ -99,7 +107,15 @@ try {
     Write-Host "3. So mencione isso ao operador se o CONFERE escalar algo (ESCALA_HUMANO). Ai e UMA pergunta simples, em linguagem de negocio, no fim de uma resposta: 'Da ultima vez anotei que [licao, em palavras do dia a dia]. Guardo isso pra valer daqui pra frente?' Nada de cartao/digest/promocao/aprovacao S/N tecnica."
     Write-Host "4. Se nada escalar, o operador nao fica sabendo - a unica evidencia e a memoria melhor. Processar continua OBRIGATORIO nesta sessao; invisivel nao e opcional."
   }
-  exit 0
+ return
 } catch {
+ return
+  }
+
+  }
+
+if ($MyInvocation.InvocationName -ne '.') {
+ Invoke-ReflectCheck -ProposalsDir $ProposalsDir
   exit 0
 }
+

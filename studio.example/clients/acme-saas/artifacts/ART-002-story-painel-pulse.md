@@ -1,6 +1,6 @@
 # ART-002 - Story - Painel Pulse - Acme SaaS
 
-> Artifact do Specialist Rex. Ligado a Task TASK-ART-002. Sem acentos, sem emojis.
+> Artifact do Specialist Rex. Ligado a Task TASK-ART-002.
 
 ## Story
 Como membro de um Espaco, quero ver o estado dos Cartoes no Painel Pulse

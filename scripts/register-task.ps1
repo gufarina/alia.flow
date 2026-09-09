@@ -39,6 +39,10 @@
   UM-PONTO-DE-DISCIPLINA (o registro grava o id certo SE quem registrou disse a verdade) - nao esta
   fechada, e nao finge estar.
 
+ CUSTO (M4): -Tokens/-ToolUses/-Budget gravam tokens/tool_uses/budget na Task; tokens > budget
+ grava budget_exceeded:true. Task done/review de Specialist != alia sem -Tokens/-ToolUses so AVISA
+ (nao trava - falta baseline historico pra virar exigencia dura).
+
   Adiciona uma entrada ao array "tasks" (preservando clients/ e o resto do estado intactos) e
   carimba "updated". Le e grava JSON UTF-8 sem BOM. Forca "tasks" a permanecer um ARRAY mesmo
   com um unico item (contorna o bug do ConvertTo-Json no PowerShell 5.1). -DryRun so mostra. exit 0.
@@ -56,6 +60,9 @@ param(
   [ValidateSet("pesquisa","construcao","revisao")][string]$Type = "construcao",
   [string]$StateFile = "",
   [switch]$OperatorOrder,
+ [int]$Tokens = -1,
+ [int]$ToolUses = -1,
+ [int]$Budget = -1,
   [switch]$DryRun
 )
 # Contrato de task tipado (1.39.0, auditoria de fluxo): -Type declara a natureza da Task e liga
@@ -81,7 +88,9 @@ function Get-SquadMemberIds {
     foreach ($ln in $lines) {
       if ($ln -match '^\s*-\s+id\s*:\s*(\S+)') { $ids.Add($matches[1]) }
     }
+
   }
+
   return $ids
 }
 # studioRoot = a pasta que contem o -StateFile de verdade (nao mais via alia.config.json/
@@ -147,6 +156,7 @@ if ([string]::IsNullOrWhiteSpace($Specialist)) {
   } else {
     Write-Host ("       squad.yaml nao encontrado para '" + $Client + "' (" + $squadYaml + "): informe mesmo assim o id de quem executou.")
   }
+
   exit 1
 }
 if ($Specialist -eq "alia") {
@@ -154,11 +164,13 @@ if ($Specialist -eq "alia") {
     Write-Host "[ERRO] -Specialist alia sem -OperatorOrder: a unica excecao legitima a lei DELEGA e ordem explicita do Operator (engine/orchestration.md). Se foi o Operator quem mandou a coordenadora executar direto, repita com -OperatorOrder pra tornar a excecao auditavel."
     exit 1
   }
+
 } elseif ($squadIds.Count -gt 0) {
   if (-not ($squadIds -contains $Specialist)) {
     Write-Host ("[ERRO] -Specialist '" + $Specialist + "' nao consta no squad de '" + $Client + "'. Ids validos: " + ($squadIds -join ", "))
     exit 1
   }
+
 } else {
   # OPP-77: Client pontual/arquivado nao TEM squad por desenho - dizer "faltou squad" ali seria
   # inventar um buraco. Ativo (ou sem estado declarado) segue recebendo o aviso de sempre.
@@ -168,6 +180,20 @@ if ($Specialist -eq "alia") {
   } else {
     Write-Host ("[AVISO] squad.yaml nao encontrado para '" + $Client + "' (" + $squadYaml + "): nao deu pra validar -Specialist '" + $Specialist + "' contra o time. Prosseguindo (cliente sem squad nao trava Task nova).")
   }
+
+}
+
+# CUSTO NO ATO (M4, baseline de custo): Task fechada (done/review) por um Specialist que nao a
+# alia SEM -Tokens/-ToolUses recebe AVISO forte (nao trava - o baseline historico ainda nao existe
+# pra virar exigencia dura; quando existir, isto vira erro). -Budget e opcional; quando os tres
+# valores existem e tokens estoura o orcamento, grava budget_exceeded:true e avisa no ato.
+if (($Status -eq "done" -or $Status -eq "review") -and $Specialist -ne "alia" -and ($Tokens -lt 0 -or $ToolUses -lt 0)) {
+ Write-Host ("[AVISO] Task " + $Status + " de '" + $Specialist + "' sem -Tokens/-ToolUses: registre o custo no ato (ainda nao trava - vira trava quando o baseline existir).")
+}
+$budgetExceeded = $false
+if ($Tokens -ge 0 -and $Budget -ge 0 -and $Tokens -gt $Budget) {
+ $budgetExceeded = $true
+ Write-Host ("[AVISO] tokens (" + $Tokens + ") > budget (" + $Budget + "): budget_exceeded=true")
 }
 
 # AGENT ID (TASK-123): tres ramos, nunca inventado. "alia" -> "alia"; -Specialist valido do squad
@@ -194,6 +220,10 @@ $task = [PSCustomObject][ordered]@{
   session        = $SessionId
   gate_verdict   = $GateVerdict
   operator_order = $OperatorOrder.IsPresent
+ tokens = $(if ($Tokens -ge 0) { $Tokens } else { $null })
+ tool_uses = $(if ($ToolUses -ge 0) { $ToolUses } else { $null })
+ budget = $(if ($Budget -ge 0) { $Budget } else { $null })
+ budget_exceeded = $budgetExceeded
   created        = $now
 }
 
@@ -201,9 +231,14 @@ Write-Host "=== Register Task ==="
 Write-Host ("state: " + $StateFile)
 Write-Host ("nova:  " + $id + " | " + $Client + " | " + $Title)
 
+if ($Tokens -ge 0 -or $ToolUses -ge 0 -or $Budget -ge 0) {
+ Write-Host ("custo: tokens=" + $task.tokens + " | tool_uses=" + $task.tool_uses + " | budget=" + $task.budget + " | budget_exceeded=" + $task.budget_exceeded)
+}
+
 if ($DryRun) {
   Write-Host "[DRY-RUN] nao gravou."
   exit 0
+
 }
 
 $json.tasks = @($existing + $task)

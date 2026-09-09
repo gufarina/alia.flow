@@ -2,7 +2,7 @@
 
 > A convencao canonica que separa o PRODUTO (Alia, open source, CLEAN) da INSTANCIA APLICADA
 > (privada, do operador). E a fronteira de bounded context que impede os dois mundos de voltarem a
-> se misturar. Termos em [glossary.md](../glossary.md). Sem acentos, sem emojis.
+> se misturar. Termos em [glossary.md](../glossary.md).
 
 ---
 

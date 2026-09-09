@@ -5,8 +5,8 @@ arquivo `MANIFEST.sha256` na raiz. Ele lista o hash SHA256 de cada arquivo do
 pacote, uma linha por arquivo:
 
 ```
-a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447  scripts/doctor.ps1
-7ebd9253943ba3a0e5a56cea696b802091218b49747fd5e9fea9604126eef25f  README.md
+a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447 scripts/doctor.ps1
+7ebd9253943ba3a0e5a56cea696b802091218b49747fd5e9fea9604126eef25f README.md
 ...
 ```
 
@@ -32,19 +32,19 @@ reporta exatamente quais arquivos e sai com codigo de erro (exit 1):
 
 ```
 [FALHA] divergencia encontrada:
-  ALTERADOS:
-    - scripts/doctor.ps1
-  FALTANDO:
-    - README.md
-  EXTRA (nao listado no manifesto):
-    - arquivo-nao-esperado.txt
+ ALTERADOS:
+ - scripts/doctor.ps1
+ FALTANDO:
+ - README.md
+ EXTRA (nao listado no manifesto):
+ - arquivo-nao-esperado.txt
 ```
 
 - **ALTERADO** - o arquivo existe, mas o hash nao bate com o do manifesto
-  (conteudo mudou).
+ (conteudo mudou).
 - **FALTANDO** - o manifesto lista o arquivo, mas ele nao esta no disco.
 - **EXTRA** - o arquivo esta no disco, mas nao consta no manifesto (nao fazia
-  parte do pacote original).
+ parte do pacote original).
 
 ## Como o manifesto e gerado
 

@@ -28,7 +28,7 @@
   Uso:
     cost-sensor.ps1 [-ProjectsDir <path>] [-Slug <slug>] [-Date yyyy-MM-dd]
                      [-CapSubagents 20] [-CapSessionMB 30] [-CapDailyMB 80] [-Top 5] [-WhatIf]
-  Escrita .NET UTF-8 sem BOM. Sem acentos, sem emojis.
+  Escrita .NET UTF-8 sem BOM.
 #>
 param(
   [string]$ProjectsDir = "",

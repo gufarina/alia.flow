@@ -1,7 +1,7 @@
 # Bastao - molde estruturado do handoff <=500 tokens
 # Doutrina completa: engine/features/bastao.md
 # Preencher todos os campos antes de considerar a Task fechada nesta estacao.
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# UTF-8 sem BOM.
 
 bastao:
   # Quem passa a bola. Estacao/agente/papel de origem. 1 linha.

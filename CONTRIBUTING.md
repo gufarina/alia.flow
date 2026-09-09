@@ -11,7 +11,7 @@ Nada entra sem o trilho verde. Antes de abrir um PR:
 
 ```sh
 powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1
-#   -> todos [PASS], "ALL GREEN", exit 0
+# -> todos [PASS], "ALL GREEN", exit 0
 ```
 
 Se o smoke fica vermelho, o PR nao avanca - o mesmo trilho roda na sua maquina e no CI.
@@ -22,7 +22,7 @@ O Alia Flow evolui em incrementos pequenos e reversiveis. Cada mudanca segue:
 
 1. **Edite o motor** (`engine/`) ou os scripts. Uma mudanca = um incremento isolavel.
 2. **Suba a VERSION** (semver): PATCH (correcao de doc, adicao pequena) / MINOR (feature nova
-   retrocompativel) / MAJOR (quebra de contrato - constituicao, glossario, schema).
+ retrocompativel) / MAJOR (quebra de contrato - constituicao, glossario, schema).
 3. **Escreva no CHANGELOG.md** (topo, com o que mudou e por que).
 4. **Rode o smoke** ate ALL GREEN. O trilho exige que a VERSION bata com o topo do CHANGELOG.
 5. **Abra o PR** contra `main`.
@@ -40,10 +40,8 @@ O motor tem uma fronteira de mutabilidade. Respeite-a:
 
 ## Estilo
 
-- **Sem acentos, sem emojis** nos arquivos do produto (motor, scripts, docs de produto). O smoke
-  checa encoding. A LP de marketing e a excecao (portugues completo).
 - **Linguagem ubiqua:** use os termos de `engine/glossary.md`. Inventar sinonimo confunde o
-  agente e reprova no gate. Termo novo entra no glossario primeiro.
+ agente e reprova no gate. Termo novo entra no glossario primeiro.
 - **Commits:** descreva a mudanca e o porque, nao so o "o que".
 
 ## Reportar bug ou pedir feature

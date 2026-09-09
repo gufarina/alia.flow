@@ -3,7 +3,7 @@
 > Cada Specialist carrega no segundo cerebro a metodologia de um mestre real do dominio.
 > Versao propria do conceito de "mentes-clone" do legado: a IDEIA (emular o metodo de um mestre) e
 > livre; a marca e o codigo do legado, nao. Aqui e nosso, com metodologias publicas e documentadas.
-> Sem acentos, sem emojis.
+>
 
 ---
 

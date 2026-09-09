@@ -3,7 +3,7 @@
 # frugal-skills.md (fonte canonica). O smoke valida o pareamento prosa<->yaml. O Frugality Check
 # (passo mechanical_before_judgment) descreve a regra script-vs-Specialist que este catalogo encoda.
 # Squads podem ADICIONAR skills; a invariante mechanical_only nunca muda.
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# UTF-8 sem BOM.
 
 feature: frugal-skills
 spec: engine/features/frugal-skills.md

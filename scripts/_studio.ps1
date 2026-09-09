@@ -2,7 +2,7 @@
 # O engine nunca crava "studio/": le o caminho do campo studio_dir na config.
 #   studio_dir = "."       => os dados ficam na RAIZ da instalacao (ao lado do engine).
 #   studio_dir = "studio"  => os dados ficam numa subpasta (padrao do produto / lab).
-# Default "studio" quando a config nao existe ou nao traz o campo. Sem acentos, sem emojis.
+# Default "studio" quando a config nao existe ou nao traz o campo.
 function Get-StudioRoot {
   param([Parameter(Mandatory = $true)][string]$Root)
   $studioDir = "studio"

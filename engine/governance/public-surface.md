@@ -1,7 +1,7 @@
 # LEI da superficie publica - o que pode existir no git
 
 > Mandato do CEO em 2026-08-01, depois de a Alia commitar landing pages no repo da oficina.
-> Sem acentos, sem emojis. Esta lei vem ANTES de qualquer conveniencia de versionamento.
+> Esta lei vem ANTES de qualquer conveniencia de versionamento.
 
 ## A lei, em uma frase
 
@@ -31,11 +31,13 @@ Regra de bolso: **se um estranho lendo aquilo aprende como a gente decide por de
 | Coisa | Onde fica | Versionado? |
 |---|---|---|
 | Produto publico | `Projetos/alia-flow` (repo com `origin`) | SIM - e o unico que publica |
-| Oficina (motor em evolucao, LP, docs, PRD) | `studio-farina/clients/alia-flow-lab` | NAO - **sem git nenhum**, por lei |
-| Operacao do studio (clientes, memoria, tarefas) | `studio-farina/` | NAO - nunca foi git |
+| Oficina (motor em evolucao, LP, docs, PRD) | `{studio_dir}/clients/{engine_home}` | NAO - **sem git nenhum**, por lei |
+| Operacao do studio (clientes, memoria, tarefas) | `{studio_dir}/` | NAO - nunca foi git |
 
 A oficina **NAO E REPOSITORIO GIT** (removido em 01/08/2026; historico antigo arquivado em
-`studio-farina/_backups/git-oficina-arquivado-2026-08-01`, caso alguem precise consultar).
+`{studio_dir}/_backups/git-oficina-arquivado-<data>`, caso alguem precise consultar).
+`{studio_dir}` e `{engine_home}` vem de `alia.config.json` (ver AGENTS.md, Fronteira) - este doc e
+propagado a toda instancia e nunca cita o caminho de uma maquina especifica.
 Oficina nunca precisou de git. Se alguem rodar `git init` ali, esta violando esta lei.
 
 ## Como o trabalho de desenvolvimento e protegido, entao
@@ -81,6 +83,7 @@ Comando unico de conferencia, antes de qualquer publicacao:
 
 ```
 powershell -ExecutionPolicy Bypass -File scripts/check-public-surface.ps1 -Repo <caminho do pacote ou do repo publico>
+
 ```
 
 `REPROVADO` com a lista de arquivos + motivo = nao publica. `SUPERFICIE LIMPA` = pode seguir.

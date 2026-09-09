@@ -4,7 +4,7 @@
   Pergunta que responde: o projeto avancou desde o ultimo ciclo? (sinal de estagnacao)
   Olha o artifact mais recente (mtime de arquivos do Client) e as Tasks do Client em state.json
   (campo created). Se nada mudou dentro da janela, levanta sinal de estagnacao. Frugal: so le mtime
-  e parseia o state. Reporta, nao corrige. Escrita .NET UTF-8 sem BOM. Sem acentos, sem emojis.
+  e parseia o state. Reporta, nao corrige. Escrita .NET UTF-8 sem BOM.
   O RSI propoe, o Quality Gate aprova.
 #>
 param(

@@ -11,8 +11,6 @@ Capacidade da Alia de propor, criar e revisar os loops de governanca de cada pro
 Spec do motor: `engine/features/loop-designer.md`. Catalogo e tiers: `engine/governance/loops.md`.
 Regra de ouro: nenhum projeto comeca sem governanca; nenhum loop fica eterno por inercia.
 
-Sem acentos, sem emojis em qualquer arquivo gerado (regra do CEO).
-
 ## Modos
 
 | Modo | Quando | O que faz |
@@ -99,6 +97,6 @@ projeto tem dominio de velocidade alta (R5). Para configura-lo:
 
 - Frugal: projeto nao-ativo = zero loop agendado. deep-research e sob demanda, nunca agendado.
 - Todo loop nasce com `review_on`. Loop sem retorno e aposentado, nao mantido por inercia.
-- Toda escrita de arquivo: UTF-8 sem BOM, sem acentos, sem emojis.
+- Toda escrita de arquivo: UTF-8 sem BOM,
 - Loop agendado sem consumidor medido do proprio relatorio nao entra na selecao automatica (licao
   do corte de 10/08/2026: virar comando manual documentado, nao rotina fantasma).

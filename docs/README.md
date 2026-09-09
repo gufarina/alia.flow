@@ -12,14 +12,14 @@ Specialist certo do Squad do Client, monitora e fecha com o Quality Gate. A Alia
 
 ```
 alia-flow/
-|- alia.config.json   # nome do Studio + caminhos (studio_dir aponta a pasta de dados)
-|- AGENTS.md          # boot loader (a Alia operando o Alia Flow)
-|- README.md          # visao geral da raiz
-|- engine/            # o motor Alia Flow (a lei; nunca tem dado de Client)
-|- skills/            # skills do produto (file-organization, loop-designer...)
-|- scripts/           # provas deterministicas (smoke-test, loops)
-|- studio.example/    # instancia de exemplo (Client acme-saas) - a unica que e publicada
-\- docs/              # esta documentacao
+|- alia.config.json # nome do Studio + caminhos (studio_dir aponta a pasta de dados)
+|- AGENTS.md # boot loader (a Alia operando o Alia Flow)
+|- README.md # visao geral da raiz
+|- engine/ # o motor Alia Flow (a lei; nunca tem dado de Client)
+|- skills/ # skills do produto (file-organization, loop-designer...)
+|- scripts/ # provas deterministicas (smoke-test, loops)
+|- studio.example/ # instancia de exemplo (Client acme-saas) - a unica que e publicada
+\- docs/ # esta documentacao
 ```
 
 A pasta de **dados do operador** (Clients, Squads, estado) e definida em `alia.config.json` pelo
@@ -67,5 +67,5 @@ governanca); os Specialists carregam o segundo cerebro antes de executar.
 ## Estado e fonte de verdade
 
 - o `state.json` do studio em uso - **fonte canonica**: Clients, Squads, Tasks. Toda decisao de
-  status le daqui.
+ status le daqui.
 - o `studio.yaml` do studio em uso - manifesto do Studio (nome, operador, proposito).

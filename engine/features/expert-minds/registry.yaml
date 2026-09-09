@@ -1,7 +1,7 @@
 # Expert Minds - registry (indice legivel por maquina)
 # O Squad Creator consulta este arquivo para escolher a mente certa por dominio,
 # sem reler cada .md. Cada entrada aponta para o arquivo-fonte do metodo.
-# Spec: ../expert-minds.md | Sem acentos, sem emojis. UTF-8 sem BOM.
+# Spec: ../expert-minds.md | UTF-8 sem BOM.
 
 version: 1
 

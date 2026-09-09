@@ -30,7 +30,7 @@
       -By "operador" -Note "ideia tocada uma vez em jun/2026"
 
   -DryRun mostra a transicao sem gravar. Le e grava JSON UTF-8 sem BOM, preservando tasks[] e todo
-  o resto do estado. exit 0 no sucesso, 1 no erro. Sem acentos, sem emojis.
+  o resto do estado. exit 0 no sucesso, 1 no erro.
 #>
 param(
   [string]$Client = "",

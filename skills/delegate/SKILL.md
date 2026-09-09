@@ -12,7 +12,7 @@ provenance: OPP-42 (delegacao portavel), Delta 2
 > entre "a coordenadora NUNCA executa" (Principio I) e "nao da pra acionar o Specialist", e caiu no
 > pior fallback: executar ela mesma, sem papel. Esta skill existe para que isso nao volte a
 > acontecer.
-> Sem acentos, sem emojis.
+>
 
 ## A LEI nao muda, o mecanismo sim
 

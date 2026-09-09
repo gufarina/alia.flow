@@ -10,9 +10,7 @@ provenance: nucleo
 Capacidade que fecha o loop de aprendizado do RSI no ponto que faltava: ler o transcript
 cru de uma sessao e transformar o que aconteceu em PROPOSTAS de memoria. Spec do motor:
 `engine/rsi/rsi.md` (estagios COLETA -> DETECTA -> PROPOE). Governanca:
-`engine/governance/provenance.md` (so propoe diff, nunca aplica, nunca deleta, nunca toca nucleo).
-
-Sem acentos, sem emojis em qualquer arquivo gerado (regra do CEO). Escrita UTF-8 sem BOM.
+`engine/governance/provenance.md` (so propoe diff, nunca aplica, nunca deleta, nunca toca nucleo). Escrita UTF-8 sem BOM.
 
 ## O que esta capacidade NAO faz
 
@@ -215,6 +213,6 @@ sozinho. A politica machine-checkable esta em `engine/rsi/rsi.yaml` -> `memory_p
   A promocao e outro passo (CONFERE independente + promote-memory.ps1), nunca o mesmo agente.
 - Autonomia SO na promocao de memoria (SEGURA_AUTO nos 4 crivos). Nucleo/engine/Gate = humano.
 - Captura o conserto, nao a reclamacao. Padrao duravel, nao incidente transitorio.
-- Toda escrita: UTF-8 sem BOM, sem acentos, sem emojis.
+- Toda escrita: UTF-8 sem BOM,
 - Disparo plugado (desde 1.1.0): digest no SessionEnd; julgamento lembrado no SessionStart
   (reflect-check.ps1); promocao apos CONFERE (promote-memory.ps1, approved_by). O loop fecha.

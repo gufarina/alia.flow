@@ -2,7 +2,7 @@
 # Espelho legivel por maquina de constitution.md, com os principios em forma checavel.
 # Fonte canonica pra humanos: constitution.md (a prosa). O smoke valida o pareamento
 # prosa<->yaml (manifestos estruturados). Mudou um, mude o outro.
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# UTF-8 sem BOM.
 
 version: 1
 canonical_doc: constitution.md

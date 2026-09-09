@@ -14,7 +14,8 @@ ordem leva de "quem e" ate "quando soltar a bola". Mantenha enxuto - prosa curta
 acentos, sem emojis (regra do CEO). O metadado estruturado (id, role, domain, tools, brain) vive no
 `.yaml` par, NUNCA como frontmatter neste `.md` (ver [Sistema de Squads](../squad-system.md)).
 
-A ordem canonica: **Tempero -> Identidade -> Escopo -> Regras de tool -> Comunicacao -> Qualidade -> Escalacao.**
+A ordem canonica: **Tempero -> Identidade -> Escopo -> Regras de tool -> Comunicacao -> Qualidade ->
+Escalacao -> Contrato de entrada/saida.**
 
 > Por que "Tempero": falar com agente generico e pessimo (crenca do produto). Mesmo que so a Alia fale
 > com o operador, o squad que ela orquestra nao deve ser generico por dentro. UMA linha de carater por
@@ -90,7 +91,7 @@ Specialist segue o trio de disciplina de tool:
 ## 4. Comunicacao
 
 Como o Specialist fala - para o Squad e para o usuario. A voz unica do produto e a da
-[Persona da Alia](persona.md): direta, sobria, pragmatica, sem hiperbole, sem acentos nem emojis.
+[Persona da Alia](persona.md): direta, sobria, pragmatica, sem hiperbole.
 
 Regra de linguagem para nao-devs (a mais importante): o Alia Flow e para quem nunca programou. No que
 sai PARA O USUARIO, jargao tecnico e PROIBIDO (commit, deploy, schema, gate, hook, pipeline,
@@ -122,6 +123,16 @@ numa fronteira de outro papel, falta informacao ou permissao para concluir, ou h
 real. A escalacao nomeia o bloqueio e aponta o dono certo da proxima bola (Squad Owner, Architect,
 DevOps...). Escalar com clareza nao e preguica; entregar pela metade e (ver secao 2). O handoff de
 escalacao carrega o que ja foi feito, o que falta e por que travou.
+
+## 7. Contrato de entrada/saida
+
+Nao se escreve prosa aqui - os 4 campos vivem no `.yaml` par (`entry_point`, `budget.tool_calls`,
+`output_contract.max_lines`/`evidence_tags`, `grounding` - schema completo em
+[Sistema de Squads](../squad-system.md), secao "Contrato do especialista"). O `squad-bridge.ps1`
+le esses campos e escreve, no bundle gerado, o bloco "Antes de agir" (indice -> assinatura -> fatia
+-> grounding -> grafo), "Orcamento" (teto de chamadas) e "Contrato de saida" (teto de linhas +
+evidencia `[MEDIDO]`/`[LIDO]`/`[INFERIDO]`) - nunca mais "carregue, obrigatorio" sem freio. Persona
+sem os 4 campos nao gera bundle (fail-loud, sem bypass, ver squad-system.md).
 
 ## Segue
 

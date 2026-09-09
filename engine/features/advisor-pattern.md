@@ -3,7 +3,7 @@
 > Feature do motor. Padrao executor + conselheiro: um agente rodando em modelo barato/rapido
 > (executor) pode CONSULTAR o tier forte (advisor) no meio da execucao para receber um plano ou
 > correcao de rumo - sem trocar de modelo, sem escalar, sem parar a Task. Origem: advisor tool da
-> Anthropic (beta `advisor-tool-2026-03-01`). Sem acentos, sem emojis. UTF-8 sem BOM.
+> Anthropic (beta `advisor-tool-2026-03-01`). UTF-8 sem BOM.
 
 ---
 

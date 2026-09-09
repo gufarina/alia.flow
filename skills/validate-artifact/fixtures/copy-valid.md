@@ -1,6 +1,6 @@
 # FIX-valid - Copy - fixture
 
-> Fixture VALIDO do contrato 'copy' (validate-artifact). Sem acentos, sem emojis.
+> Fixture VALIDO do contrato 'copy' (validate-artifact).
 
 ## Headline
 Headline de exemplo que carrega a mensagem.

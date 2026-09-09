@@ -1,6 +1,6 @@
 # Contexto do Produto - Acme SaaS
 
-> Conhecimento de contexto do Client acme-saas (exemplo neutro). Sem acentos, sem emojis.
+> Conhecimento de contexto do Client acme-saas (exemplo neutro).
 
 Acme SaaS e uma plataforma B2B ficticia de gestao de operacoes para times pequenos.
 O produto vende organizacao do trabalho e visibilidade do progresso para o operador.

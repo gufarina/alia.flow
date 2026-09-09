@@ -15,8 +15,6 @@ Spec do padrao (5 passos): `engine/orchestration.md`.
 Estado (fonte da verdade): `studio/state.json` (campo `events[]`, aditivo ao `tasks[]`).
 Mecanismo: `skills/state-resume/state-resume.ps1`.
 
-Sem acentos, sem emojis em qualquer arquivo gerado (regra do CEO).
-
 ## O que e e por que existe
 
 O `state.json` gravava so `tasks[]` (snapshots do que ja fechou) - zero registro do que

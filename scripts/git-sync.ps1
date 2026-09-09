@@ -15,8 +15,7 @@
     powershell -ExecutionPolicy Bypass -File scripts/git-sync.ps1 -Repo "usuario/meu-backup" `
       [-Path <pasta>] [-Branch main] [-Message "..."] [-Token <tk>] [-DryRun]
 
-  -DryRun: valida entradas e LISTA o que seria enviado, sem chamar a API (prova segura sem token).
-  Sem acentos, sem emojis. UTF-8 sem BOM. exit 0 sucesso, 1 erro (com motivo claro).
+  -DryRun: valida entradas e LISTA o que seria enviado, sem chamar a API (prova segura sem token). UTF-8 sem BOM. exit 0 sucesso, 1 erro (com motivo claro).
 #>
 param(
   [Parameter(Mandatory=$true)][string]$Repo,          # "owner/repo"

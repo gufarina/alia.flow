@@ -1,7 +1,7 @@
 # Onboarding - Textos da pagina de boas-vindas
 
 > Conteudo pronto para a pagina de boas-vindas do Alia Flow. Voz: Alia, executiva calma e elegante.
-> Linguagem simples para quem nunca ouviu falar em IA agentica. Sem acentos, sem emojis, so ASCII.
+> Linguagem simples para quem nunca ouviu falar em IA agentica.
 > O desenvolvedor da pagina usa estes textos como copy final.
 
 ---

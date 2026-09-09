@@ -6,7 +6,7 @@
   tabela) e varre os entregaveis recentes (knowledge/*.md, exceto o proprio glossario e relatorios
   de loop) procurando por Termos Capitalizados de Negocio que NAO estao no glossario - candidatos a
   drift semantico. Frugal: heuristica leve, so o que mudou recentemente. Reporta, nao corrige.
-  Escrita .NET UTF-8 sem BOM. Sem acentos, sem emojis. O RSI propoe, o Quality Gate aprova.
+  Escrita .NET UTF-8 sem BOM. O RSI propoe, o Quality Gate aprova.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Client,

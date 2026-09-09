@@ -34,7 +34,7 @@
                    [-MaxNewerFiles 10] [-AllowStale] [-Refresh]
         -Path (alias -StudioDir) default: studio.example na raiz do produto.
   exit 0 se nenhum Client reprova; 1 caso contrario (e sempre imprime a linha [FAIL], porque o
-  exit code do PowerShell nao propaga por algumas rotas de shell). Sem acentos, sem emojis.
+  exit code do PowerShell nao propaga por algumas rotas de shell).
 #>
 param(
   [Alias("Path")][string]$StudioDir = "",

@@ -28,7 +28,7 @@
 
   Uso:
     budget-check.ps1 -Id <loop-ou-task> -CapRound <n> -CapDaily <n> [-StatePath <state.json>] [-Date yyyy-MM-dd]
-  Escrita .NET UTF-8 sem BOM. Sem acentos, sem emojis.
+  Escrita .NET UTF-8 sem BOM.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Id,

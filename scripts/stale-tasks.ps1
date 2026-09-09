@@ -13,7 +13,7 @@
   ativo (compatibilidade).
 
   Uso:  powershell -ExecutionPolicy Bypass -File scripts/stale-tasks.ps1 [-StateFile <p>] [-StaleDays 7] [-Now 2026-07-03]
-  exit 0 sempre (e um relatorio; parada nao e erro de execucao, e sinal pra acao). Sem acentos, sem emojis.
+  exit 0 sempre (e um relatorio; parada nao e erro de execucao, e sinal pra acao).
 #>
 param(
   [string]$StateFile = "",

@@ -2,7 +2,7 @@
 # Espelho estruturado de rsi.md, com triggers/guardrails/metrica em forma checavel.
 # Fonte canonica: engine/rsi/rsi.md. O smoke valida o pareamento prosa<->yaml.
 # O nucleo (constitution, principios) NUNCA aparece como alvo aqui.
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# UTF-8 sem BOM.
 
 rsi: alia-flow
 version: 1

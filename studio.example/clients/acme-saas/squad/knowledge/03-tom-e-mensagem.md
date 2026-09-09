@@ -1,6 +1,6 @@
 # Tom e Mensagem - Acme SaaS
 
-> Guia de tom para copy e comunicacao do Client. Sem acentos, sem emojis.
+> Guia de tom para copy e comunicacao do Client.
 
 ## Tom
 Direto, concreto e sem jargao. Fala de resultado, nao de funcionalidade.

@@ -16,17 +16,24 @@
   comeca (landing, auditoria, release, delegacao...), as licoes daquele tipo chegam juntas -
   sem isso, a licao fica enterrada na memoria e so aparece se alguem lembrar de procurar.
 
+ ENXUTO POR PADRAO (M4, orcamento de contexto): so as -Last (default 5) Tasks mais recentes do
+ escopo entram no historico, 3 linhas cada (id+status+titulo / entregou+partiu de / gate+sessao).
+ -Full volta ao comportamento antigo (todas as Tasks, 4 linhas cada) - use so quando a
+ investigacao exigir o historico inteiro.
+
   Uso:  powershell -ExecutionPolicy Bypass -File scripts/task-context.ps1 -Client <id> [-Project <p>]
         [-TaskType <tipo>] [-StateFile <caminho>] [-MemoryDir <caminho>]
         (default StateFile: state.json na raiz da instancia; default MemoryDir: memory/ na raiz)
-  Le JSON UTF-8. Sem acentos, sem emojis. exit 0 (mesmo sem Tasks: continuidade vazia e informacao).
+ Le JSON UTF-8. exit 0 (mesmo sem Tasks: continuidade vazia e informacao).
 #>
 param(
   [Parameter(Mandatory=$true)][string]$Client,
   [string]$Project = "",
   [string]$TaskType = "",
   [string]$StateFile = "",
-  [string]$MemoryDir = ""
+ [string]$MemoryDir = "",
+ [int]$Last = 5,
+ [switch]$Full
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -55,20 +62,26 @@ Write-Host ("=== Continuidade: " + $scope + " ===")
 if ($hits.Count -eq 0) {
   Write-Host "Nenhuma Task anterior. Ponto de partida limpo - registre a primeira e siga."
 } else {
-  Write-Host ($hits.Count.ToString() + " Task(s) anterior(es). Parta da ultima, nao do palpite:")
+ $sorted = @($hits | Sort-Object { Field $_ 'id' })
+ $shown = if ($Full) { $sorted } else { $sorted | Select-Object -Last $Last }
+ $omitted = $sorted.Count - $shown.Count
+ Write-Host ($hits.Count.ToString() + " Task(s) anterior(es)" + $(if ($omitted -gt 0) { " (mostrando as ultimas " + $Last + "; " + $omitted + " mais antiga(s) omitida(s) - use -Full pra ver todas)" } else { "" }) + ". Parta da ultima, nao do palpite:")
   Write-Host ""
-  foreach ($t in ($hits | Sort-Object { Field $_ 'id' })) {
+ foreach ($t in $shown) {
     Write-Host ("- " + (Field $t 'id') + " [" + (Field $t 'status') + "] " + (Field $t 'title'))
+ Write-Host (" entregou: " + $(if ((Field $t 'artifact') -eq '') { "(nao registrado)" } else { Field $t 'artifact' }) + " | partiu de: " + $(if ((Field $t 'base_artifact') -eq '') { "(nao registrado)" } else { Field $t 'base_artifact' }))
+ if ($Full) {
     Write-Host ("    projeto:  " + $(if ((Field $t 'project') -eq '') { "(sem projeto - FURO de rastreio)" } else { Field $t 'project' }))
-    Write-Host ("    entregou: " + $(if ((Field $t 'artifact') -eq '') { "(nao registrado)" } else { Field $t 'artifact' }))
-    Write-Host ("    partiu de:" + " " + $(if ((Field $t 'base_artifact') -eq '') { "(nao registrado - FURO de rastreio)" } else { Field $t 'base_artifact' }))
     Write-Host ("    gate:     " + $(if ((Field $t 'gate_verdict') -eq '') { "(sem veredito)" } else { Field $t 'gate_verdict' }) + " | sessao: " + $(if ((Field $t 'session') -eq '') { "(nao registrada)" } else { Field $t 'session' }))
   }
 
+}
+
   # A ultima Task e a base natural do proximo passo (a "ultima revisao" que a Alia cita).
-  $last = ($hits | Sort-Object { Field $_ 'id' })[-1]
+ # $lastTask (nao $last) - PowerShell e case-insensitive e $last colidia com o param -Last (int).
+ $lastTask = $sorted[-1]
   Write-Host ""
-  Write-Host ("ULTIMA REVISAO: " + (Field $last 'id') + " -> entregou '" + (Field $last 'artifact') + "'. O proximo passo parte DAQUI.")
+ Write-Host ("ULTIMA REVISAO: " + (Field $lastTask 'id') + " -> entregou '" + (Field $lastTask 'artifact') + "'. O proximo passo parte DAQUI.")
 }
 
 # ---------------------------------------------------------------------------------------------
@@ -76,6 +89,7 @@ if ($hits.Count -eq 0) {
 # campo `aplica_a:` no frontmatter das notas CANONICAS (memory/*.md, nivel raiz - nunca
 # _proposals/, que e staging nao aprovado). Sem banco, sem embedding: string igual (case-
 # insensitive, trim), ou o valor do TaskType aparecendo numa lista `aplica_a: [a, b]`.
+
 # ---------------------------------------------------------------------------------------------
 if ($TaskType -ne "") {
   Write-Host ""
@@ -83,7 +97,9 @@ if ($TaskType -ne "") {
   if (-not (Test-Path -LiteralPath $MemoryDir)) {
     Write-Host ("Sem memory/ nesta instancia (" + $MemoryDir + ") - nada a buscar.")
     exit 0
+
   }
+
   $notes = @(Get-ChildItem -LiteralPath $MemoryDir -Filter "*.md" -File -ErrorAction SilentlyContinue)
   $matches = New-Object System.Collections.Generic.List[object]
   foreach ($n in $notes) {
@@ -97,7 +113,9 @@ if ($TaskType -ne "") {
       $desc = if ($descM.Success) { $descM.Groups[1].Value.Trim() } else { "" }
       $matches.Add([PSCustomObject]@{ Name = $n.BaseName; Desc = $desc })
     }
+
   }
+
   if ($matches.Count -eq 0) {
     Write-Host ("Nenhuma nota com aplica_a: " + $TaskType + " ainda. Nao e erro - so nao ha licao marcada para este tipo.")
   } else {
@@ -105,6 +123,8 @@ if ($TaskType -ne "") {
     foreach ($mt in $matches) {
       Write-Host ("  - " + $mt.Name + $(if ($mt.Desc -ne "") { " - " + $mt.Desc } else { "" }))
     }
+
   }
+
 }
 exit 0

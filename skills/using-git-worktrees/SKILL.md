@@ -15,8 +15,6 @@ deixam de disputar os mesmos arquivos.
 Padroes de git do produto: `engine/engineering.md` (conventional commits, atomicos).
 Regra de fronteira: `git push` e exclusivo do DevOps (engineering.md, secao Git).
 
-Sem acentos, sem emojis em qualquer arquivo gerado (regra do CEO).
-
 ## Quando usar
 
 - Duas ou mais Tasks tocam o mesmo repositorio ao mesmo tempo e nao podem esperar uma
@@ -105,4 +103,4 @@ git branch -d frente/<descricao-curta>
   tronco.
 - `git push` nunca sai daqui: e do DevOps. Este procedimento para no merge local.
 - Worktree e branch integrados sao limpos, nunca abandonados.
-- Toda escrita de arquivo nas frentes: UTF-8 sem BOM, sem acentos, sem emojis.
+- Toda escrita de arquivo nas frentes: UTF-8 sem BOM,

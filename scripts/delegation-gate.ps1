@@ -56,35 +56,52 @@
 
   PARAMETROS DE TESTE (WARDEN): -Root, -MarkerPath, -StateFile sao overrides SO para fixture de
   smoke test (mesmo padrao de -Root em graph-usage-sensor.ps1 e -LogPath/-ConfigPath em
-  response-guard.ps1). O hook de producao nunca passa esses params.
-
-  Sem acentos, sem emojis. Escrita .NET UTF-8 sem BOM.
+ response-guard.ps1). O hook de producao nunca passa esses params. Escrita .NET UTF-8 sem BOM.
 #>
+# WARDEN 09/09/2026: logica movida para funcao Invoke-DelegationGate (aceita -RawInput) para
+# permitir chamada em-processo por scripts/pre-tool-use.ps1 (1 spawn em vez de 2). Rodar este
+# arquivo direto (powershell -File) continua identico - o footer chama a funcao e usa Console.In
+# quando -RawInput nao e passado.
 param(
   [string]$Root = "",
   [string]$MarkerPath = "",
-  [string]$StateFile = ""
+ [string]$StateFile = "",
+ [string]$RawInput = $null
+)
+
+function Invoke-DelegationGate {
+param(
+ [string]$Root = "",
+ [string]$MarkerPath = "",
+ [string]$StateFile = "",
+ [string]$RawInput = $null
 )
 
 try {
   $offEnv = $env:ALIA_DELEGATION_GATE_OFF
   $gateOff = ($offEnv -eq "1") -or ($offEnv -eq "true")
 
-  if (-not [Console]::IsInputRedirected) { exit 0 }
   $raw = ""
+ if (-not [string]::IsNullOrWhiteSpace($RawInput)) {
+ $raw = $RawInput
+ } else {
+ if (-not [Console]::IsInputRedirected) { return }
+
   try {
     $readTask = [Console]::In.ReadToEndAsync()
     if ($readTask.Wait(5000)) { $raw = $readTask.Result } else { $raw = "" }
   } catch { $raw = "" }
-  if ([string]::IsNullOrWhiteSpace($raw)) { exit 0 }
+  }
+
+ if ([string]::IsNullOrWhiteSpace($raw)) { return }
 
   $h = $null
-  try { $h = $raw | ConvertFrom-Json } catch { exit 0 }
-  if ($null -eq $h) { exit 0 }
+ try { $h = $raw | ConvertFrom-Json } catch { return }
+ if ($null -eq $h) { return }
 
   $tool = ""
   try { $tool = [string]$h.tool_name } catch { }
-  if ([string]::IsNullOrWhiteSpace($tool)) { exit 0 }
+ if ([string]::IsNullOrWhiteSpace($tool)) { return }
 
   $sessionId = ""
   try { $sessionId = [string]$h.session_id } catch { }
@@ -104,12 +121,13 @@ try {
   # medido hoje, quem faz o trabalho e o fallback do marcador (A/B) abaixo.
   $transcriptPath = ""
   try { $transcriptPath = [string]$h.transcript_path } catch { }
-  if (-not [string]::IsNullOrWhiteSpace($transcriptPath) -and ($transcriptPath.Replace('\', '/') -match '/subagents/')) { exit 0 }
+ if (-not [string]::IsNullOrWhiteSpace($transcriptPath) -and ($transcriptPath.Replace('\', '/') -match '/subagents/')) { return }
 
   # (A) tool_name=Task -> so grava o marcador "houve delegacao nesta sessao" e libera. NUNCA
   # bloqueia Task (bloquear a propria delegacao seria contraditorio com a lei que este gate
   # aplica). Roda mesmo com gateOff (medida nao custa nada e nao bloqueia nada).
   if ($tool -eq 'Task' -or $tool -eq 'Agent') {
+
     try {
       $mdir = Split-Path -Parent $markerFile
       if (-not [string]::IsNullOrWhiteSpace($mdir)) { New-Item -ItemType Directory -Force -Path $mdir -ErrorAction SilentlyContinue | Out-Null }
@@ -117,24 +135,24 @@ try {
       $utf8 = New-Object System.Text.UTF8Encoding($false)
       [System.IO.File]::AppendAllText($markerFile, (($entry | ConvertTo-Json -Compress) + "`n"), $utf8)
     } catch { }
-    exit 0
+ return
   }
 
-  if ($tool -ne 'Edit' -and $tool -ne 'Write' -and $tool -ne 'NotebookEdit') { exit 0 }
-  if ($gateOff) { exit 0 }
+ if ($tool -ne 'Edit' -and $tool -ne 'Write' -and $tool -ne 'NotebookEdit') { return }
+ if ($gateOff) { return }
 
   $fp = ""
   try { $fp = [string]$h.tool_input.file_path } catch { }
   if ([string]::IsNullOrWhiteSpace($fp)) { try { $fp = [string]$h.tool_input.notebook_path } catch { } }
-  if ([string]::IsNullOrWhiteSpace($fp)) { exit 0 }
+ if ([string]::IsNullOrWhiteSpace($fp)) { return }
 
   $norm = $fp.Replace('\', '/').ToLowerInvariant()
 
   # Exclusoes: as mesmas da REGRA 1 do response-guard.ps1 + as pedidas nesta tarefa.
   $excludeSubstrings = @('memory/', '_proposals/', '_backups/', 'scratchpad', 'state.json',
     'artifacts/coordination/', '.claude/', '/studio/', 'node_modules', 'baseline.txt')
-  foreach ($ex in $excludeSubstrings) { if ($norm.Contains($ex)) { exit 0 } }
-  if ($norm -match 'baseline') { exit 0 }
+ foreach ($ex in $excludeSubstrings) { if ($norm.Contains($ex)) { return } }
+ if ($norm -match 'baseline') { return }
 
   # Dominio positivo: clients/, engine/, docs/, skills/, scripts/, AGENTS.md, CLAUDE.md, ou raiz.
   $isDomain = $false
@@ -147,12 +165,13 @@ try {
     $leaf = $norm -replace '^[a-z]:', ''
     if ($leaf -match '^/?[^/]+\.(md|json|ya?ml|ps1)$') { $isDomain = $true }
   }
-  if (-not $isDomain) { exit 0 }
+ if (-not $isDomain) { return }
 
   # (B) fallback honesto (MEDIDO): sem como distinguir loop principal de sub-agente no payload,
   # a pergunta vira "ja houve QUALQUER Task/Agent nesta sessao?" - marcador gravado no passo (A).
   $houveDelegacaoNaSessao = $false
   if (Test-Path -LiteralPath $markerFile) {
+
     try {
       $lines = @(Get-Content -LiteralPath $markerFile -Encoding UTF8 -ErrorAction SilentlyContinue)
       foreach ($l in $lines) {
@@ -164,14 +183,16 @@ try {
         try { $sid = [string]$o.session_id } catch { }
         if ($sid -eq $sessionId) { $houveDelegacaoNaSessao = $true; break }
       }
+
     } catch { }
   }
-  if ($houveDelegacaoNaSessao) { exit 0 }
+ if ($houveDelegacaoNaSessao) { return }
 
   # (C) a valvula: Task com session==session_id e operator_order==true em state.json.
   $stateFile = if (-not [string]::IsNullOrWhiteSpace($StateFile)) { $StateFile } else { Join-Path $root "state.json" }
   $valvulaAberta = $false
   if (Test-Path -LiteralPath $stateFile) {
+
     try {
       $st = (Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8) | ConvertFrom-Json
       foreach ($t in @($st.tasks)) {
@@ -181,9 +202,10 @@ try {
         try { $oo = [bool]$t.operator_order } catch { }
         if ($tsid -eq $sessionId -and $oo) { $valvulaAberta = $true; break }
       }
+
     } catch { }
   }
-  if ($valvulaAberta) { exit 0 }
+ if ($valvulaAberta) { return }
 
   # (D) violacao: dominio + sem delegacao vista na sessao + valvula fechada -> RECUSA.
   $reason = "[DELEGA] escrita de dominio pela coordenadora: delegue ao Specialist (.claude/agents/<client>-*.md ou alia-flow-lab-*) ou registre a ordem do operador com register-task.ps1 -OperatorOrder"
@@ -193,9 +215,18 @@ try {
       permissionDecision = "deny"
       permissionDecisionReason = $reason
     }
+
   }
   Write-Output ($out | ConvertTo-Json -Depth 5 -Compress)
-  exit 0
+ return
 } catch {
+ return
+  }
+
+  }
+
+if ($MyInvocation.InvocationName -ne '.') {
+ Invoke-DelegationGate -Root $Root -MarkerPath $MarkerPath -StateFile $StateFile -RawInput $RawInput
   exit 0
 }
+

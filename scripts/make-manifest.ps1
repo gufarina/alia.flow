@@ -4,7 +4,7 @@
 # Exclui o proprio MANIFEST.sha256 e qualquer coisa dentro de .git.
 # Isto e um manifesto de INTEGRIDADE (hash), nao de autenticidade de origem (PKI).
 # Ver docs/INTEGRIDADE.md.
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# UTF-8 sem BOM.
 
 param(
   [Parameter(Mandatory)][string]$Dir,

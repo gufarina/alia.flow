@@ -80,9 +80,7 @@
   fixture isolada de smoke test (mesmo padrao ja usado em graph-usage-sensor.ps1 com -LedgerPath/
   -Root - reuse-first, nao inventa mecanismo novo). O hook de producao NUNCA passa esses params -
   o default (studio/response-guard-log.jsonl e engine/governance/response-guard.yaml relativos a
-  $root) e o comportamento de sempre, sem mudanca de contrato.
-
-  Sem acentos, sem emojis. Escrita .NET UTF-8 sem BOM.
+  $root) e o comportamento de sempre, sem mudanca de contrato. Escrita .NET UTF-8 sem BOM.
 #>
 param([string]$LogPath = "", [string]$ConfigPath = "")
 

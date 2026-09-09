@@ -4,7 +4,7 @@ type: Estado
 expires: 2025-12-31
 
 > Memory de trabalho (volatil) do Client acme-saas. Vence no fim da sprint - ver
-> engine/governance/memory-types.md. Sem acentos, sem emojis.
+> engine/governance/memory-types.md.
 
 ## Estado da sprint
 - Foco: estabilizar o fluxo de onboarding antes do fim do trimestre.

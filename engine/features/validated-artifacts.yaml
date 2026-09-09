@@ -2,7 +2,7 @@
 # Define como um Artifact e validado contra o contrato do seu tipo, de forma deterministica.
 # Prosa e contexto em validated-artifacts.md. A Frugal Skill validate-artifact (frugal-skills.yaml)
 # executa esta validacao dentro do Quality Gate. Squads podem ADICIONAR tipos e regras; o passo
-# format-before-content e o Fail-com-desvio nao mudam. Sem acentos, sem emojis. UTF-8 sem BOM.
+# format-before-content e o Fail-com-desvio nao mudam. UTF-8 sem BOM.
 
 feature: validated-artifacts
 spec: engine/features/validated-artifacts.md

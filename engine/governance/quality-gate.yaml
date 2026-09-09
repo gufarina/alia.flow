@@ -2,7 +2,7 @@
 # Fonte de verdade dos criterios e verdicts. Prosa e contexto em quality-gate.md.
 # Validadores deterministicos e gate artifacts (clients/{id}/artifacts/gates/*.gate.md) herdam
 # este contrato. Squads podem ADICIONAR criterios; nunca REMOVER os minimos.
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# UTF-8 sem BOM.
 
 gate: quality-gate
 spec: engine/governance/quality-gate.md

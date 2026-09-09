@@ -3,7 +3,7 @@
 # loop-designer.md. O catalogo de loops referenciado aqui vive em
 # engine/governance/loops.catalog.yaml - este arquivo NAO redefine o catalogo, so SELECIONA dele.
 # A saida da aplicacao destas regras e clients/{id}/loops.yaml (a instancia por projeto).
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# UTF-8 sem BOM.
 
 rules: loop-designer
 spec: engine/features/loop-designer.md

@@ -5,7 +5,7 @@
 > (dinamicos e agendados) e o contrato de cada loop. O manifesto estruturado fica ao lado em
 > [loops.catalog.yaml](loops.catalog.yaml). Quem RECEITA por projeto e a Alia, via a capacidade
 > Loop Designer ([features/loop-designer.md](../features/loop-designer.md)), que materializa a
-> selecao em `clients/{id}/loops.yaml`. Sem acentos, sem emojis.
+> selecao em `clients/{id}/loops.yaml`.
 
 ---
 

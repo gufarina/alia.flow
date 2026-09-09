@@ -53,9 +53,7 @@
     - amostra da janela >= 5 pares e adocao < 70% -> [AVISO] a lei nao esta pegando
     - resto                                 -> [PASS]
   A rota de shell do Windows nem sempre propaga o exit code (medido na auditoria com o
-  graph-check.ps1), entao quem integrar deve casar o TEXTO "[FAIL]" / "[AVISO]", nao o $LASTEXITCODE.
-
-  Sem acentos, sem emojis. So leitura: este script nunca escreve nada.
+ graph-check.ps1), entao quem integrar deve casar o TEXTO "[FAIL]" / "[AVISO]", nao o $LASTEXITCODE. So leitura: este script nunca escreve nada.
 #>
 param(
   [int]$Days = 0,
@@ -88,6 +86,7 @@ if (-not (Test-Path -LiteralPath $Path)) {
   Write-Host ("       esperado em: " + $Path)
   Write-Host ("       conserto: registrar scripts/graph-usage-sensor.ps1 como hook PreToolUse em .claude/settings.json.")
   Write-Host ""
+
   Write-Host "VEREDITO: [FAIL] sensor desligado (ledger inexistente)."
   exit 1
 }
@@ -148,6 +147,7 @@ function Has-Map([string]$Scope) {
     $cand2 = Join-Path $root ($Scope + "/squad/knowledge/graphify-out/GRAPH_REPORT.md")
     $result = (Test-Path -LiteralPath $cand1) -or (Test-Path -LiteralPath $cand2)
   }
+
   $hasMapCache[$Scope] = $result
   return $result
 }
@@ -167,11 +167,14 @@ function Measure-Adocao([object[]]$events) {
         firstScan = $null
         scanTool  = ""
       }
+
     }
+
     $p = $pairs[$key]
     if ($e.kind -eq 'map'  -and ($null -eq $p.firstMap  -or $e.ts -lt $p.firstMap))  { $p.firstMap  = $e.ts; $p.firstMapMatch = $e.match }
     if ($e.kind -eq 'scan' -and ($null -eq $p.firstScan -or $e.ts -lt $p.firstScan)) { $p.firstScan = $e.ts; $p.scanTool = $e.tool }
   }
+
   $comVarredura = @($pairs.Values | Where-Object { $null -ne $_.firstScan })
   $adotaram = @($comVarredura | Where-Object { $null -ne $_.firstMap -and $_.firstMap -le $_.firstScan })
   $furos    = @($comVarredura | Where-Object { $null -eq $_.firstMap -or $_.firstMap -gt $_.firstScan })
@@ -203,6 +206,7 @@ function Measure-Adocao([object[]]$events) {
     pct           = $pct
     pctAutonomo   = $pctAutonomo
   }
+
 }
 
 $mHist   = Measure-Adocao $histEvents
@@ -259,7 +263,9 @@ if ($mHist.total -gt 0) {
     Write-Host ("  " + $g.Name + "   varreram: " + $g.Count + "   com mapa antes: " + $ok +
       "   adocao: " + $p2 + "%" + $marca)
   }
+
   Write-Host ""
+
 }
 
 if ($mJanelaG.furos.Count -gt 0) {
@@ -272,7 +278,9 @@ if ($mJanelaG.furos.Count -gt 0) {
     Write-Host ("  " + $f.firstScan.ToString("yyyy-MM-dd HH:mm") + "  escopo " + $f.scope +
       "  sessao " + $sid + "  1a varredura: " + $f.scanTool + "  (" + $nota + ")")
   }
+
   Write-Host ""
+
 }
 
 # 3 VEREDITOS INDEPENDENTES (TASK-213, item 3) - a linha que o smoke le. Julgados SOBRE A JANELA
@@ -283,6 +291,7 @@ if ($mJanelaG.furos.Count -gt 0) {
 # TASK-169 (14/08/2026): o gate deixou de so RECUSAR e passou a INJETAR o mapa (God Nodes +
 # Community Hubs) via additionalContext no 1o toque de todo par gateavel. Por isso a injecao NUNCA
 # conta como adocao autonoma - ela e o gate fazendo o trabalho, nao o agente desenvolvendo habito.
+
 if ($mJanelaG.total -lt $MIN_AMOSTRA) {
   Write-Host ("VEREDITO AMOSTRA: [SEM AMOSTRA] " + $mJanelaG.total + " par(es) gateaveis na janela da trava" +
     " (desde " + $GateLigadoUtc.ToString("yyyy-MM-dd") + "), minimo " + $MIN_AMOSTRA +
@@ -313,5 +322,39 @@ Write-Host ("VEREDITO COBERTURA: [INFO] " + $mJanelaG.total + "/" + $mJanela.tot
   $(if ($mJanela.total -gt 0) { [string]::Format($inv, "{0:0.0}", (100.0 * $mJanelaG.total / $mJanela.total)) } else { "0.0" }) +
   "% dos pares que varreram tinham mapa em disco (o resto e escopo sem mapa nenhum - nao e culpa" +
   " do gate; puramente informativo, nunca decide PASS/FAIL sozinho).")
-exit 0
+
+# WARDEN 09/09/2026: graph-usage-sensor.ps1 mudou a classificacao de scan (era substring "grep"
+# em qualquer lugar do comando; agora e 1o token do pipeline + alvo = diretorio, nao arquivo
+# unico). O ledger NAO grava o comando bruto (so tool/kind/scope/match) - reclassificacao
+# retroativa fiel de linhas ANTIGAS e IMPOSSIVEL. Honesto: eventos scan de Bash/PowerShell
+# gravados ANTES do conserto (sem como confirmar se o alvo era diretorio) sao EXCLUIDOS da leitura
+# "novo" (nao contam nem a favor nem contra) - o numero "novo" so fica 100% comparavel a partir de
+# quando o sensor corrigido comecar a gravar ledger novo.
+$SENSOR_FIX_UTC = [datetime]::Parse("2026-09-09T00:00:00.000Z", $inv, $styles)
+$legacyUnknownCount = 0
+$allEventsReclass = New-Object System.Collections.Generic.List[object]
+foreach ($e in $allEvents) {
+ if ($e.kind -eq 'scan' -and ($e.tool -eq 'Bash' -or $e.tool -eq 'PowerShell') -and $e.ts -lt $SENSOR_FIX_UTC) {
+ $legacyUnknownCount++
+ continue
+}
+
+ $allEventsReclass.Add($e)
+}
+$histEventsReclass = @($allEventsReclass | Where-Object { $_.ts -ge (Get-Date).ToUniversalTime().AddDays(-100000) })
+if ($Days -gt 0) {
+ $cutoffLegado2 = (Get-Date).ToUniversalTime().AddDays(-$Days)
+ $histEventsReclass = @($allEventsReclass | Where-Object { $_.ts -ge $cutoffLegado2 })
+}
+$janelaEventsReclass = @($allEventsReclass | Where-Object { $_.ts -ge $GateLigadoUtc })
+$mHistReclass = Measure-Adocao $histEventsReclass
+$mJanelaReclass = Measure-Adocao $janelaEventsReclass
+Write-Host ("[RECLASSIFICACAO scan, WARDEN 09/09] adocao ANTIGA (classificacao pre-conserto, como sempre foi): janela " +
+ $mJanela.adotaram.Count + "/" + $mJanela.total + " = " + ([string]::Format($inv, "{0:0.0}", $mJanela.pct)) +
+ "% | historico " + $mHist.adotaram.Count + "/" + $mHist.total + " = " + ([string]::Format($inv, "{0:0.0}", $mHist.pct)) + "%.")
+Write-Host ("[RECLASSIFICACAO scan, WARDEN 09/09] adocao NOVA (1o token + alvo=diretorio; " +
+ $legacyUnknownCount + " evento(s) scan de Bash/PowerShell legado excluido(s) por falta do comando bruto no ledger): janela " +
+ $mJanelaReclass.adotaram.Count + "/" + $mJanelaReclass.total + " = " + ([string]::Format($inv, "{0:0.0}", $mJanelaReclass.pct)) +
+ "% | historico " + $mHistReclass.adotaram.Count + "/" + $mHistReclass.total + " = " + ([string]::Format($inv, "{0:0.0}", $mHistReclass.pct)) + "%.")
+
 exit 0

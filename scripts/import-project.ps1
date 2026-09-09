@@ -13,7 +13,7 @@
     - em -DryRun: so mostra o que faria, nada e escrito.
 
   Origem (SourcePath) e SO referencia - este script NUNCA escreve na origem.
-  Escrita .NET UTF-8 sem BOM. ErrorActionPreference Stop. Sem acentos, sem emojis.
+  Escrita .NET UTF-8 sem BOM. ErrorActionPreference Stop.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Id,

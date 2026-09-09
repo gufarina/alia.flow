@@ -2,7 +2,7 @@
 # Acompanha squad-creator.md (a persona/fluxo). Aqui mora o contrato verificavel:
 # entradas, saida por integrante, regra de camadas e artefatos produzidos.
 # Schemas espelham os reais usados pelo studio (squad.yaml, agents/{id}.yaml).
-# Sem acentos, sem emojis. UTF-8.
+# UTF-8.
 
 id: squad-creator
 provenance: nucleo            # agente do produto; so o operador muda (engine/governance/provenance.md)

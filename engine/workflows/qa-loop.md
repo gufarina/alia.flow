@@ -15,7 +15,13 @@ QA revisa o Artifact contra o Quality Gate -> veredito
    |- Fail     -> Dev corrige -> re-review (nova ABORDAGEM, nao a mesma tentativa)
    |- Blocked  -> escala a Alia
 Maximo N iteracoes (padrao 5). Cada Fail consome 1 iteracao.
+
 ```
+
+Custo maximo por loop: usa `token_cap.per_round`/`token_cap.daily` do loop instanciado (contrato em
+`engine/governance/loops.catalog.yaml`, `loop_stop_conditions`); Fail sem custo declarado nao reabre
+iteracao. Deteccao de nao-progresso: mesmo Fail / mesmo diagnostico 2 vezes seguidas = escala antes
+do `max_iterations` (nao esperar a 5a tentativa).
 
 A correcao de um Fail nao repete o mesmo caminho: cada re-review exige uma **abordagem diferente**.
 Insistir na mesma tentativa nao conta como progresso e dispara escalonamento mais cedo.

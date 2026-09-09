@@ -15,8 +15,6 @@ Spec da fronteira: `engine/governance/provenance.md`.
 Contrato (fonte da verdade): `engine/governance/provenance.yaml` (enforcement, linhas 64-66).
 Mecanismo: `skills/apply-safe-output/apply-safe-output.ps1`.
 
-Sem acentos, sem emojis em qualquer arquivo gerado (regra do CEO).
-
 ## O que e e por que existe
 
 `provenance.yaml:64-66` ja declara o enforcement:

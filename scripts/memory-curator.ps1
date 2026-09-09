@@ -11,7 +11,7 @@
   TTL (engine/governance/memory-types.md): alem do stale-por-data, honra o campo opcional
   `expires: YYYY-MM-DD`. Memoria tipo Estado com expires no passado expirou e e proposta para
   arquivamento; memoria critica (type: Decisoes|Preferencias) NUNCA expira por TTL (ignora expires).
-  Escrita .NET UTF-8 sem BOM. Sem acentos, sem emojis. RSI propoe, Gate aprova.
+  Escrita .NET UTF-8 sem BOM. RSI propoe, Gate aprova.
 
   ---------------------------------------------------------------------------------------
   MODO -Validade (memoria com validade no tempo / bi-temporal).

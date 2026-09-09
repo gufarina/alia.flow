@@ -2,7 +2,7 @@
 
 > Molde para um Client de produto SaaS (web app). O Squad Creator parte daqui e ajusta pela atuacao
 > descrita. Segundo cerebro EM CAMADAS: lider sempre full; Specialist de dominio expert (com Expert
-> Mind); suporte light. Sem acentos, sem emojis.
+> Mind); suporte light.
 
 ---
 

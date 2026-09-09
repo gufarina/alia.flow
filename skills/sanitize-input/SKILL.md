@@ -14,8 +14,6 @@ LEI de SAIDA.
 
 Mecanismo: `skills/sanitize-input/sanitize-input.ps1`.
 
-Sem acentos, sem emojis em qualquer arquivo gerado (regra do CEO).
-
 ## Por que existe (e por que SOB DEMANDA)
 
 Nada sanitizava o que o operador cola (briefing, email, texto de cliente) ou o que vem

@@ -1,7 +1,7 @@
 # Alia Flow - Response Guard (M1: O FREIO na SAIDA)
 
 > O enforcement da lei "a coordenadora delega dominio, nunca executa" na PORTA DE SAIDA da
-> resposta. Contrato estruturado (limiares, modo) em response-guard.yaml. Sem acentos, sem emojis.
+> resposta. Contrato estruturado (limiares, modo) em response-guard.yaml.
 
 ## Unidade de tempo que este guard audita
 

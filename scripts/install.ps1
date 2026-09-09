@@ -21,9 +21,7 @@
   -EventLog <arquivo>: emite progresso em JSONL append-only (fases download|extract|guard|
     backup|copy|smoke|rollback|done) para a UI do launcher fazer tail. Sem -EventLog, o
     comportamento de Write-Host de hoje fica identico. Contrato completo:
-    docs/product/alia-launcher-specs/contrato-launcher-motor.md secao 3.
-
-  Sem acentos, sem emojis. UTF-8 sem BOM.
+    docs/product/alia-launcher-specs/contrato-launcher-motor.md secao 3. UTF-8 sem BOM.
 #>
 param(
   [string]$Dest = (Get-Location).Path,

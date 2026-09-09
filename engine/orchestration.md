@@ -2,7 +2,7 @@
 
 > Como a Alia transforma um pedido do Operator em Artifact entregue. O coracao operacional do Alia
 > Flow. A Alia coordena; ela nunca executa o dominio. Toda Task vai ao agente MAIS CAPAZ para
-> aquela Task - roteamento por capacidade, nao por proximidade. Sem acentos, sem emojis.
+> aquela Task - roteamento por capacidade, nao por proximidade.
 
 ---
 
@@ -31,7 +31,9 @@ protocolo ja falhou no passo DELEGA.
 3. **DELEGA** - ao Specialist **mais capaz** para a Task (roteamento por capacidade, abaixo). A Alia **nunca** executa dominio.
 4. **MONITORA** - cobra progresso e o **Artifact** (evidencia). Sem avanco em 3 abordagens -> escala.
 5. **FECHA** - status `done` + Artifact + Gate PASS + Memory + **registro no ledger** (`register-task.ps1`:
-   Cliente/Projeto/Tarefa). O registro NAO e opcional nem depende de lembrar - e parte do FECHA: sem
+ Cliente/Projeto/Tarefa). Task delegada fecha com o CUSTO gravado: os tokens e chamadas que a
+ ferramenta de agente devolve entram na Task (`-Tokens`/`-ToolUses`) e sao comparados com o
+ orcamento declarado (`-Budget`); estourou, fica marcado e vira KPI (law-ledger L49). O registro NAO e opcional nem depende de lembrar - e parte do FECHA: sem
    ele a Task nao fecha e nao vira KPI. *Sem Artifact = nao fechou. Sem registro = nao aconteceu.*
 
 Os cinco passos sao o ciclo de vida que `studio/state.json` grava por Task. Os nomes sao contrato:
@@ -238,14 +240,8 @@ regras cravam esse isolamento:
 *o que tentei (3x) + por que falhou + recomendacao*. Escalar nunca e transferir a parte dificil sem
 ter atacado a causa.
 
-Orientacao (elabora a LEI de constitution.md - "perguntar ao operador e o ultimo recurso"; poda
-09/08/2026, law-ledger L16, deixou de ser marcada como LEI propria por ser a mesma regra repetida
-aqui): devolver uma pergunta ao Operator e uma escalacao - vale a mesma regra. Antes dela, esgote a
-escada de investigacao: Memory -> arquivos da instancia/repo (busca local) -> web por pesquisa
-segura (Perplexity quick primeiro, sequencial e quota-aware, sem fan-out). Termo desconhecido
-presume-se pesquisavel: pesquise antes de perguntar. So pergunte ao Operator o que for exclusivo
-dele (preferencia, decisao, contexto privado sem fonte). Pergunta sem investigacao e empurrar
-trabalho de volta ao Operator, que o Gate reprova.
+Devolver uma pergunta ao Operator e uma escalacao: vale a escada de investigacao da LEI em
+constitution.md ("perguntar ao operador e o ultimo recurso"), nao repetida aqui.
 A rodada de alinhamento NAO e escalacao: escalacao devolve o problema, a rodada devolve uma
 ESCOLHA ja resolvida ate a ultima virgula, com a recomendacao da Alia em cada item e a saida
 "voce decide" sempre aberta. Escalacao vem depois de 3 abordagens falhas; a rodada vem ANTES

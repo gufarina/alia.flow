@@ -5,7 +5,7 @@
 > qualidade. Adaptada do mindset "senior preguicoso" do skill ponytail (Dietrich Gebert, MIT - ver
 > CREDITS), generalizada para QUALQUER Artifact (codigo, config, doc, persona, plano) - nao so
 > codigo (a instancia-codigo continua em engine/engineering.md, "Escada da simplicidade").
-> Sem acentos, sem emojis. UTF-8 sem BOM.
+> UTF-8 sem BOM.
 
 ---
 

@@ -4,7 +4,7 @@
 # (listados no manifesto mas ausentes no disco) e EXTRA (presentes no disco, fora do
 # manifesto). Isto prova INTEGRIDADE (o pacote nao foi corrompido/alterado depois de
 # empacotado), nao autenticidade de origem (PKI). Ver docs/INTEGRIDADE.md.
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# UTF-8 sem BOM.
 
 param(
   [Parameter(Mandatory)][string]$Dir,

@@ -14,8 +14,7 @@
   nao ha campo 'closed_at' no schema hoje, ver TASK-285). Sob demanda, sem agendador (LEI
   zero-agendamento) - roda quando alguem pede, nunca sozinho.
 
-  Uso: cost-per-artifact.ps1 [-Date yyyy-MM-dd] [-Root <path>]
-  Sem acentos, sem emojis. UTF-8 sem BOM.
+  Uso: cost-per-artifact.ps1 [-Date yyyy-MM-dd] [-Root <path>] UTF-8 sem BOM.
 #>
 param(
   [string]$Date = "",

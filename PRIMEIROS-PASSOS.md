@@ -22,18 +22,18 @@ Ja tem o Claude Code? Pula direto pro passo 1.
 ## Instalar (3 passos, sem terminal)
 
 1. **Descompacte** este pacote numa pasta sua. Sugestao: crie a pasta
-   `Documentos\meu-estudio` e extraia tudo la dentro.
+ `Documentos\meu-estudio` e extraia tudo la dentro.
 2. **De dois cliques em `iniciar-alia.bat`.** Abre uma pagina de boas-vindas no seu
-   navegador - leia, e a Alia se apresentando. (Se o Windows perguntar se confia, pode
-   confirmar: e so um atalho que abre uma pagina local, nada e instalado.)
+ navegador - leia, e a Alia se apresentando. (Se o Windows perguntar se confia, pode
+ confirmar: e so um atalho que abre uma pagina local, nada e instalado.)
 3. **Abra a pasta no Claude Code.** O jeito mais facil no Windows:
-   - abra a pasta no Explorador de Arquivos;
-   - clique na barra de endereco (onde aparece o caminho), digite `cmd` e aperte Enter;
-   - na janela preta que abrir, digite `claude` e aperte Enter.
+ - abra a pasta no Explorador de Arquivos;
+ - clique na barra de endereco (onde aparece o caminho), digite `cmd` e aperte Enter;
+ - na janela preta que abrir, digite `claude` e aperte Enter.
 
-   O Claude Code abre ja dentro da pasta - e nesse momento ele vira a Alia. Se por algum motivo
-   ela nao se apresentar sozinha (a tela ficar generica, sem ela falar), digite `/alia` e
-   aperte Enter - isso liga ela na hora.
+ O Claude Code abre ja dentro da pasta - e nesse momento ele vira a Alia. Se por algum motivo
+ ela nao se apresentar sozinha (a tela ficar generica, sem ela falar), digite `/alia` e
+ aperte Enter - isso liga ela na hora.
 
 ## A primeira conversa
 
@@ -69,20 +69,20 @@ Quanto mais concreto, melhor o resultado. "Me ajuda com marketing" rende pouco;
 ## 5 exemplos reais de pedido (para inspirar, nao para copiar cru)
 
 1. **Dono de barbearia:** "Tenho uma barbearia em Curitiba, publico jovem, corte na
-   regua. Quero um post de Instagram anunciando que agora abrimos sabado ate as 20h,
-   com uma legenda no meu tom - descontraido, sem parecer propaganda de banco."
+ regua. Quero um post de Instagram anunciando que agora abrimos sabado ate as 20h,
+ com uma legenda no meu tom - descontraido, sem parecer propaganda de banco."
 2. **Loja de suplementos:** "Vendo suplementos online, meu cliente e quem treina cedo.
-   Monta 10 respostas prontas pras duvidas mais comuns no WhatsApp (prazo de entrega,
-   troca, se creatina da pra menor de idade), no tom direto que eu uso."
+ Monta 10 respostas prontas pras duvidas mais comuns no WhatsApp (prazo de entrega,
+ troca, se creatina da pra menor de idade), no tom direto que eu uso."
 3. **Advogada autonoma:** "Sou advogada de direito do consumidor. Quero um texto pro
-   meu site explicando quando vale a pena processar companhia aerea por voo cancelado,
-   em linguagem que um leigo entende, sem juridiques."
+ meu site explicando quando vale a pena processar companhia aerea por voo cancelado,
+ em linguagem que um leigo entende, sem juridiques."
 4. **Quem esta testando uma ideia:** "Tenho uma ideia de aplicativo pra dividir conta
-   de restaurante entre amigos. Me ajuda a testar se ela para em pe: quem e o publico,
-   o que ja existe de concorrente e qual seria o primeiro passo barato pra validar."
+ de restaurante entre amigos. Me ajuda a testar se ela para em pe: quem e o publico,
+ o que ja existe de concorrente e qual seria o primeiro passo barato pra validar."
 5. **Agencia pequena:** "Minha agencia atende 3 clientes de gastronomia. Cadastra o
-   restaurante [nome] como meu primeiro cliente: cardapio italiano, publico familia,
-   Instagram e o canal principal. Primeira tarefa: o calendario de posts da semana."
+ restaurante [nome] como meu primeiro cliente: cardapio italiano, publico familia,
+ Instagram e o canal principal. Primeira tarefa: o calendario de posts da semana."
 
 Repare no padrao: quem e voce + pra quem e + o que precisa ficar pronto. E so isso.
 
@@ -97,10 +97,10 @@ sozinho pro estado anterior. Quer so espiar o que mudaria antes de aplicar? Rode
 ## Seguranca e privacidade (o que e honesto voce saber)
 
 - Tudo que a Alia guarda (clientes, memoria, tarefas) fica **na sua maquina**, nessa
-  pasta - nao existe servidor nosso recebendo seus dados.
+ pasta - nao existe servidor nosso recebendo seus dados.
 - O que voce conversa passa pelo Claude (Anthropic), como em qualquer uso do Claude.
 - O pacote e leve (menos de 1 MB) e nao instala nada no Windows: e uma pasta de
-  arquivos abertos que voce pode ler, mover ou apagar.
+ arquivos abertos que voce pode ler, mover ou apagar.
 
 ## Voce e beta tester: o que vale ouro reportar
 

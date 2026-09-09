@@ -3,7 +3,7 @@
 > A regua de qualidade que TODO squad herda. Garante que nenhum time entregue abaixo do padrao -
 > e o "Quality Gate Always" da [constituicao](../constitution.md) virado mecanismo. Squads podem
 > ADICIONAR criterios; nunca REMOVER os minimos. O contrato estruturado (criterios + verdicts)
-> fica ao lado em [quality-gate.yaml](quality-gate.yaml). Sem acentos, sem emojis.
+> fica ao lado em [quality-gate.yaml](quality-gate.yaml).
 
 ---
 

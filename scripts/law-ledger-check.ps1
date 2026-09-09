@@ -18,8 +18,7 @@
       studio.example), sai como [SEM MAQUINA NESTA INSTANCIA] - honestidade, nao "COBERTA" de
       mentira.
 
-  Uso: scripts/law-ledger-check.ps1 [-LedgerPath <caminho>]
-  Sem acentos, sem emojis. UTF-8 sem BOM. So leitura: nunca escreve no ledger.
+ Uso: scripts/law-ledger-check.ps1 [-LedgerPath <caminho>] UTF-8 sem BOM. So leitura: nunca escreve no ledger.
 #>
 [CmdletBinding()]
 param(
@@ -52,6 +51,7 @@ Write-Host ""
 
 # ---------------------------------------------------------------------------
 # (A) LEI SEM REGISTRO: todo arquivo com marcador de lei precisa aparecer na coluna "onde vive".
+
 # ---------------------------------------------------------------------------
 Write-Host "--- (A) Lei sem registro no ledger ---"
 # MARCADOR FORTE (reprova de verdade, FAIL): "> LEI:" e "> LEI (..." (bracket - CONSERTO TASK-157:
@@ -89,8 +89,11 @@ if (Test-Path -LiteralPath $EngineDir) {
             } elseif ($ln -match '^\s*Invariante\s*:' -or $ln -match '^\s*#{1,3}\s*Invariantes\b' -or $ln -match '(?i)\blei dura\b') {
                 $weakLeiFiles.Add([pscustomobject]@{ rel = $relPath; line = ($i + 1); text = $ln.Trim() })
             }
+
         }
+
     }
+
 }
 
 # Arquivos ja citados na coluna "onde vive" do ledger (heuristica por caminho, nao por linha).
@@ -105,7 +108,9 @@ if ($semRegistro.Count -eq 0) {
         foreach ($m in $marcadores) {
             Bad ($sr.rel + ":" + $m.line + " tem marcador de LEI (" + $m.text + ") sem entrada correspondente na coluna 'onde vive' do ledger - registre com id novo, teste (ou SEM TESTE explicito)")
         }
+
     }
+
 }
 
 $semRegistroFraco = @($weakLeiFiles | Where-Object { $ledgerFilesCited -notcontains $_.rel } | Select-Object -Property rel -Unique)
@@ -117,7 +122,9 @@ if ($semRegistroFraco.Count -eq 0) {
         foreach ($m in $marcadores) {
             Warn2 ($sr.rel + ":" + $m.line + " tem marcador FRACO de lei (" + $m.text + ") sem entrada correspondente na coluna 'onde vive' do ledger - lei nova em prosa nao nasce invisivel, registre com id novo (ou SEM TESTE explicito)")
         }
+
     }
+
 }
 Write-Host ""
 
@@ -127,6 +134,7 @@ Write-Host ""
 # numero citado. TOLERANCIA CURTA porque o marcador raramente e a linha exata do cabecalho da
 # secao (o texto normativo comeca 1-2 linhas abaixo do titulo) - mas 3 linhas nao escondem um
 # ponteiro que apodreceu de verdade (edicao empurrou o bloco dezenas de linhas pra baixo).
+
 # ---------------------------------------------------------------------------
 Write-Host "--- (A2) Ponteiros 'onde vive' (arquivo:linha) contra o disco ---"
 # [array] em vez de @(...) + @(...): concatenar array vazio com List[object] via @() causa
@@ -134,7 +142,9 @@ Write-Host "--- (A2) Ponteiros 'onde vive' (arquivo:linha) contra o disco ---"
 # negativo) - [array] converte de forma estavel mesmo com uma das listas vazia.
 $allMarkers = [array]$leiFiles + [array]$weakLeiFiles
 $TOLERANCIA = 3
-$rowPattern = '(?m)^\|\s*(L\d+)\s*\|([^\|]*)\|([^\|]*)\|(.*)$'
+# Q\d+ = linha de QUARENTENA (nao e lei, ver law-ledger.md) - id fora do padrao L\d+ de proposito,
+# tolerado aqui para nao quebrar a maquina por uma linha que o proprio ledger marca como nao-lei.
+$rowPattern = '(?m)^\|\s*((?:L|Q)\d+)\s*\|([^\|]*)\|([^\|]*)\|(.*)$'
 $rowMatches = [regex]::Matches($ledgerTxt, $rowPattern)
 $a2Checked = 0
 $a2Bad = 0
@@ -162,6 +172,7 @@ foreach ($rm in $rowMatches) {
             # contra nada; nao e culpa do ponteiro, e limite deste scan (marcador em formato novo).
             continue
         }
+
         $a2Checked++
         $windowLo = $citStart - $TOLERANCIA
         $windowHi = $citEnd + $TOLERANCIA
@@ -171,7 +182,9 @@ foreach ($rm in $rowMatches) {
             $nearest = ($markersHere | Sort-Object { [Math]::Abs($_.line - $citStart) } | Select-Object -First 1)
             Bad ($lawId + ": onde-vive cita " + $citFile + ":" + $cm.Groups[2].Value + $(if ($cm.Groups[3].Success) { "-" + $cm.Groups[3].Value } else { "" }) + " mas o marcador real mais proximo esta em :" + $nearest.line + " (" + $nearest.text.Substring(0, [Math]::Min(60, $nearest.text.Length)) + "...) - corrija o ledger")
         }
+
     }
+
 }
 if ($a2Bad -eq 0) {
     Ok ("Todos os " + $a2Checked + " ponteiro(s) 'onde vive' verificaveis batem com um marcador real (tolerancia +-" + $TOLERANCIA + " linhas)")
@@ -181,6 +194,7 @@ Write-Host ""
 
 # ---------------------------------------------------------------------------
 # (B) PONTEIRO PODRE: script:linha `Check "texto"` citado no ledger bate com o disco?
+
 # ---------------------------------------------------------------------------
 Write-Host "--- (B) Ponteiros de teste (script:linha) contra o disco ---"
 
@@ -252,6 +266,7 @@ foreach ($m in $refs) {
     if (-not $scriptCache.ContainsKey($scriptPath)) {
         $scriptCache[$scriptPath] = [System.IO.File]::ReadAllText($scriptPath)
     }
+
     $content = $scriptCache[$scriptPath]
 
     # a citacao traz so o INICIO do texto entre aspas (pode estar truncada por "..."); casa o
@@ -264,6 +279,7 @@ foreach ($m in $refs) {
         $missing++
         continue
     }
+
     $realLine = ($content.Substring(0, $idx) -split "`n").Count
     if ($realLine -ne $lineCited) {
         Bad ($scriptRel + ": ponteiro cita :" + $lineCited + " mas o texto esta em :" + $realLine + " - corrija o ledger")
@@ -271,6 +287,7 @@ foreach ($m in $refs) {
     } else {
         $ok++
     }
+
 }
 Write-Host ""
 Write-Host ("resumo (B): " + $ok + " ponteiro(s) OK | " + $mismatches + " linha(s) errada(s) | " + $missing + " ausente(s)/nao encontrado(s) | " + $semMaquinaCount + " sem maquina nesta instancia (nao contam como erro, contam como divida de honestidade se o ledger disser COBERTA)")
@@ -282,6 +299,7 @@ Write-Host ("resumo (B): " + $ok + " ponteiro(s) OK | " + $mismatches + " linha(
 # molde ja usado pra L30 (persona.md) - nao confere COMPORTAMENTO (se a Alia de fato consultou a
 # escada, ou carregou a fonte, antes de agir). Julgamento de conteudo continua sendo trabalho do
 # Gate/revisao humana, nao de regex.
+
 # ---------------------------------------------------------------------------
 Write-Host ""
 Write-Host "--- (C) Checks de formato (leis que ganharam maquina na poda de 09/08/2026) ---"
@@ -365,6 +383,7 @@ if ($rootIsOficina -or $ehPacotePublico) {
     } else {
         "L31 formato: persona.md (pacote publico - so 1 copia, sem oficina aninhada por desenho, clients/alia-flow-lab nunca viaja no pacote) declara o mesmo marcador de LEI da resposta por decisao + o anti-padrao"
     }
+
 } else {
     $personaLabPath = Join-Path $root "clients\alia-flow-lab\engine\agents\persona.md"
     $personaLabLabel = "L31 formato: persona.md (oficina) declara o mesmo marcador de LEI da resposta por decisao + o anti-padrao"
@@ -392,10 +411,12 @@ Write-Host ("FAIL: " + $fail)
 Write-Host ("AVISO: " + $warn)
 if ($fail -eq 0) {
     Write-Host ""
+
     Write-Host "LEDGER CONFERE COM O DISCO"
     exit 0
 } else {
     Write-Host ""
+
     Write-Host ("LEDGER PODRE - " + $fail + " problema(s), corrija antes de confiar no ledger")
     exit 1
 }

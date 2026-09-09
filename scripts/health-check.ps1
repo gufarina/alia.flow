@@ -4,7 +4,7 @@
   Pergunta que responde: o projeto esta vivo e consistente?
   Verifica, para o Client: squad.yaml existe, knowledge/ nao vazio, loops.yaml valido (parse YAML
   minimo: campos obrigatorios por loop), state.json parseavel e com o Client registrado.
-  Frugal: so le; nao reprocessa. Escrita .NET UTF-8 sem BOM. Sem acentos, sem emojis.
+  Frugal: so le; nao reprocessa. Escrita .NET UTF-8 sem BOM.
 
   Nao corrige nada: reporta o status. O RSI propoe, o Quality Gate aprova.
 #>

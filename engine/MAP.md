@@ -2,7 +2,7 @@
 
 > O mapa de uma tela do motor. O nucleo (persona, constitution, glossary, orchestration) ja vem
 > carregado no boot. Tudo abaixo e BIBLIOTECA: a Alia le esta lista e so ABRE o doc fundo quando
-> a tarefa exige. Manter o peso sempre-carregado minimo sem perder capacidade. Sem acentos, sem emojis.
+> a tarefa exige. Manter o peso sempre-carregado minimo sem perder capacidade.
 
 ## Manifestos estruturados (yaml = contrato de maquina, nao espelho de toda prosa)
 
@@ -11,7 +11,15 @@ A prosa (`.md`) e a fonte. Yaml existe SO onde uma maquina consome (`loops.catal
 carrega os thresholds e janelas do RSI. NAO ha espelho yaml de toda spec - isso seria duplicacao com
 risco de drift. Precisa do threshold/cerca exata: abra `rsi.yaml`. Para o resto, a prosa basta.
 
-## Nucleo (ja carregado no boot - nao precisa abrir)
+## Nucleo (injetado em toda janela pelo hook de SessionStart)
+
+- engine/agents/nucleo.md - o nucleo operacional de UMA pagina (teto 4.000 tokens): quem e a Alia,
+ os 10 principios, o protocolo de 5 passos, DELEGA e a valvula, grounding, leitura por indice.
+ E o UNICO doc carregado mecanicamente (scripts/session-start.ps1, matchers startup/resume/compact).
+ Ate a v1.69 este MAP afirmava que os 4 docs abaixo "ja vinham carregados no boot" - era falso:
+ nada os injetava, e os 4 somam ~61KB (~17k tokens), peso demais para toda janela.
+
+Biblioteca de referencia do nucleo (abrir a fatia quando o nucleo.md remeter):
 
 - engine/agents/persona.md - voz e jeito da Alia.
 - engine/constitution.md - a lei (10 principios) + roteamento por capacidade.
@@ -45,12 +53,16 @@ risco de drift. Precisa do threshold/cerca exata: abra `rsi.yaml`. Para o resto,
 - engine/governance/memory-types.md - tipos de Memory e TTL (quando uma nota expira).
 - engine/governance/memory-audit.md - checklist de higiene da Memory (nota vencida/duplicada/contraditoria).
 - engine/governance/provenance.md - quem pode mudar cada artefato e como (diff, nunca deleta).
-- engine/governance/evolution-pipeline.md - o caminho de um achado (finding) ate a decisao do CEO (proposal -> aprovacao), via OPP-NN.
+- (evolution-pipeline.md virou a secao "Pipeline de evolucao" dentro de provenance.md em 09/09/2026; original em engine/_retired/.)
 - engine/governance/instance-separation.md - a LEI dos 2 contextos (produto CLEAN vs instancia aplicada) e os guardrails que a fazem cumprir.
 - engine/governance/client-truth.md - as 4 leis que protegem a documentacao do cliente (knowledge-first, claims registry, publico-vs-interno, reuse-first).
 - engine/governance/public-surface.md - a LEI do que pode existir no git (produto publico, nunca material de dev do cliente).
 - engine/governance/response-guard.md - o freio na PORTA DE SAIDA da resposta (hook de Stop, `response-guard.ps1`): as 2 regras (DELEGA/GROUNDING), os 2 modos (aviso/bloqueio) e a valvula de excecao por ordem do Operator.
 - engine/governance/law-ledger.md - registro de toda LEI declarada no motor: onde vive, que teste cobre, COBERTA ou SEM TESTE.
+- scripts/session-start.ps1 - hook de SessionStart (startup/resume/compact): injeta nucleo.md + bastao mais recente + pendencias.
+- scripts/pre-tool-use.ps1 - UM spawn por Edit/Write/Task: chama delegation-gate + secret-write-guard em-processo.
+- scripts/harness-baseline.ps1 - mede e congela o custo do harness (studio/harness-baseline.txt); -Check e a catraca (L50).
+- scripts/session-baton.ps1 - grava o bastao de sessao (PreCompact/SessionEnd), contrato de bastao.md, teto 500 tokens.
 - engine/governance/persistence-catalog.md - todo lugar onde o motor grava estado em disco (ledger, baseline, staging), com classe (durable/live/staging/ratchet), escritor, leitor e ciclo de vida. Consultar ANTES de criar um ledger/baseline novo (reuse-first).
 
 ## Entrega e workflows (abrir ao executar um ciclo de entrega)

@@ -26,7 +26,7 @@
    - NUNCA toca _retired/, engine/, nucleo. NUNCA escreve fora de -MemoryDir / _archive.
    - -DryRun: so lista o que faria, nao move nada.
 
-  Escrita .NET UTF-8 sem BOM. Sem acentos, sem emojis. exit 0.
+  Escrita .NET UTF-8 sem BOM. exit 0.
 #>
 param(
   [string]$ProposalsDir = "",

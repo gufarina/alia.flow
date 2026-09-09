@@ -3,7 +3,7 @@
 > Feature do motor. Destilado do manual de julgamento dos modelos de fronteira (Fable/Claude 5):
 > as tecnicas que separam resposta PLAUSIVEL de resposta JUSTIFICADA, mapeadas ao fluxo do Alia
 > Flow. Todo agente (Alia, Owner, Specialist, avaliador de Gate) opera sob estas disciplinas.
-> Sem acentos, sem emojis. UTF-8 sem BOM.
+> UTF-8 sem BOM.
 
 ---
 

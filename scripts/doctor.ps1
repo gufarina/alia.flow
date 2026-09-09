@@ -1,7 +1,7 @@
 # Alia Flow - Doctor (diagnostico read-only)
 # Diagnostico read-only da instalacao do Alia Flow - confere estrutura e roda o trilho.
 # Nao modifica nada. Autocura (--fix) fica para depois.
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# UTF-8 sem BOM.
 
 param([switch]$Json)
 

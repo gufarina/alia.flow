@@ -6,7 +6,7 @@
 > era uma tipagem explicita com TTL: distinguir o que e duravel do que e volatil, para o curador
 > arquivar so o que envelheceu de fato. Sem motor novo - o campo e lido pelo curador semanal
 > ([loops.md](loops.md): memory-curator) e respeita a provenance ([provenance.md](provenance.md):
-> arquiva, nunca deleta). Sem acentos, sem emojis.
+> arquiva, nunca deleta).
 
 ---
 
@@ -134,7 +134,7 @@ Stale-por-data e expirou-por-declaracao sao complementares: stale pega o que nin
 type: Estado
 expires: 2026-01-31
 
-> Memory de trabalho do Client. Volatil: vence no fim da sprint. Sem acentos, sem emojis.
+> Memory de trabalho do Client. Volatil: vence no fim da sprint.
 
 - Foco: estabilizar o fluxo de checkout antes do lancamento.
 - Hipotese em teste: cache de sessao reduz reprocessamento.

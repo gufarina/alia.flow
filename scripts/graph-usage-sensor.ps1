@@ -140,8 +140,11 @@
             "command": "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/graph-usage-sensor.ps1\"",
             "timeout": 10
           }
+
         ]
+
       }
+
     ]
 
   PORTABILIDADE (produto roda em Claude Code, Codex e OpenCode - NAO implementado aqui,
@@ -155,9 +158,7 @@
       por stdin/stdout. A recusa e um `throw new Error(razao)` dentro do handler, nao um
       JSON. Portar = reescrever em TS chamando a mesma logica (ler o mesmo ledger, mesma
       janela de 2 recusas + escape na 3a), lancando throw no lugar do JSON de deny.
-    Nenhum dos dois esta ligado hoje neste projeto (esta instancia roda em Claude Code).
-
-  Sem acentos, sem emojis. Escrita .NET UTF-8 sem BOM. Timeout de 2s no stdin.
+ Nenhum dos dois esta ligado hoje neste projeto (esta instancia roda em Claude Code). Escrita .NET UTF-8 sem BOM. Timeout de 2s no stdin.
 #>
 param([string]$LedgerPath = "", [string]$Root = "")
 
@@ -225,19 +226,55 @@ try {
     if ($tool -eq 'Grep' -or $tool -eq 'Glob') {
       $kind = 'scan'; $match = $tool.ToLowerInvariant()
     }
-    # Busca recursiva por token de linha de comando - cobre rg/grep POSIX (Bash) e os idiomas
-    # nativos do PowerShell (Select-String/sls, findstr tambem existe no PowerShell). "find" cobre
-    # o find POSIX; o equivalente PowerShell (Get-ChildItem -Recurse) e um padrao a parte abaixo
-    # porque precisa do FLAG, nao so do nome do cmdlet (Get-ChildItem sozinho e so "ls").
-    elseif ($isShellTool -and $normCmd -match '(^|[|;&(\s])(rg|ripgrep|grep|egrep|findstr|ack|ag|find|select-string|sls)\s') {
-      $kind = 'scan'; $match = $matches[2]
+
+ # WARDEN 09/09/2026: classificacao trocada de "substring em qualquer lugar do comando" (media
+ # 13.822 de 20.903 Bash marcados scan so por conter "grep") para "PRIMEIRO TOKEN de cada
+ # segmento do pipeline E alvo e diretorio, nao arquivo unico". wc/ls/cat/python -c/grep -c em
+ # arquivo unico/head NAO sao scan (nao sao 1o token de busca, ou o alvo e um arquivo so).
+ elseif ($isShellTool -and -not [string]::IsNullOrWhiteSpace($normCmd)) {
+ $scanToolRegex = '^(rg|ripgrep|grep|egrep|findstr|ack|ag|find|select-string|sls)$'
+ $segments = $normCmd -split '[|;]'
+ foreach ($seg in $segments) {
+ $segTrim = $seg.Trim()
+ if ([string]::IsNullOrWhiteSpace($segTrim)) { continue }
+ $tokens = @($segTrim -split '\s+')
+ if ($tokens.Count -eq 0) { continue }
+ $first = Split-Path -Leaf $tokens[0]
+ $isRecurseGci = ($first -match '^(gci|dir|ls|get-childitem)$') -and ($segTrim -match '(-recurse\b|-r\b|/s\b)')
+ $isScanTool = ($first -match $scanToolRegex)
+ if (-not $isScanTool -and -not $isRecurseGci) { continue }
+
+ # Alvo: para "find", o diretorio e o 1o posicional (find . -name x.py); para os demais,
+ # o alvo costuma ser o ULTIMO posicional (grep pattern dir/, rg pattern dir/).
+ $target = $null
+ if ($first -eq 'find') {
+ for ($i = 1; $i -lt $tokens.Count; $i++) {
+ if ($tokens[$i] -notmatch '^-') { $target = $tokens[$i]; break }
     }
-    # Get-ChildItem/gci/dir/ls SO conta como varredura quando pedir recursao (-recurse/-r) ou for
-    # o idioma cmd.exe "dir /s" - sem isso e so listagem de uma pasta (equivalente a "ls" comum,
-    # que este sensor tambem nunca classificou como scan).
-    elseif ($isShellTool -and $normCmd -match '(^|[|;&(\s])(gci|dir|ls|get-childitem)\b[^|;&]*(-recurse\b|-r\b|/s\b)') {
-      $kind = 'scan'; $match = 'get-childitem-recurse'
+
+ } else {
+ for ($i = $tokens.Count - 1; $i -ge 1; $i--) {
+ if ($tokens[$i] -notmatch '^-') { $target = $tokens[$i]; break }
     }
+
+  }
+
+ # Arquivo unico = tem extensao curta no fim e nao termina em barra. Sem alvo (ex.: filtro
+ # de stdout tipo "cmd | grep x") tambem NAO conta scan aqui - nao ha diretorio varrido.
+ $isSingleFile = $false
+ if ($target) {
+ if ($target -match '\.[a-z0-9]{1,6}$' -and $target -notmatch '/$') { $isSingleFile = $true }
+  }
+
+ if ($isScanTool -and (-not $target -or $isSingleFile)) { continue }
+
+ $kind = 'scan'
+ $match = if ($isRecurseGci) { 'get-childitem-recurse' } else { $first }
+ break
+  }
+
+  }
+
   }
 
   # Ferramenta irrelevante para a medida: sai sem gravar (ledger enxuto de proposito).
@@ -271,6 +308,7 @@ try {
       $dir = $parent
       $hops++
     }
+
     return $null
   }
 
@@ -287,12 +325,14 @@ try {
       $m = [regex]::Match($txt, [regex]::Escape($hdr) + '.*?(?=\r?\n## |\z)', 'Singleline')
       if ($m.Success) { $sections += $m.Value.Trim() + "`n`n" }
     }
+
     $sections = $sections.Trim()
     if ([string]::IsNullOrWhiteSpace($sections)) { return $null }
     if ($sections.Length -gt $script:INJECT_TETO) {
       $cortado = $sections.Length - $script:INJECT_TETO
       $sections = $sections.Substring(0, $script:INJECT_TETO) + "`n`n[...TRUNCADO - " + $cortado + " caractere(s) cortado(s) pelo teto de tamanho da injecao; leia o arquivo completo: " + $MapFile + "]"
     }
+
     return $sections
   }
 
@@ -303,6 +343,7 @@ try {
   # FAIL-SOFT: skill ausente ou erro na chamada -> NAO injeta (silencio, nunca quebra o gate nem
   # injeta cru). Reusa o mecanismo existente (nao inventa um 2o sanitizador so pra isto).
   function Invoke-SanitizeMapContent([string]$Text) {
+
     try {
       # $PSScriptRoot (NUNCA $root): skills/ e parte da INSTALACAO do motor, no local real do
       # proprio script - $root pode ser sobrescrito via -Root em teste/fixture (escopo isolado
@@ -320,6 +361,7 @@ try {
     } catch {
       return $null
     }
+
   }
 
   $scope = ""
@@ -338,6 +380,7 @@ try {
       # aspas duplas, depois aspas simples, so por ultimo um token sem aspas (sem espaco).
       # Usa $command (case original) porque Test-Path e Windows sao case-insensitive de
       # qualquer forma - so evita normalizar sem necessidade.
+
       try {
         $normCmdRaw = $command.Replace('\', '/')
         $mQ = [System.Text.RegularExpressions.Regex]::Match($normCmdRaw, '"([A-Za-z]:/[^"]+)"')
@@ -347,8 +390,10 @@ try {
           $mU = [System.Text.RegularExpressions.Regex]::Match($normCmdRaw, '(^|[\s])([A-Za-z]:/[^\s"'']+)')
           if ($mU.Success) { $walkStart = $mU.Groups[2].Value }
         }
+
       } catch { }
     }
+
     if ([string]::IsNullOrWhiteSpace($walkStart)) { $walkStart = $cwd }
 
     try { $externalMapFile = Find-AncestorMap $walkStart } catch { $externalMapFile = $null }
@@ -357,6 +402,7 @@ try {
       $codebaseRoot = Split-Path -Parent (Split-Path -Parent $externalMapFile)
       $scope = 'external:' + $codebaseRoot.Replace('\', '/').ToLowerInvariant()
     }
+
   }
 
   if ($scope -eq '') {
@@ -369,6 +415,7 @@ try {
   $injectMsg  = $null
   $needsInjectLedgerLine = $false
   if ($kind -eq 'scan') {
+
     try {
       # (4.0) Interruptor de emergencia (2d).
       $gateOff = $false
@@ -428,6 +475,7 @@ try {
               if ($ln.IndexOf('"scope":"' + $scope + '"', [StringComparison]::Ordinal) -lt 0) { continue }
               if ($ln.IndexOf('"kind":"map"', [StringComparison]::Ordinal) -ge 0) { $alreadyOk = $true; break }
             }
+
           }
 
           if (-not $alreadyOk) {
@@ -452,8 +500,11 @@ try {
                   $mapContentLimpo
                 $needsInjectLedgerLine = $true
               }
+
             }
+
           }
+
         } elseif ($scope -like 'clients/*') {
           # (4.6) CONSERTO 10/08/2026 - o FURO fechado: client SEM mapa nenhum em disco nao pode
           # ser bloqueado (nao da pra exigir o que nao existe), mas ate agora tambem nao AVISAVA
@@ -469,7 +520,9 @@ try {
               if ($ln.IndexOf('"scope":"' + $scope + '"', [StringComparison]::Ordinal) -lt 0) { continue }
               if ($ln.IndexOf('"kind":"scan"', [StringComparison]::Ordinal) -ge 0) { $priorScanNoMap++ }
             }
+
           }
+
           if ($priorScanNoMap -eq 0) {
             $noMapMsg = "[SEM-MAPA] " + $clientId + " ainda nao tem mapa de conhecimento " +
               "(" + $cand1 + " nao existe). Varrer as cegas com " + $tool + " custa muito mais " +
@@ -478,12 +531,16 @@ try {
               "/graphify clients/" + $clientId + ". Este aviso aparece so uma vez por sessao " +
               "para este projeto; as proximas varreduras aqui seguem liberadas sem aviso."
           }
+
         }
+
       }
+
     } catch {
       $noMapMsg = $null; $injectMsg = $null; $needsInjectLedgerLine = $false
       # Freio que quebra passa a gritar (TASK-213): a decisao do gate (recusar/injetar) falhou -
       # grava no MESMO ledger e segue fail-open (o evento ainda vira MEDIDA no passo (5) abaixo).
+
       try {
         $errObjInner = [ordered]@{
           ts      = (Get-Date).ToString("o")
@@ -491,13 +548,16 @@ try {
           erro    = $_.Exception.GetType().Name
           fase    = "gate-decisao"
         }
+
         $errLineInner = ($errObjInner | ConvertTo-Json -Compress)
         $utf8NoBomInner = New-Object System.Text.UTF8Encoding($false)
         if (Test-Path -LiteralPath (Split-Path -Parent $LedgerPath)) {
           [System.IO.File]::AppendAllText($LedgerPath, $errLineInner + "`n", $utf8NoBomInner)
         }
+
       } catch { }
     }
+
   }
 
   # (5) Escreve a linha no ledger - MEDE sempre, independente da decisao do gate (a tentativa
@@ -534,12 +594,14 @@ try {
   # arquivo fica travado por instantes. Perder uma linha nunca justifica travar a ferramenta.
   $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
   for ($i = 0; $i -lt 3; $i++) {
+
     try {
       [System.IO.File]::AppendAllText($LedgerPath, $line + "`n", $utf8NoBom)
       break
     } catch {
       Start-Sleep -Milliseconds 40
     }
+
   }
 
   # (5b) INJECAO: grava uma 2a linha kind=map/match=map-injected pro MESMO evento (TASK-169) -
@@ -556,15 +618,19 @@ try {
       match   = "map-injected"
       path    = ""
     }
+
     $injectLine = ($injectEntry | ConvertTo-Json -Compress)
     for ($i = 0; $i -lt 3; $i++) {
+
       try {
         [System.IO.File]::AppendAllText($LedgerPath, $injectLine + "`n", $utf8NoBom)
         break
       } catch {
         Start-Sleep -Milliseconds 40
       }
+
     }
+
   }
 
   # (6) Decisao final. INJECAO e AVISO (SEM-MAPA) imprimem JSON - "additionalContext" dentro de
@@ -578,8 +644,11 @@ try {
         hookEventName     = "PreToolUse"
         additionalContext = $injectMsg
       }
+
     }
+
     Write-Output ($out | ConvertTo-Json -Depth 5 -Compress)
+
     exit 0
   }
   if ($null -ne $noMapMsg) {
@@ -588,8 +657,11 @@ try {
         hookEventName     = "PreToolUse"
         additionalContext = $noMapMsg
       }
+
     }
+
     Write-Output ($out | ConvertTo-Json -Depth 5 -Compress)
+
     exit 0
   }
 
@@ -598,6 +670,7 @@ try {
   # Freio que quebra passa a gritar (TASK-213): grava UMA linha no MESMO ledger que o sensor
   # ja escreve (nao inventa arquivo novo) e continua fail-open (exit 0 - sensor quebrado nunca
   # trava a ferramenta que ele estava medindo).
+
   try {
     $errRoot2 = if (-not [string]::IsNullOrWhiteSpace($Root)) { $Root } else { Split-Path -Parent $PSScriptRoot }
     $errLedger2 = if (-not [string]::IsNullOrWhiteSpace($LedgerPath)) { $LedgerPath } else { Join-Path (Join-Path $errRoot2 "studio") "graph-usage-log.jsonl" }
@@ -611,9 +684,12 @@ try {
       erro    = $_.Exception.GetType().Name
       fase    = "catch-geral"
     }
+
     $errLine2 = ($errObj2 | ConvertTo-Json -Compress)
     $utf8NoBomErr2 = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::AppendAllText($errLedger2, $errLine2 + "`n", $utf8NoBomErr2)
   } catch { }
+
   exit 0
 }
+

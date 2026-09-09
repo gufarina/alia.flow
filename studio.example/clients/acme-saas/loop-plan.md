@@ -1,7 +1,7 @@
 # Loop Plan - Acme SaaS (raciocinio do Loop Designer)
 
 > Raciocinio da Alia (Loop Designer) ao selecionar os loops do projeto a partir do
-> catalogo engine/governance/loops.catalog.yaml. Sem acentos, sem emojis.
+> catalogo engine/governance/loops.catalog.yaml.
 
 ## Decisao
 O projeto e novo e precisa de sinal de saude e de RSI desde o inicio.

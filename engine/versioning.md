@@ -3,7 +3,7 @@
 > Como o motor (engine) evolui sem quebrar quem o usa. O Alia Flow e um produto open source
 > distribuivel: cada mudanca precisa ser modular, rastreavel e reversivel. Este documento e a
 > lei do update. O CHANGELOG na raiz e o registro; o VERSION na raiz e o numero vigente.
-> Sem acentos, sem emojis.
+>
 
 ---
 

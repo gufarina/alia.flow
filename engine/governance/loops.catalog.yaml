@@ -5,7 +5,7 @@
 # CORTE (10/08/2026, mandato do CEO): sem Task Scheduler, sem runner - estado escondido na
 # maquina e proibido. O unico agendado sobrevivente (memory-curator) roda quando a prova roda:
 # scripts/smoke-test-studio.ps1 ja o chama a cada execucao. Os demais viram comando manual.
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# UTF-8 sem BOM.
 
 catalog: loops
 spec: engine/governance/loops.md
@@ -15,7 +15,8 @@ spec: engine/governance/loops.md
 instance_schema:
   required: [id, trigger, cadence, owner, status, review_on,
              discovery_source, state_file, evaluator, isolation, token_cap, human_review_point]
-  recommended: [cost_class, domains, produces, mechanism, created, last_result, proactive]
+  recommended: [cost_class, domains, produces, mechanism, created, last_result, proactive,
+                max_iterations, non_progress_stop]
   # Contrato de 6 elementos (OPP-57, orange-book secao 09). Valores sao POR INSTANCIA (o Loop
   # Designer preenche ao instanciar; o molde nao traz default). Loop active sem os 6 = FAIL no smoke.
   contract_6_elements:
@@ -25,6 +26,11 @@ instance_schema:
     isolation: "o que o loop pode tocar (escopo de escrita; 'none' explicito quando so le)"
     token_cap: "teto de gasto { per_round: N, daily: N } - contador scripts/budget-check.ps1 (OPP-58; sem chamador ativo desde o corte do runner em 10/08/2026, mantido para o gatilho over-budget-path do rsi.yaml)"
     human_review_point: "passo que para e espera humano; 'none' PROIBIDO em loop que escreve fora de staging"
+  # Condicoes de parada (auditoria de harness 09/09/2026, LATTICE): recomendadas hoje, viram
+  # required quando todas as instancias dos Clients declararem (catraca, nao quebra o parque).
+  loop_stop_conditions:
+    max_iterations: "teto de voltas do loop (inteiro); default 5 (qa-loop.md) quando ausente"
+    non_progress_stop: "regra dura: mesma saida/mesmo Fail 2x seguidas = para, nao espera max_iterations"
   enums:
     trigger: [event, scheduled]
     cadence: [none, daily, weekly]      # none = dinamico (event-driven)

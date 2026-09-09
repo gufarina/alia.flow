@@ -13,7 +13,7 @@
   graphify-out/, examples/): o indice e dos docs de contexto top-level.
 
   Uso:  powershell -ExecutionPolicy Bypass -File scripts/kb-index.ps1 -KnowledgePath <dir> [-Validate] [-BudgetLines 80]
-  Escrita .NET UTF-8 sem BOM. Sem acentos, sem emojis.
+  Escrita .NET UTF-8 sem BOM.
 #>
 param(
   [Parameter(Mandatory=$true)][string]$KnowledgePath,

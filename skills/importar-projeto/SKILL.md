@@ -11,8 +11,6 @@ Capacidade da Alia de trazer um projeto que ja existe para dentro do Alia Flow, 
 atual, reusando as ferramentas que o framework ja tem. A skill e a RECEITA que amarra os passos;
 cada passo inteligente reusa uma capacidade existente, nao reescreve nada.
 
-Sem acentos, sem emojis em qualquer arquivo gerado (regra do CEO).
-
 ## O que ela reusa (nao duplica)
 
 | Passo | Ferramenta existente | Papel |

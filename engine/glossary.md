@@ -1,7 +1,7 @@
 # Alia - Linguagem Ubiqua (Glossario)
 
 > Os termos abaixo sao os **unicos** aceitos em documentacao, codigo e testes do Alia.
-> Inventar sinonimos causa drift semantico no LLM - e anti-pattern. Sem acentos, sem emojis.
+> Inventar sinonimos causa drift semantico no LLM - e anti-pattern.
 
 | Termo | Definicao | Contexto |
 |-------|-----------|----------|

@@ -1,7 +1,7 @@
 # Alia Flow - Manifesto de Provenance (mapa legivel por maquina).
 # Espelho estruturado de provenance.md, com o mapa nucleo/agent-authored e a regra de
 # enforcement em forma checavel. Fonte canonica: provenance.md. O smoke valida o pareamento.
-# Mudou um, mude o outro. Sem acentos, sem emojis. UTF-8 sem BOM.
+# Mudou um, mude o outro. UTF-8 sem BOM.
 
 manifest: provenance
 spec: engine/governance/provenance.md

@@ -1,7 +1,7 @@
 # Linguagem Ubiqua - Acme SaaS
 
 > Glossario do Client. Aderencia a estes termos e medida pelo Quality Gate (criterio DDD).
-> Sem acentos, sem emojis.
+>
 
 | Termo | Definicao |
 |-------|-----------|

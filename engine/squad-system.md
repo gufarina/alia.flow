@@ -3,7 +3,7 @@
 > Toda entrega vem de um **time de especialistas**. A Alia spawna o **Squad Creator**, que gera o
 > Squad de cada Client - cada integrante e um Specialist real, com seus arquivos (`.md` + `.yaml`) e
 > um **segundo cerebro** (Memory de dominio) anexado **em camadas**. E o que torna os times robustos
-> e inteligentes em vez de uma orquestradora que finge saber tudo. Sem acentos, sem emojis.
+> e inteligentes em vez de uma orquestradora que finge saber tudo.
 
 ---
 
@@ -96,11 +96,52 @@ studio/clients/{id}/squad/
     +-- client-brief.md
     +-- {domain}-frameworks.md
     \-- ...
+
 ```
 
 O `squad.yaml` e a fonte da verdade do time: lista cada Specialist, marca o `gateway: true` (Camada
 A) e declara a camada de cada um. E o que a orquestracao le para saber a quem delegar e o que cada
 Specialist deve carregar antes de agir.
+
+### Contrato do especialista - 4 campos obrigatorios no `agents/{id}.yaml`
+
+> Medido em 09/09/2026 (auditoria-harness-v2.html, secao 03): nenhum campo do yaml era obrigatorio,
+> tudo caia em default silencioso - foi assim que persona sem freio produziu laudo errado. Estes 4
+> campos fecham essa lacuna. `scripts/squad-bridge.ps1` reprova (throw, sem bundle, sem bypass)
+> qualquer `agents/{id}.yaml` que nao os declare.
+
+```
+entry_point: knowledge/MAP.md # obrigatorio se knowledge[] nao vazio
+budget:
+ tool_calls: 20 # obrigatorio (exceto camada A); default por camada
+ tokens: null # opcional; nem todo host mede
+output_contract:
+ max_lines: 60 # obrigatorio (exceto camada A); default por camada
+ evidence_tags: [MEDIDO, LIDO, INFERIDO]
+grounding: client.md # obrigatorio em TODA camada, inclusive A/Gateway
+
+```
+
+Defaults por camada quando o campo falta e o gerador precisa sugerir o que preencher (nunca aplica
+sozinho - ver "Sem campo, sem bundle" abaixo):
+
+| Camada | budget.tool_calls | output_contract.max_lines |
+|---|---|---|
+| A (Gateway) | dispensado - orquestra, nao tem teto de execucao | dispensado |
+| B (Specialist) | 20 | 60 |
+| C (leve) | 8 | 25 |
+
+`entry_point` e `grounding` valem para toda camada, inclusive A - grounding e o que impede afirmar
+sobre um Client por lembranca ou nome parecido.
+
+**Sem campo, sem bundle.** `entry_point` (quando `knowledge[]` nao vazio), `budget.tool_calls` e
+`output_contract.max_lines`/`evidence_tags` (camada B/C) e `grounding` (toda camada) sao
+verificados por `squad-bridge.ps1` ANTES de gerar `.claude/agents/{client}-{id}.md`: campo ausente
+para o processo daquele agente com `throw` (mensagem nomeia o campo e o default sugerido pela
+camada) - nao escreve bundle nenhum, sem flag de bypass. `knowledge[]` nao vazio sem
+`knowledge/MAP.md` no disco tambem reprova, mandando rodar `scripts/kb-index.ps1 -KnowledgePath
+<dir>`. Squad existente sem os campos: `squad-bridge.ps1 -MigrateContract` adiciona so o que falta,
+com o default da camada, sem sobrescrever campo ja preenchido.
 
 ## Como a Alia spawna o Squad Creator
 
@@ -115,6 +156,7 @@ Specialist deve carregar antes de agir.
    e. nomeia o Gateway (Squad Owner) - Tier 1 da governanca.
    f. registra o Client/Squad no estado (studio/state.json).
 4. Alia confirma: "Squad {nome} ativo ({N} Specialists). Pronto pra delegar."
+
 ```
 
 O Squad Creator MONTA a partir da estante (templates + Expert Minds testados); nao inventa do zero.

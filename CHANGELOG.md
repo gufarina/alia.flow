@@ -20,6 +20,107 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.70.0] - 2026-09-09
+
+CONTRATO DO ESPECIALISTA COM ORCAMENTO (L48), CUSTO NA TASK (L49), BASELINE DO HARNESS (L50),
+NUCLEO EM TODA JANELA (L51), REGRA ASCII REMOVIDA DO PRODUTO.
+
+- Contrato do especialista (L48): `agents/<id>.yaml` ganha `entry_point`, `budget.tool_calls`,
+  `output_contract{max_lines,evidence_tags}`, `grounding`; `squad-bridge.ps1` reprova persona sem
+  eles (throw, sem bypass), gera bloco "Antes de agir" por indice (MAP.md -> assinatura -> fatia,
+  client.md antes de afirmar), "## Orcamento" e "## Contrato de saida"; `-MigrateContract`
+  adiciona defaults por camada (B 20/60, C 8/25, A sem orcamento); `-Only <client>` poda o roster
+  por sessao; nunca gera `.context-load.md` em claude-code. Prova em campo: mesmo Specialist caiu
+  de 130.898 tokens/28 chamadas para 35.032/4 (73% menos token, 91% menos tempo).
+- Custo na Task (L49): `register-task.ps1 -Tokens/-ToolUses/-Budget` (+ `budget_exceeded`),
+  mission-control mostra custo; `task-context.ps1 -Last N` (default 5) e `-Full`: consulta do um Client
+  caiu de 36KB para ~2KB.
+- Nucleo de uma pagina (L51): `engine/agents/nucleo.md` (~1.200 tokens) injetado por
+  `scripts/session-start.ps1` em SessionStart startup|resume|compact; MAP.md corrigido (afirmava
+  boot que nao existia); delegation-guard por turno (441B x N) desligado do UserPromptSubmit.
+- Hooks: `scripts/pre-tool-use.ps1` = 1 spawn por Edit/Write/Task (medido 1260ms -> 670ms); sensor
+  de grafo sem Read no matcher e classificando varredura pelo comando real (nao por substring
+  "grep"); `graph-usage.ps1` imprime adocao antiga e nova; bastao de sessao
+  (`scripts/session-baton.ps1` via `session-baton-guard.ps1` em PreCompact/SessionEnd, contrato de
+  `bastao.md`, teto 1.800 bytes).
+- Baseline congelado (L50): `scripts/harness-baseline.ps1` grava/checa
+  `studio/harness-baseline.txt` (janela fria produto/instancia, p50/p95 de hook, violacoes/100
+  turnos, custo por Task); `smoke-test-studio` ganha catraca.
+- Governanca: `public-surface.md` parametrizado (`{studio_dir}/{engine_home}`, antes cravava o
+  caminho de uma maquina e ja tinha sido propagado); `evolution-pipeline.md` fundido em
+  `provenance.md` (original em `engine/_retired/`); `orchestration.md` sem paragrafo duplicado +
+  FECHA grava custo; law-ledger placar recomputado (parava em L41 com tabela em L47), L48-L51
+  registradas, Q01 quarentena de `engine/constitution.yaml` (reavaliar 2026-09-23); loops:
+  `loop_stop_conditions` (`max_iterations`, `non_progress_stop`) em `loops.catalog.yaml` +
+  `qa-loop.md`; OPP-79 populacao de especialistas.
+- Regra ASCII REMOVIDA do produto inteiro (mandato do CEO 09/09/2026): checks de "sem acento"
+  fora do smoke e do rsi-heldout; session-reflection deixa de dobrar para ASCII; leitura UTF-8
+  explicita em check-public-surface. Fica so a protecao contra caractere corrompido (0xFFFD).
+- Smoke da oficina: 342 checks (era 333), ALL GREEN; `docs/CLAIMS.md` GUARD-NUM=342.
+- Correcao: 55 arquivos `.context-load.md` deixam de ser gerados para claude-code.
+
+---
+
+## [1.69.0] - 2026-09-08
+
+SEGREDOS COM AUDITORIA: o motor ganha uma porta unica para segredo (chave de API, token de
+deploy), com cofre, ledger de auditoria e guarda em duas camadas (mandato do CEO, 08/09/2026).
+
+**O incidente.** Um `VERCEL_TOKEN` precisou entrar no motor para publicar um produto de Client. A Alia pediu
+para colar no `.env`; o operador colou na CONVERSA por engano. A Alia pediu para gerar outro
+token e revogar o vazado - o operador reagiu, com razao: "se eu pegar outro voce vai dar a mesma
+resposta, nao tem logica" (o canal continua sendo o mesmo chat, pedir rotacao so repete a
+exposicao), e fechou: "eu te instrui a organizar esses secrets com responsabilidade e nao me
+pedir de novo... SEJA RESPONSAVEL E GUARDE ESSA MERDA COM AUDITORIA". O defeito era do MOTOR: nao
+havia lugar seguro para um segredo entrar, nem registro de quem usou o que e quando - so um
+`.env` solto e um `scripts/extract-secrets.ps1` que servia outro projeto (`aios/minions`).
+
+**O conserto (WARDEN, provado pelo negativo, 22 checks novos):**
+- `scripts/secret.ps1` (NOVO): a porta unica. Cofre (`{studio}/.secrets/vault.json`, so este
+  script le/escreve) guarda o VALOR; ledger (`{studio}/secrets-ledger.jsonl`, append-only,
+  qualquer agente pode ler) NUNCA guarda o valor - so nome, escopo, acao (set/use/revoke/get/
+  leak/fail), quem, pra que e IMPRESSAO DIGITAL (sha256 truncado). O valor NUNCA vem por
+  argumento de linha de comando - nao ha parametro `-Value` (tentar passar um da erro do proprio
+  PowerShell); `-Set` le por STDIN ou `-File` (que o script LE E APAGA). `-Use` e o verbo
+  principal: injeta o segredo num comando FILHO via variavel de ambiente, sem nunca imprimir - o
+  agente publica sem jamais ver o token. `-List` mostra metadado, nunca o valor. `-Revoke` tira
+  do cofre. `-Get` (caminho excepcional) exige `-IAcceptExposure` + `-Reason` ou recusa sem tocar
+  o ledger; quando expoe, grava `risky:true`. `-MarkLeaked` registra vazamento conhecido sem
+  mexer no cofre - a doutrina anexa (vale pro motor inteiro): nunca pedir rotacao pelo MESMO
+  canal que ja expos; registra, usa o que tem, oferece UMA vez o caminho seguro, nunca repete.
+- `scripts/secret-write-guard.ps1` (NOVO, hook PreToolUse, matcher `Edit|Write|NotebookEdit`,
+  ligado em `.claude/settings.json`): bloqueia no ATO quando o conteudo prestes a ser gravado
+  contem o valor literal de um segredo ja conhecido pelo cofre - `permissionDecision:deny`
+  citando nome e fingerprint, nunca o valor. Exclui o proprio cofre e o proprio ledger. Segredo
+  com menos de 8 caracteres nunca entra na comparacao (ruido).
+- `scripts/check-public-surface.ps1` secao "(1.7) segredo do cofre vazado em arquivo" (NOVO):
+  guarda no GATE, antes de publicar - varre a superficie inteira (arquivo versionado, artifact de
+  cliente, state.json, memoria) atras do valor EXATO de cada segredo do cofre. Diferente da
+  cacada de credencial generica (secao 1.6, L42 - procura FORMATO), aqui o valor e conhecido:
+  zero falso positivo, zero falso negativo pra qualquer segredo que passou pelo cofre.
+- `engine/governance/secrets.md` (NOVO): a lei, as duas pecas (cofre/ledger), os verbos, a
+  doutrina do vazamento e as duas camadas de guarda.
+- `engine/governance/law-ledger.md`: L47 registrada, COBERTA, citando os 22 checks (11 do
+  ciclo completo de `secret.ps1`, 6 do guarda no ato, 2 do guarda no gate, 3 de existencia/fiacao).
+- `engine/governance/persistence-catalog.md`: `studio/secrets-ledger.jsonl` (durable) e
+  `studio/.secrets/vault.json` (live) catalogados.
+
+**Prova pelo negativo (as 22):** ciclo completo de `secret.ps1` (set via stdin, `-Value` recusado
+pelo proprio PowerShell, `-Use` injeta sem imprimir, `-List` esconde o valor, `-Revoke` remove,
+`-Get` recusa sem switch e expoe com switch+motivo, `-MarkLeaked` registra sem exigir cofre, o
+ledger inteiro nunca contem valor); `secret-write-guard.ps1` (Write/Edit com valor real -> deny,
+mesmo conteudo sem valor -> libera, escrita dentro do proprio cofre sempre libera, interruptor
+desliga, hook LIGADO no settings.json - nao so projetado); `check-public-surface.ps1` (1.7)
+(valor plantado em artifact -> REPROVADO, valor removido -> SUPERFICIE LIMPA de volta). Numero
+publico: 314 -> 333 (GUARD-NUM em `docs/CLAIMS.md` sincronizado).
+
+**Fora de escopo desta versao (nomeado, nao escondido):** o segredo real que motivou o incidente
+continua onde estava (fora do studio, gitignored) ate esta versao propagar a uma instancia real
+via `scripts/update-engine.ps1` - migrar o valor pro cofre e passo seguinte, nao desta Task (a
+oficina nunca guarda segredo de Client real, so o mecanismo).
+
+---
+
 ## [1.68.0] - 2026-09-07
 
 GUARDA NO ATO: a delegacao e o ritual deixam de ser prosa e viram maquina ANTES do estrago

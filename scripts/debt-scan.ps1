@@ -5,7 +5,7 @@
   Conforme o Quality Gate (quality-gate.md), um verdict "Concerns" e divida assumida: se nao virar
   correcao, vira debito - cobrado aqui. Varre o estado/memory do Client (state.json + knowledge/*.md
   + loops.yaml) por marcacoes de Concern/ressalva/TODO/FIXME/PENDENTE nao resolvidas. Frugal: so le.
-  Reporta, nao corrige. Escrita .NET UTF-8 sem BOM. Sem acentos, sem emojis. RSI propoe, Gate aprova.
+  Reporta, nao corrige. Escrita .NET UTF-8 sem BOM. RSI propoe, Gate aprova.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Client,

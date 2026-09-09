@@ -9,7 +9,7 @@ provenance: nucleo
 
 > O operador decide melhor vendo, nao lendo paragrafo. Toda decisao/aprovacao vira uma tela
 > escaneavel com a escolha clara. E o Principio IX (ADHD-Friendly Cadence) virado mecanismo de
-> entrega. Sem acentos, sem emojis em qualquer arquivo gerado (regra do CEO).
+> entrega.
 
 ## Quando dispara
 

@@ -15,8 +15,6 @@ Spec do padrao: `engine/features/validated-artifacts.md`.
 Contrato (fonte da verdade): `engine/features/validated-artifacts.yaml`.
 Mecanismo: `skills/validate-artifact/validate-artifact.ps1`.
 
-Sem acentos, sem emojis em qualquer arquivo gerado (regra do CEO).
-
 ## O que e e por que existe
 
 `validated-artifacts.yaml` ja declara, por tipo de Artifact, o checklist de formato que

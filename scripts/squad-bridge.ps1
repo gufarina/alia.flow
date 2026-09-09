@@ -82,7 +82,16 @@ param(
     [string]$Client,
     [string]$RepoRoot,
     [ValidateSet('spawn', 'context-load', 'opencode')]
-    [string]$Mode = 'spawn'
+ [string]$Mode = 'spawn',
+ # -MigrateContract: unico caminho para os squads existentes ganharem os 4 campos novos
+ # (entry_point/budget/output_contract/grounding) sem quebrar - adiciona so o que falta, com o
+ # default da camada, nunca sobrescreve campo ja preenchido. Roda e sai (nao gera bundle).
+ [switch]$MigrateContract,
+ # -Only <client>: remove de .claude\agents\ os bundles de OUTROS Clients, mantendo sempre o
+ # squad do engine_home (alia-flow-lab). Roda e sai (nao gera bundle). LIMITE: rodar no MEIO da
+ # sessao nao recarrega o roster do Claude Code (ele le sub-agentes so na abertura da sessao) -
+ # rodar SEMPRE antes de abrir a sessao.
+ [string]$Only
 )
 
 $ErrorActionPreference = 'Stop'
@@ -106,6 +115,52 @@ if (-not (Test-Path $outDir)) {
     if (-not $DryRun) {
         New-Item -ItemType Directory -Path $outDir -Force | Out-Null
     }
+
+}
+
+# ---- -Only: poda de bundles de outros Clients (roda e sai) ----
+if ($Only) {
+ $bundlesDir = Join-Path $RepoRoot '.claude\agents'
+ $keep = @($Only, 'alia-flow-lab') | Select-Object -Unique
+ $removedCount = 0
+ if (Test-Path $bundlesDir) {
+ $bundles = Get-ChildItem -Path $bundlesDir -Filter '*.md' -File -ErrorAction SilentlyContinue
+ foreach ($b in $bundles) {
+ $isKept = $false
+ foreach ($k in $keep) { if ($b.BaseName -like "$k-*") { $isKept = $true; break } }
+ if (-not $isKept) {
+ if (-not $DryRun) { Remove-Item -LiteralPath $b.FullName -Force }
+ Write-Host "[REMOVIDO] $($b.Name)"
+ $removedCount++
+}
+
+}
+
+}
+
+ Write-Host "-Only $Only : $removedCount bundle(s) removido(s) (mantidos: $($keep -join ', ')). Rode ISTO antes de abrir a sessao - o Claude Code so le sub-agentes na abertura, rodar no meio nao recarrega o roster."
+ exit 0
+}
+
+# ---- deteccao de harness (item e: context-load nunca gera bundle quando o host tem sub-agente
+# nativo Claude Code - usa a mesma deteccao de detect-harness.ps1) ----
+$detectedHarness = 'unknown'
+try {
+ $detectScript = Join-Path $PSScriptRoot 'detect-harness.ps1'
+ if (Test-Path $detectScript) {
+ $detectOut = & $detectScript
+ foreach ($dl in $detectOut) {
+ if ($dl -match '^harness=(.+)$') { $detectedHarness = $Matches[1] }
+}
+
+}
+
+}
+catch { }
+
+if ($Mode -eq 'context-load' -and $detectedHarness -eq 'claude-code') {
+ Write-Host "modo context-load pulado: harness detectado e claude-code (sub-agente nativo) - use -Mode spawn."
+ exit 0
 }
 
 # ---- caminho portavel (ver cabecalho, "CAMINHO DE KNOWLEDGE - PORTAVEL POR LEI") ----
@@ -121,6 +176,7 @@ function ConvertTo-PortablePath {
     if ($full.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
         return ($full.Substring($prefix.Length) -replace '\\', '/')
     }
+
     return $full
 }
 
@@ -136,10 +192,13 @@ if (Test-Path $mcpConfigPath) {
         if ($mcpJson.mcpServers) {
             $McpServers = @($mcpJson.mcpServers.PSObject.Properties.Name)
         }
+
     }
+
     catch {
         Write-Warning "nao consegui ler $mcpConfigPath : $($_.Exception.Message)"
     }
+
 }
 
 # valida uma tool "mcp__servidor__ferramenta" contra $McpServers.
@@ -158,6 +217,7 @@ function Resolve-McpTool {
         [void]$Warnings.Value.Add("$Context : tool '$Token' fora do formato mcp__servidor__ferramenta - descartada")
         return $null
     }
+
     $server = $parts[1]
     $rest = $parts[2]
 
@@ -206,23 +266,27 @@ function Read-SimpleYaml {
                 $currentKey = $key
                 $nestedKey = $key
             }
+
             elseif ($val -match '^\[(.*)\]$') {
                 $inner = $Matches[1]
                 $items = @()
                 if ($inner.Trim() -ne '') {
                     $items = $inner -split ',' | ForEach-Object { $_.Trim().Trim('"').Trim("'") } | Where-Object { $_ -ne '' }
                 }
+
                 $list = New-Object System.Collections.ArrayList
                 foreach ($it in $items) { [void]$list.Add($it) }
                 $data[$key] = $list
                 $currentKey = $null
                 $nestedKey = $null
             }
+
             else {
                 $data[$key] = $val.Trim()
                 $currentKey = $null
                 $nestedKey = $null
             }
+
             continue
         }
 
@@ -233,7 +297,9 @@ function Read-SimpleYaml {
                 if ($data[$currentKey] -is [System.Collections.ArrayList]) {
                     [void]$data[$currentKey].Add($item)
                 }
+
             }
+
             $nestedKey = $null   # confirmado: e lista, nao mapa aninhado
             continue
         }
@@ -245,8 +311,10 @@ function Read-SimpleYaml {
             if (-not $data.ContainsKey($subKey) -or ($data[$subKey] -is [System.Collections.ArrayList] -and $data[$subKey].Count -eq 0)) {
                 $data[$subKey] = $subVal
             }
+
             continue
         }
+
     }
 
     # o wrapper (ex "agent") nunca e consumido - se ficou vazio (virou mapa achatado), descarta
@@ -262,6 +330,7 @@ function Get-ListValue {
     if ($Data.ContainsKey($Key) -and $Data[$Key] -is [System.Collections.ArrayList]) {
         return @($Data[$Key])
     }
+
     return @()
 }
 
@@ -270,6 +339,7 @@ function Get-ScalarValue {
     if ($Data.ContainsKey($Key) -and -not ($Data[$Key] -is [System.Collections.ArrayList])) {
         return [string]$Data[$Key]
     }
+
     return $Default
 }
 
@@ -298,24 +368,179 @@ function Read-SquadYamlInfo {
             if ($line -match '^\S') { $inSquadBlock = $false }
             elseif ($line -match '^\s+owner:\s*([^\s#]+)') { $owner = $Matches[1].Trim() }
         }
+
         if ($line -match '^gateway:\s*([^\s#]+)') { $topGateway = $Matches[1].Trim(); continue }
         if ($line -match '^\s*-\s*id:\s*([^\s#]+)') {
             $curId = $Matches[1].Trim()
             continue
         }
+
         if ($curId) {
             if ($line -match '^\s*(?:camada|layer):\s*([^\s#]+)') {
                 $map[$curId] = $Matches[1].Trim().ToUpper()
             }
+
             elseif ($line -match '^\s*gateway:\s*true\s*$') {
                 $memberGateway = $curId
             }
+
         }
+
     }
 
     $gatewayId = if ($topGateway) { $topGateway } elseif ($memberGateway) { $memberGateway } elseif ($owner) { $owner } else { $null }
 
     return [pscustomobject]@{ Camadas = $map; GatewayId = $gatewayId }
+}
+
+# ---- bloco "Antes de agir" do contrato do especialista (auditoria-harness-v2.html, secao 03) ----
+# entry_point primeiro (quando ha), depois assinatura/fatia, depois grounding (client.md), depois
+# grafo. knowledge[] vira lista "docs disponiveis (abra pelo indice)" - nunca mais "carregue".
+# Camada A dispensa Orcamento/Contrato de saida (Gateway orquestra, nao tem teto de execucao).
+function New-BeforeActingBlock {
+ param(
+ [string]$Camada,
+ [string]$EntryPointPath,
+ [string]$GroundingPath,
+ [string[]]$KnowledgeLines,
+ [string]$BudgetToolCalls,
+ [string]$OutputMaxLines,
+ [string]$EvidenceTags
+)
+
+ $lines = New-Object System.Collections.ArrayList
+ [void]$lines.Add('## Antes de agir (obrigatorio, nesta ordem)')
+ [void]$lines.Add('')
+ $step = 1
+ if ($EntryPointPath) {
+ [void]$lines.Add("$step. Leia $EntryPointPath (uma linha por doc). Nunca um doc inteiro sem achar a linha dele.")
+ $step++
+}
+
+ [void]$lines.Add("$step. Ache a assinatura (titulo + primeiro paragrafo) antes de abrir o corpo.")
+ $step++
+ [void]$lines.Add("$step. Abra so a fatia (secao) que responde a pergunta.")
+ $step++
+ if ($GroundingPath) {
+ [void]$lines.Add("$step. Antes de QUALQUER afirmacao sobre este Client, leia $GroundingPath. Nao afirme por lembranca ou nome parecido.")
+ $step++
+}
+
+ [void]$lines.Add("$step. Se existir graphify-out/GRAPH_REPORT.md, leia God Nodes antes de Grep/Glob cego.")
+ [void]$lines.Add('')
+ [void]$lines.Add('docs disponiveis (abra pelo indice):')
+ [void]$lines.Add('')
+ if (-not $KnowledgeLines -or $KnowledgeLines.Count -eq 0) {
+ [void]$lines.Add('- (nenhum knowledge declarado no yaml deste agente)')
+}
+
+ else {
+ foreach ($kl in $KnowledgeLines) { [void]$lines.Add("- $kl") }
+}
+
+ if ($Camada -ne 'A') {
+ [void]$lines.Add('')
+ [void]$lines.Add('## Orcamento')
+ [void]$lines.Add('')
+ [void]$lines.Add("Maximo $BudgetToolCalls chamadas. Estourou, pare e entregue o que tem.")
+ [void]$lines.Add('')
+ [void]$lines.Add('## Contrato de saida')
+ [void]$lines.Add('')
+ $tagList = ($EvidenceTags -replace "[\[\]]", "" -split ",\s*" | ForEach-Object { "[" + $_.Trim() + "]" }); $tagTxt = if ($tagList.Count -gt 1) { (($tagList[0..($tagList.Count-2)]) -join ", ") + " ou " + $tagList[-1] } else { $tagList -join "" }
+ [void]$lines.Add("Maximo $OutputMaxLines linhas. Cada fato leva um rotulo: $tagTxt.")
+ [void]$lines.Add('Afirmacao sem marca nao entra.')
+}
+
+ return $lines
+}
+
+# ---- -MigrateContract: adiciona os 4 campos novos do contrato (entry_point/budget/
+# output_contract/grounding) so onde faltam, com o default da camada, sem tocar campo existente
+# (roda e sai) ----
+if ($MigrateContract) {
+ $migClientDirs = Get-ChildItem -Path $clientsDir -Directory
+ if ($Client) { $migClientDirs = $migClientDirs | Where-Object { $_.Name -eq $Client } }
+
+ foreach ($clientDir in $migClientDirs) {
+ $squadDirM = Join-Path $clientDir.FullName 'squad'
+ $agentsDirM = Join-Path $squadDirM 'agents'
+ $squadYamlM = Join-Path $squadDirM 'squad.yaml'
+ if (-not (Test-Path $agentsDirM)) { continue }
+
+ $squadInfoM = if (Test-Path $squadYamlM) { Read-SquadYamlInfo -Path $squadYamlM } else { $null }
+
+ foreach ($yamlFileM in Get-ChildItem -Path $agentsDirM -Filter '*.yaml' -File) {
+ $agentIdM = [System.IO.Path]::GetFileNameWithoutExtension($yamlFileM.Name)
+ try {
+ $rawM = Get-Content -Path $yamlFileM.FullName -Raw -Encoding UTF8
+ $dataM = Read-SimpleYaml -Path $yamlFileM.FullName
+
+ $camadaM = Get-ScalarValue $dataM 'camada' ''
+ if (-not $camadaM) { $camadaM = Get-ScalarValue $dataM 'layer' '' }
+ $camadaM = $camadaM.ToUpper()
+ if ($squadInfoM -and $squadInfoM.Camadas.ContainsKey($agentIdM)) { $camadaM = $squadInfoM.Camadas[$agentIdM] }
+ if ($squadInfoM -and $squadInfoM.GatewayId -eq $agentIdM) { $camadaM = 'A' }
+ if ($camadaM -ne 'A' -and $camadaM -ne 'B' -and $camadaM -ne 'C') { $camadaM = 'B' }
+
+ $defBudget = if ($camadaM -eq 'C') { 8 } else { 20 }
+ $defLines = if ($camadaM -eq 'C') { 25 } else { 60 }
+
+ $knowledgeEntriesM = Get-ListValue $dataM 'knowledge'
+ $addedFields = New-Object System.Collections.ArrayList
+ $appendLines = New-Object System.Collections.ArrayList
+
+ if ($knowledgeEntriesM.Count -gt 0 -and -not ($rawM -match '(?m)^entry_point:')) {
+ [void]$appendLines.Add('entry_point: knowledge/MAP.md')
+ [void]$addedFields.Add('entry_point')
+}
+
+ if ($camadaM -ne 'A') {
+ if (-not ($rawM -match '(?m)^budget:')) {
+ [void]$appendLines.Add('budget:')
+ [void]$appendLines.Add(" tool_calls: $defBudget")
+ [void]$appendLines.Add(' tokens: null')
+ [void]$addedFields.Add('budget')
+}
+
+ if (-not ($rawM -match '(?m)^output_contract:')) {
+ [void]$appendLines.Add('output_contract:')
+ [void]$appendLines.Add(" max_lines: $defLines")
+ [void]$appendLines.Add(' evidence_tags: [MEDIDO, LIDO, INFERIDO]')
+ [void]$addedFields.Add('output_contract')
+}
+
+}
+
+ if (-not ($rawM -match '(?m)^grounding:')) {
+ [void]$appendLines.Add('grounding: client.md')
+ [void]$addedFields.Add('grounding')
+}
+
+ if ($appendLines.Count -gt 0) {
+ $newRawM = $rawM.TrimEnd() + "`n`n" + ($appendLines -join "`n") + "`n"
+ if (-not $DryRun) {
+ $utf8NoBomM = New-Object System.Text.UTF8Encoding($false)
+ [System.IO.File]::WriteAllText($yamlFileM.FullName, $newRawM, $utf8NoBomM)
+}
+
+ Write-Host "[$($clientDir.Name)/$agentIdM] camada $camadaM - campos adicionados: $($addedFields -join ', ')"
+}
+
+ else {
+ Write-Host "[$($clientDir.Name)/$agentIdM] camada $camadaM - ja tinha todos os campos do contrato"
+}
+
+}
+
+ catch {
+ Write-Warning "[$($clientDir.Name)/$agentIdM] erro na migracao: $($_.Exception.Message)"
+}
+
+}
+
+}
+
+ exit 0
 }
 
 # ---- geracao ----
@@ -334,6 +559,7 @@ if ($Client) {
     if (-not $clientDirs) {
         Write-Warning "cliente '$Client' nao encontrado em $clientsDir"
     }
+
 }
 
 foreach ($clientDir in $clientDirs) {
@@ -382,7 +608,9 @@ foreach ($clientDir in $clientDirs) {
                     'fast' { 'C' }
                     default { '' }
                 }
+
             }
+
             $camada = $camada.ToUpper()
 
             if ($squadInfo.Camadas.ContainsKey($agentId)) {
@@ -390,6 +618,7 @@ foreach ($clientDir in $clientDirs) {
                 if ($camada -and $camada -ne $squadCamada) {
                     [void]$camadaWarnings.Add("$clientId/$agentId : squad.yaml sobrescreve a camada '$camada' resolvida do yaml individual para '$squadCamada' - squad.yaml vence, DIVERGENCIA registrada")
                 }
+
                 $camada = $squadCamada
             }
 
@@ -397,6 +626,7 @@ foreach ($clientDir in $clientDirs) {
                 if ($camada -and $camada -ne 'A') {
                     [void]$camadaWarnings.Add("$clientId/$agentId : squad.yaml declara este id como Gateway mas a camada resolvida era '$camada' - squad.yaml vence, forcado para A")
                 }
+
                 $camada = 'A'
             }
 
@@ -404,14 +634,60 @@ foreach ($clientDir in $clientDirs) {
                 if ($camada) {
                     [void]$camadaWarnings.Add("$clientId/$agentId : camada '$camada' invalida (esperado A/B/C) - assumido B, CONFIRA a fonte")
                 }
+
                 else {
                     [void]$camadaWarnings.Add("$clientId/$agentId : camada indeterminavel (sem camada/layer/tier no yaml, sem override em squad.yaml, nao e o Gateway) - assumido B, CONFIRA a fonte")
                 }
+
                 $camada = 'B'
             }
+
             $triggers = Get-ListValue $data 'triggers'
             $knowledgeEntries = Get-ListValue $data 'knowledge'
             $rawTools = Get-ListValue $data 'tools'
+
+ # ---- contrato do especialista (auditoria-harness-v2.html, secao 03): entry_point,
+ # budget.tool_calls, output_contract.max_lines/evidence_tags, grounding. Ausencia PARA
+ # o processo para AQUELE agente (throw, capturado pelo try/catch do loop) - sem bundle,
+ # sem bypass. Camada A dispensa budget/output_contract, mas exige grounding tambem. ----
+ $entryPointRaw = Get-ScalarValue $data 'entry_point' ''
+ $budgetToolCalls = Get-ScalarValue $data 'tool_calls' ''
+ $outputMaxLines = Get-ScalarValue $data 'max_lines' ''
+ $evidenceTags = Get-ScalarValue $data 'evidence_tags' ''
+ $groundingRaw = Get-ScalarValue $data 'grounding' ''
+ $defBudgetContract = if ($camada -eq 'C') { 8 } else { 20 }
+ $defLinesContract = if ($camada -eq 'C') { 25 } else { 60 }
+
+ if ($knowledgeEntries.Count -gt 0) {
+ $mapPathCheck = Join-Path $knowledgeDir 'MAP.md'
+ if (-not (Test-Path $mapPathCheck)) {
+ throw "falta $mapPathCheck - rode: scripts/kb-index.ps1 -KnowledgePath `"$knowledgeDir`""
+}
+
+ if (-not $entryPointRaw) {
+ throw "falta 'entry_point' no yaml (obrigatorio quando knowledge[] nao vazio). Sugestao: entry_point: knowledge/MAP.md"
+}
+
+}
+
+                if ($camada -ne 'A') {
+ if (-not $budgetToolCalls) {
+ throw "falta 'budget.tool_calls' no yaml. Default sugerido para camada $camada`: $defBudgetContract"
+}
+
+ if (-not $outputMaxLines) {
+ throw "falta 'output_contract.max_lines' no yaml. Default sugerido para camada $camada`: $defLinesContract"
+}
+
+ if (-not $evidenceTags) {
+ throw "falta 'output_contract.evidence_tags' no yaml. Default sugerido: [MEDIDO, LIDO, INFERIDO]"
+}
+
+}
+
+ if (-not $groundingRaw) {
+ throw "falta 'grounding' no yaml (obrigatorio em toda camada, inclusive A/Gateway). Sugestao: grounding: client.md"
+}
 
             # ---- description ----
             $descParts = New-Object System.Collections.ArrayList
@@ -421,6 +697,7 @@ foreach ($clientDir in $clientDirs) {
                 $trigList = ($triggers | Select-Object -First 5) -join '; '
                 [void]$descParts.Add("acionar quando: $trigList")
             }
+
             $description = ($descParts -join '. ') -replace '\s+', ' '
             $description = $description.Trim()
             if (-not $description) { $description = "$role ($clientId/$agentId)" }
@@ -435,26 +712,34 @@ foreach ($clientDir in $clientDirs) {
                     $resolvedTool = Resolve-McpTool -Token $t -Servers $McpServers -Warnings ([ref]$mcpWarnings) -Context "$clientId/$agentId"
                     if ($resolvedTool) { [void]$resolvedRawTools.Add($resolvedTool) }
                 }
+
                 else {
                     [void]$resolvedRawTools.Add($t)
                 }
+
             }
+
             $rawTools = @($resolvedRawTools)
 
             $validTools = @($rawTools | Where-Object { ($ToolWhitelist -contains $_) -or ($_ -like 'mcp__*') })
+
             if ($camada -ne 'A') {
                 $validTools = @($validTools | Where-Object { $_ -ne 'Task' -and $_ -ne 'Agent' })
             }
+
             if (-not $validTools -or $validTools.Count -eq 0) {
                 switch ($camada) {
                     'A' { $validTools = @('Read', 'Grep', 'Glob', 'Task') }
                     'B' { $validTools = @('Read', 'Grep', 'Glob', 'Edit', 'Write', 'Bash') }
                     default { $validTools = @('Read', 'Grep', 'Glob') }
                 }
+
             }
+
             elseif ($camada -eq 'A' -and ($validTools -notcontains 'Task')) {
                 $validTools = @($validTools) + @('Task')
             }
+
             $toolsLine = ($validTools -join ', ')
 
             # ---- model ----
@@ -477,6 +762,7 @@ foreach ($clientDir in $clientDirs) {
                     [void]$knowledgeLines.Add($knowledgeDir)
                     continue
                 }
+
                 $entry = $entry -replace '^knowledge[\\/]', ''
                 if ($entry -notmatch '\.\w+$') { $entry = "$entry.md" }
                 $entry = $entry -replace '/', '\'
@@ -484,17 +770,34 @@ foreach ($clientDir in $clientDirs) {
                 if (Test-Path $resolvedPath) {
                     [void]$knowledgeLines.Add($resolvedPath)
                 }
+
                 else {
                     [void]$knowledgeWarnings.Add("$clientId/$agentId : knowledge '$k' nao resolve em arquivo ($resolvedPath) - omitido")
                 }
+
             }
+
             if ($hasGraph -and (-not ($knowledgeLines -contains $graphReport))) {
                 [void]$knowledgeLines.Add($graphReport)
             }
+
             # dedupe primeiro (comparacao entre caminhos absolutos), depois torna PORTAVEL - o
             # que vai pro arquivo gerado e o caminho relativo a $RepoRoot quando o alvo mora dentro
             # dele. Um ponto so, valendo para os tres modos.
             $knowledgeLines = @($knowledgeLines | Select-Object -Unique | ForEach-Object { ConvertTo-PortablePath $_ })
+
+ # ---- entry_point / grounding resolvidos e tornados portaveis (mesma regra acima) ----
+ $entryPointPath = ''
+ if ($entryPointRaw) {
+ $entryPointFull = Join-Path $squadDir $entryPointRaw
+ $entryPointPath = if (Test-Path $entryPointFull) { ConvertTo-PortablePath $entryPointFull } else { $entryPointRaw }
+}
+
+ $groundingPath = ''
+ if ($groundingRaw) {
+ $groundingFull = Join-Path $clientDir.FullName $groundingRaw
+ $groundingPath = if (Test-Path $groundingFull) { ConvertTo-PortablePath $groundingFull } else { $groundingRaw }
+}
 
             $name = ("$clientId-$agentId").ToLower()
 
@@ -502,23 +805,18 @@ foreach ($clientDir in $clientDirs) {
             $sections = New-Object System.Collections.ArrayList
 
             if ($Mode -eq 'spawn') {
+
                 [void]$sections.Add('---')
                 [void]$sections.Add("name: $name")
                 [void]$sections.Add("description: $description")
                 [void]$sections.Add("tools: $toolsLine")
                 [void]$sections.Add("model: $model")
+
                 [void]$sections.Add('---')
                 [void]$sections.Add('')
                 [void]$sections.Add($body.Trim())
                 [void]$sections.Add('')
-                [void]$sections.Add('## Antes de agir, carregue (obrigatorio)')
-                [void]$sections.Add('')
-                if ($knowledgeLines.Count -eq 0) {
-                    [void]$sections.Add('- (nenhum knowledge declarado no yaml deste agente)')
-                }
-                else {
-                    foreach ($kl in $knowledgeLines) { [void]$sections.Add("- $kl") }
-                }
+ foreach ($bl in (New-BeforeActingBlock -Camada $camada -EntryPointPath $entryPointPath -GroundingPath $groundingPath -KnowledgeLines $knowledgeLines -BudgetToolCalls $budgetToolCalls -OutputMaxLines $outputMaxLines -EvidenceTags $evidenceTags)) { [void]$sections.Add($bl) }
 
                 if ($camada -ne 'A') {
                     [void]$sections.Add('')
@@ -526,7 +824,9 @@ foreach ($clientDir in $clientDirs) {
                     [void]$sections.Add('')
                     [void]$sections.Add('Nao re-delegue e nao acione outro agente. Ao concluir, devolva Artifact (arquivo, path ou URL) e um resumo objetivo para quem acionou este agente.')
                 }
+
             }
+
             elseif ($Mode -eq 'opencode') {
                 # OpenCode tem sub-agente NATIVO, so que com outro frontmatter e outra pasta.
                 # Traduz a mesma fonte unica para o vocabulario dele.
@@ -545,10 +845,12 @@ foreach ($clientDir in $clientDirs) {
                 if ($declaredModel -match '^[\w.-]+/[\w.:-]+$') {
                     [void]$sections.Add("model: $declaredModel")
                 }
+
                 [void]$sections.Add('permission:')
                 [void]$sections.Add("  edit: $permEdit")
                 [void]$sections.Add("  bash: $permBash")
                 [void]$sections.Add("  webfetch: $permWeb")
+
                 [void]$sections.Add('---')
                 [void]$sections.Add('')
                 [void]$sections.Add($body.Trim())
@@ -557,21 +859,17 @@ foreach ($clientDir in $clientDirs) {
                 [void]$sections.Add('')
                 [void]$sections.Add("$toolsLine")
                 [void]$sections.Add('')
-                [void]$sections.Add('## Antes de agir, carregue (obrigatorio)')
-                [void]$sections.Add('')
-                if ($knowledgeLines.Count -eq 0) {
-                    [void]$sections.Add('- (nenhum knowledge declarado no yaml deste agente)')
-                }
-                else {
-                    foreach ($kl in $knowledgeLines) { [void]$sections.Add("- $kl") }
-                }
+ foreach ($bl in (New-BeforeActingBlock -Camada $camada -EntryPointPath $entryPointPath -GroundingPath $groundingPath -KnowledgeLines $knowledgeLines -BudgetToolCalls $budgetToolCalls -OutputMaxLines $outputMaxLines -EvidenceTags $evidenceTags)) { [void]$sections.Add($bl) }
+
                 if ($camada -ne 'A') {
                     [void]$sections.Add('')
                     [void]$sections.Add('## Voce e folha')
                     [void]$sections.Add('')
                     [void]$sections.Add('Nao re-delegue e nao acione outro agente. Ao concluir, devolva Artifact (arquivo, path ou URL) e um resumo objetivo para quem acionou este agente.')
                 }
+
             }
+
             else {
                 # context-load (OPP-42): briefing portavel, sem frontmatter de Claude Code -
                 # nenhum outro host le YAML de agente. O coordenador le isto inteiro e VESTE a
@@ -600,9 +898,11 @@ foreach ($clientDir in $clientDirs) {
                 if ($knowledgeLines.Count -eq 0) {
                     [void]$sections.Add('- (nenhum knowledge declarado no yaml deste agente)')
                 }
+
                 else {
                     foreach ($kl in $knowledgeLines) { [void]$sections.Add("- $kl") }
                 }
+
                 [void]$sections.Add('')
                 [void]$sections.Add('## Regra de folha (context-load)')
                 [void]$sections.Add('')
@@ -627,23 +927,29 @@ foreach ($clientDir in $clientDirs) {
                     if ($isNew) { Write-Host "[DRYRUN] geraria: $outPath" }
                     else { Write-Host "[DRYRUN] atualizaria: $outPath" }
                 }
+
                 else {
                     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
                     [System.IO.File]::WriteAllText($outPath, $finalContent, $utf8NoBom)
                 }
+
                 if ($isNew) { $generated++ } else { $updated++ }
             }
+
             else {
                 $unchanged++
             }
 
             [void]$reportLines.Add("$clientId/$agentId -> $name$fileSuffix (camada $camada, model $model, modo $Mode)")
         }
+
         catch {
             Write-Warning "[$clientId/$agentId] erro: $($_.Exception.Message)"
             $errors++
         }
+
     }
+
 }
 
 Write-Host ''
@@ -653,19 +959,23 @@ Write-Host "atualizados: $updated"
 Write-Host "inalterados: $unchanged"
 Write-Host "erros:      $errors"
 if ($knowledgeWarnings.Count -gt 0) {
+
     Write-Host ''
     Write-Host "knowledge omitido (nao resolveu em arquivo real):"
     foreach ($kw in $knowledgeWarnings) { Write-Host "  - $kw" }
 }
 if ($camadaWarnings.Count -gt 0) {
+
     Write-Host ''
     Write-Host "camada: fonte ambigua ou indeterminavel (CONFIRA - fail-loud, nao assumido em silencio):"
     foreach ($cw in $camadaWarnings) { Write-Host "  - $cw" }
 }
 if ($mcpWarnings.Count -gt 0) {
+
     Write-Host ''
     Write-Host "tools MCP corrigidas ou descartadas:"
     foreach ($mw in $mcpWarnings) { Write-Host "  - $mw" }
 }
+
 Write-Host ''
 foreach ($rl in $reportLines) { Write-Host $rl }

@@ -5,7 +5,7 @@
 > anunciada, identidade de marca vetada ressuscitada, ativo de marca reinventado do zero e a
 > coordenadora executando dominio com as proprias maos. Cada falha desceu por 5 Whys ate a
 > causa-raiz; cada causa-raiz virou uma LEI abaixo. A documentacao do cliente e protegida,
-> alimentada e valorizada - ou o Gate reprova. Sem acentos, sem emojis. UTF-8 sem BOM.
+> alimentada e valorizada - ou o Gate reprova. UTF-8 sem BOM.
 
 ---
 

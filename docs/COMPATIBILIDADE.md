@@ -70,52 +70,52 @@ o produto de terceiros.
 ## O que voce perde sem X, e como compensar
 
 - **Sem execucao de script (o agente nao roda `.ps1` sozinho ou pede
-  confirmacao a cada chamada):** o smoke test e o doctor nao rodam
-  automaticamente durante a sessao - abra um terminal e rode
-  `scripts/smoke-test.ps1` e `scripts/doctor.ps1` a mao, fora do agente,
-  sempre que quiser validar o estado do motor.
+ confirmacao a cada chamada):** o smoke test e o doctor nao rodam
+ automaticamente durante a sessao - abra um terminal e rode
+ `scripts/smoke-test.ps1` e `scripts/doctor.ps1` a mao, fora do agente,
+ sempre que quiser validar o estado do motor.
 
 - **Sem hooks de lifecycle (o agente nao dispara automacao em boot/eventos):**
-  a governanca (loops, checagem de tasks paradas, gates agendados) nao
-  dispara sozinha - ela roda quando a Alia e explicitamente chamada dentro da
-  sessao. Mitigacao: peca a Alia pra rodar a varredura (`stale-tasks.ps1`,
-  Quality Gate) no inicio de cada sessao de trabalho, como um passo manual.
+ a governanca (loops, checagem de tasks paradas, gates agendados) nao
+ dispara sozinha - ela roda quando a Alia e explicitamente chamada dentro da
+ sessao. Mitigacao: peca a Alia pra rodar a varredura (`stale-tasks.ps1`,
+ Quality Gate) no inicio de cada sessao de trabalho, como um passo manual.
 
 - **Sem isolamento de contexto entre coordenador e Specialist (sub-agentes
-  reais com contexto proprio):** a delegacao vira mais prosa-guiada do que
-  mecanica - o mesmo agente/contexto representa varios papeis em sequencia,
-  em vez de um sub-agente separado executando e devolvendo so o resumo.
-  Mitigacao: siga o protocolo de 5 passos manualmente na conversa (IDENTIFICA
-  -> REGISTRA -> DELEGA -> MONITORA -> FECHA), tratando cada papel como uma
-  troca de chapeu explicita, e cobre o Artifact antes de considerar a task
-  fechada.
+ reais com contexto proprio):** a delegacao vira mais prosa-guiada do que
+ mecanica - o mesmo agente/contexto representa varios papeis em sequencia,
+ em vez de um sub-agente separado executando e devolvendo so o resumo.
+ Mitigacao: siga o protocolo de 5 passos manualmente na conversa (IDENTIFICA
+ -> REGISTRA -> DELEGA -> MONITORA -> FECHA), tratando cada papel como uma
+ troca de chapeu explicita, e cobre o Artifact antes de considerar a task
+ fechada.
 
 - **Sem allow-list de tools aplicada (enforcement em runtime):** isso nao e
-  perda exclusiva de outros agentes - nem no Claude Code o enforcement duro
-  existe ainda (ver nota de honestidade do README). Em qualquer agente, a
-  lista de ferramentas por persona e contrato lido, nao trava mecanica.
-  Mitigacao: revisao humana do que cada Specialist tocou, via o Artifact e o
-  registro em `state.json`.
+ perda exclusiva de outros agentes - nem no Claude Code o enforcement duro
+ existe ainda (ver nota de honestidade do README). Em qualquer agente, a
+ lista de ferramentas por persona e contrato lido, nao trava mecanica.
+ Mitigacao: revisao humana do que cada Specialist tocou, via o Artifact e o
+ registro em `state.json`.
 
 - **Sem memoria nativa automatica (o agente nao mantem/le notas entre
-  sessoes por conta propria):** o segundo cerebro do cliente nao carrega
-  sozinho - a Alia precisa ser instruida a ler `squad/knowledge/` no inicio
-  da sessao. Mitigacao: comece cada sessao nova pedindo explicitamente "carrega
-  a memoria do cliente X antes de comecar".
+ sessoes por conta propria):** o segundo cerebro do cliente nao carrega
+ sozinho - a Alia precisa ser instruida a ler `squad/knowledge/` no inicio
+ da sessao. Mitigacao: comece cada sessao nova pedindo explicitamente "carrega
+ a memoria do cliente X antes de comecar".
 
 ## Nota de honestidade: contrato lido vs codigo executado
 
 O Alia Flow separa duas coisas que e facil confundir:
 
 - **Contrato lido** - prosa em arquivos abertos (`AGENTS.md`, `engine/*.md`)
-  que o agente LE no boot e DEVE seguir por interpretacao, nao por trava
-  fisica. Roteamento por capacidade, o protocolo de 5 passos e a allow-list
-  de tools sao, hoje, contrato lido - valem porque o agente os entende e os
-  segue, nao porque um mecanismo impede o desvio.
+ que o agente LE no boot e DEVE seguir por interpretacao, nao por trava
+ fisica. Roteamento por capacidade, o protocolo de 5 passos e a allow-list
+ de tools sao, hoje, contrato lido - valem porque o agente os entende e os
+ segue, nao porque um mecanismo impede o desvio.
 - **Codigo executado** - scripts que rodam de fato e produzem evidencia em
-  disco (o smoke test, o doctor, `apply-safe-output`). Esses sao garantidos
-  no sentido de que, se rodarem, o resultado e verificavel - nao dependem de
-  o agente "entender" nada.
+ disco (o smoke test, o doctor, `apply-safe-output`). Esses sao garantidos
+ no sentido de que, se rodarem, o resultado e verificavel - nao dependem de
+ o agente "entender" nada.
 
 Essa distincao e a mesma que o README ja faz para o motor como um todo (ver
 "Nota de honestidade para quem le o codigo"). Ela vale tambem entre agentes:

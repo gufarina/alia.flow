@@ -1,7 +1,7 @@
 # ART-001 - Landing Copy - Acme SaaS
 
 > Artifact do Specialist Bruno. Expert Mind: Ogilvy. Ligado a Task TASK-ART-001.
-> Sem acentos, sem emojis.
+>
 
 ## Headline
 Veja o trabalho do seu time sem mais uma reuniao.

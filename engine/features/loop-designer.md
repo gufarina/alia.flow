@@ -5,7 +5,7 @@
 > grava-los como registros reais e revisa-los na data marcada (criar, gerenciar, revisar - lei do
 > operador). O catalogo de arquetipos vive na governanca; aqui mora a DECISAO de quais aplicar e
 > por que. As regras desta decisao tem um manifesto estruturado ao lado em
-> [loop-designer.rules.yaml](loop-designer.rules.yaml). Sem acentos, sem emojis.
+> [loop-designer.rules.yaml](loop-designer.rules.yaml).
 
 ---
 

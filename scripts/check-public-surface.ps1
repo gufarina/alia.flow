@@ -59,12 +59,15 @@ function Find-OperatorClientIds {
                     } | Where-Object { $_ -and $_ -notmatch '^alia-flow(-lab)?$' })
                     if ($found.Count -gt 0) { $ids = $found; $studioName = "$($cfg.studio)" }
                 }
+
             } catch { }
         }
+
         $parent = Split-Path -Parent $dir
         if ([string]::IsNullOrWhiteSpace($parent) -or $parent -eq $dir) { break }
         $dir = $parent
     }
+
     return [pscustomobject]@{ Ids = $ids; StudioName = $studioName }
 }
 
@@ -78,8 +81,10 @@ try {
     $arquivos = @()
     if ($ehGit) {
         $repoRaiz = (& git rev-parse --show-toplevel).Trim()
+
         Write-Host ""
         Write-Host "=== Superficie publica (git): $repoRaiz ===" -ForegroundColor Cyan
+
         Write-Host ""
         $arquivos = & git ls-files
     } else {
@@ -87,8 +92,10 @@ try {
             Write-Host "[FAIL] Pasta nao existe: $repoRaiz - nao consigo conferir a superficie publica." -ForegroundColor Red
             exit 1
         }
+
         Write-Host ""
         Write-Host "=== Superficie publica (sem git, varredura em disco): $repoRaiz ===" -ForegroundColor Cyan
+
         Write-Host ""
         $sep = [IO.Path]::DirectorySeparatorChar
         $todos = Get-ChildItem -LiteralPath $repoRaiz -Recurse -File -ErrorAction SilentlyContinue |
@@ -98,6 +105,7 @@ try {
             Write-Host "[FAIL] Nao consegui enumerar nenhum arquivo em $repoRaiz - nao consigo conferir a superficie publica." -ForegroundColor Red
             exit 1
         }
+
     }
 
     # CONSERTO (TASK-285, ultima volta): -OnlyPaths restringe a varredura a um subconjunto de
@@ -160,6 +168,7 @@ try {
         $hits = $arquivos | Where-Object {
             $_ -match $v.p -and $_ -notmatch '^studio\.example/'
         }
+
         foreach ($h in $hits) { $vazou += [pscustomobject]@{ arq = $h; motivo = $v.m } }
     }
 
@@ -169,6 +178,7 @@ try {
         foreach ($x in ($vazou | Sort-Object arq -Unique)) {
             Bad ("vazou: " + $x.arq + "  (" + $x.motivo + ")")
         }
+
     }
 
     # ---- (1.5) vazamento de IDENTIDADE de cliente real do operador (10/08/2026) ----
@@ -199,29 +209,34 @@ try {
             $selfPat = [regex]::Escape($opClient.StudioName) -replace '\\ ', '[\s-]+'
             $selfRegex = New-Object System.Text.RegularExpressions.Regex ('(?i)' + $selfPat)
         }
+
         $textExt = @(".ps1",".py",".md",".json",".yaml",".yml",".html",".js",".ts",".bat",".txt")
         $scanFiles = $arquivos | Where-Object {
             ($textExt -contains [IO.Path]::GetExtension($_)) -and
             ($_ -notmatch '(^|/)graphify-out/cache/') -and
             ($_ -notmatch '^studio\.example/')
         }
+
         $idLeaks = @()
         foreach ($rel in $scanFiles) {
             $full = Join-Path $repoRaiz ($rel -replace '/', [IO.Path]::DirectorySeparatorChar)
             if (-not (Test-Path -LiteralPath $full)) { continue }
-            $conteudo = Get-Content -LiteralPath $full -Raw -ErrorAction SilentlyContinue
+ $conteudo = Get-Content -LiteralPath $full -Raw -Encoding utf8 -ErrorAction SilentlyContinue
             if ([string]::IsNullOrEmpty($conteudo)) { continue }
             if ($selfRegex) { $conteudo = $selfRegex.Replace($conteudo, ' ') }
             $m = $idRegex.Match($conteudo)
             if ($m.Success) { $idLeaks += [pscustomobject]@{ arq = $rel; nome = $m.Value } }
         }
+
         if ($idLeaks.Count -eq 0) {
             Ok ("Nenhuma identidade de Client real do operador (" + $opClientIds.Count + " no registro) na superficie")
         } else {
             foreach ($x in ($idLeaks | Sort-Object arq -Unique)) {
                 Bad ("identidade de cliente vazou: " + $x.arq + "  (nome real: " + $x.nome + ")")
             }
+
         }
+
     } else {
         Write-Host "[INFO] Sem state.json de operador com Clients reais em nenhum ancestral - check de identidade de cliente pulado (instalacao limpa)."
     }
@@ -292,7 +307,9 @@ try {
             if ($base -match $cf.p -and $base -notmatch $credFileExempt -and $rel -notmatch '^studio\.example/') {
                 $credFails += [pscustomobject]@{ arq = $rel; motivo = $cf.m }
             }
+
         }
+
     }
 
     $credScanExt = @(".ps1",".py",".md",".json",".yaml",".yml",".html",".js",".ts",".cjs",".mjs",".cmd",".txt")
@@ -301,10 +318,11 @@ try {
         ($_ -notmatch '(^|/)graphify-out/cache/') -and
         ($_ -notmatch '^studio\.example/')
     }
+
     foreach ($rel in $credScanFiles) {
         $full = Join-Path $repoRaiz ($rel -replace '/', [IO.Path]::DirectorySeparatorChar)
         if (-not (Test-Path -LiteralPath $full)) { continue }
-        $conteudo = Get-Content -LiteralPath $full -Raw -ErrorAction SilentlyContinue
+ $conteudo = Get-Content -LiteralPath $full -Raw -Encoding utf8 -ErrorAction SilentlyContinue
         if ([string]::IsNullOrEmpty($conteudo)) { continue }
         # CONSERTO (code review adversarial, 31/08/2026 - FALSO NEGATIVO MEDIDO): esta varredura
         # olhava so a PRIMEIRA ocorrencia de cada agulha no arquivo ([regex]::Match). Bastava um
@@ -323,6 +341,7 @@ try {
             foreach ($mm in $todas) {
                 if (Test-CredMencao $rel $mm.Value) { $mencoes += $mm } else { $reais += $mm }
             }
+
             if ($reais.Count -gt 0) {
                 $primeira = $reais[0]
                 $trecho = $primeira.Value.Substring(0, [Math]::Min(12, $primeira.Value.Length)) + "..."
@@ -332,7 +351,9 @@ try {
                 $trecho = $mencoes[0].Value.Substring(0, [Math]::Min(12, $mencoes[0].Value.Length)) + "..."
                 $credWarns += [pscustomobject]@{ arq = $rel; motivo = $needle.n + " (mencao: " + $trecho + ")" }
             }
+
         }
+
     }
 
     # binario: so entra em cena quando o alvo REALMENTE tem .exe/.dll (instalador empacotado) -
@@ -354,8 +375,11 @@ try {
                     $credFails += [pscustomobject]@{ arq = $rel; motivo = $needle.n + " embutida no binario (" + $trecho + ")" }
                     break
                 }
+
             }
+
         }
+
     }
 
     if ($credFails.Count -eq 0 -and $credWarns.Count -eq 0) {
@@ -364,6 +388,79 @@ try {
         foreach ($x in ($credFails | Sort-Object arq -Unique)) { Bad ("credencial: " + $x.arq + "  (" + $x.motivo + ")") }
         foreach ($x in ($credWarns | Sort-Object arq -Unique)) { Warn ("credencial (mencao, nao bloqueia): " + $x.arq + "  (" + $x.motivo + ")") }
         if ($credFails.Count -eq 0) { Ok ("Cacada de credencial: so mencao/fixture (" + $credWarns.Count + " aviso(s)), nada bloqueado") }
+    }
+
+    # ---- (1.7) segredo do COFRE vazado em arquivo (WARDEN, 08/09/2026, mecanismo de segredos com
+    # auditoria - mandato do CEO apos incidente de VERCEL_TOKEN colado na conversa). Diferente de
+    # (1.6) (que cacada por FORMATO generico de credencial, sem saber se e real): aqui o alvo e o
+    # VALOR EXATO de cada segredo que scripts/secret.ps1 guarda em studio/.secrets/vault.json -
+    # zero falso positivo possivel (ou o valor literal esta la, ou nao esta), zero falso negativo
+    # pra qualquer segredo que passou pelo cofre. Cobre exatamente os 4 lugares que o incidente
+    # citou: arquivo versionado, artifact de cliente, state.json, memoria - todos ja entram em
+    # $arquivos (a lista completa da superficie varrida acima), sem precisar de lista separada.
+    # Segredo com menos de 8 caracteres nunca entra na comparacao (mesma cerca de ruido do
+    # secret-write-guard.ps1 - reuse do mesmo limiar). O valor em si NUNCA aparece na saida deste
+    # check - so nome e fingerprint (mesma disciplina do ledger).
+    $vaultFile17 = Join-Path $repoRaiz "studio\.secrets\vault.json"
+    $cfgPath17 = Join-Path $repoRaiz "alia.config.json"
+    if (Test-Path -LiteralPath $cfgPath17) {
+        try {
+            $cfg17 = Get-Content -LiteralPath $cfgPath17 -Raw | ConvertFrom-Json
+            $sdir17 = "$($cfg17.studio_dir)".Trim()
+            if ($sdir17 -ne "") {
+                $studioRoot17 = if ($sdir17 -eq "." -or $sdir17 -eq "./" -or $sdir17 -eq ".\") { $repoRaiz } else { Join-Path $repoRaiz $sdir17 }
+                $vaultFile17 = Join-Path $studioRoot17 ".secrets\vault.json"
+            }
+
+        } catch { }
+    }
+
+    if (-not (Test-Path -LiteralPath $vaultFile17)) {
+        Write-Host "[INFO] Segredo do cofre vazado em arquivo: sem vault.json (studio/.secrets/vault.json ausente) - nada a conferir aqui."
+    } else {
+        $vaultRaw17 = Get-Content -LiteralPath $vaultFile17 -Raw -ErrorAction SilentlyContinue
+        $vaultObj17 = $null
+        if (-not [string]::IsNullOrWhiteSpace($vaultRaw17)) { try { $vaultObj17 = $vaultRaw17 | ConvertFrom-Json } catch { } }
+        $vaultSecrets17 = @()
+        if ($null -ne $vaultObj17 -and ($vaultObj17.PSObject.Properties.Name -contains 'secrets')) {
+            foreach ($p in $vaultObj17.secrets.PSObject.Properties) {
+                $v = "$($p.Value.value)"
+                if ($v.Length -ge 8) { $vaultSecrets17 += [pscustomobject]@{ nome = "$($p.Value.name)"; escopo = "$($p.Value.scope)"; valor = $v; fp = "$($p.Value.fingerprint)" } }
+            }
+
+        }
+
+        if ($vaultSecrets17.Count -eq 0) {
+            Write-Host "[INFO] Segredo do cofre vazado em arquivo: vault.json presente mas sem segredo utilizavel (vazio) - nada a conferir."
+        } else {
+            $vaultScanFiles17 = $arquivos | Where-Object {
+                ($_ -notmatch '(^|/)\.secrets/') -and ($_ -notmatch '(^|/)secrets-ledger\.jsonl$') -and
+                ($_ -notmatch '(^|/)graphify-out/cache/') -and ($_ -notmatch '(?i)\.(exe|dll)$')
+            }
+
+            $vaultLeaks = @()
+            foreach ($rel in $vaultScanFiles17) {
+                $full = Join-Path $repoRaiz ($rel -replace '/', [IO.Path]::DirectorySeparatorChar)
+                if (-not (Test-Path -LiteralPath $full)) { continue }
+ $conteudo17 = Get-Content -LiteralPath $full -Raw -Encoding utf8 -ErrorAction SilentlyContinue
+                if ([string]::IsNullOrEmpty($conteudo17)) { continue }
+                foreach ($s17 in $vaultSecrets17) {
+                    if ($conteudo17.Contains($s17.valor)) { $vaultLeaks += [pscustomobject]@{ arq = $rel; nome = $s17.nome; escopo = $s17.escopo; fp = $s17.fp } }
+                }
+
+            }
+
+            if ($vaultLeaks.Count -eq 0) {
+                Ok ("Segredo do cofre: nenhum valor de " + $vaultSecrets17.Count + " segredo(s) guardado(s) apareceu na superficie (" + $vaultScanFiles17.Count + " arquivo(s) conferido(s))")
+            } else {
+                foreach ($x in ($vaultLeaks | Sort-Object arq, nome -Unique)) {
+                    Bad ("segredo do cofre vazou: " + $x.arq + "  (" + $x.nome + ", escopo " + $x.escopo + ", fingerprint " + $x.fp + " - valor omitido de proposito)")
+                }
+
+            }
+
+        }
+
     }
 
     # ---- (2) a oficina nao pode ter remoto (so faz sentido em repo git) ----
@@ -377,6 +474,7 @@ try {
             if ($remotos.Count -gt 0) { Ok ("Repo publico com remoto: " + ($remotos -join ", ")) }
             else { Warn "Repo publico sem remoto configurado" }
         }
+
     } else {
         Write-Host "[INFO] Sem git: checks de remoto e .gitignore nao se aplicam (a inspecao de conteudo acima e a que vale aqui)."
     }
@@ -385,7 +483,7 @@ try {
     if ($ehGit) {
         $gi = Join-Path $repoRaiz ".gitignore"
         if (Test-Path $gi) {
-            $txt = Get-Content $gi -Raw
+ $txt = Get-Content -LiteralPath $gi -Raw -Encoding utf8
             # CONSERTO (code review adversarial, 31/08/2026): o veredito deste bloco olhava o
             # contador GLOBAL $warn, que qualquer aviso anterior (ex.: mencao de credencial) ja
             # tinha incrementado - o PASS do .gitignore sumia por causa de um aviso de outro
@@ -394,10 +492,12 @@ try {
             foreach ($alvo in @("brand/landing", "opportunities", "docs/product")) {
                 if ($txt -notmatch [regex]::Escape($alvo)) { Warn ".gitignore nao cobre: $alvo"; $giFaltando++ }
             }
+
             if ($giFaltando -eq 0) { Ok ".gitignore cobre as categorias principais" }
         } else {
             Warn "sem .gitignore"
         }
+
     }
 
     Write-Host ""
@@ -406,6 +506,7 @@ try {
         Write-Host "Ver engine/governance/public-surface.md" -ForegroundColor Red
         exit 1
     }
+
     Write-Host "SUPERFICIE LIMPA ($warn aviso(s))" -ForegroundColor Green
     exit 0
 }

@@ -2,7 +2,7 @@
 
 > Por que e padrao-ouro: headline que carrega o beneficio sozinha, subheadline que prova,
 > uma unica Chamada de acao, e auto-contido (reusavel sem ler o Project inteiro). Metodo: Ogilvy.
-> Reuse direto quando o fit >= 90%; Adapt (mudanca <= 30%) entre 60-89%. Sem acentos, sem emojis.
+> Reuse direto quando o fit >= 90%; Adapt (mudanca <= 30%) entre 60-89%.
 
 ## Headline
 Veja o trabalho do seu time sem mais uma reuniao.

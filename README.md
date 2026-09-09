@@ -46,7 +46,7 @@ Tres numeros, cada um com a prova ao lado - nenhum e projecao.
 
 ![Verificacoes deterministicas](docs/assets/chart-verificacoes.svg)
 
-**Verificacoes automaticas que nao gastam nenhum token de modelo** (295 na versao atual; o
+**Verificacoes automaticas que nao gastam nenhum token de modelo** (323 na versao atual; o
 numero exato aparece no fim do smoke) cobrem o motor inteiro: formato do que e entregue, a
 conferencia de qualidade, o mapa de conhecimento, a integridade do nucleo, e mais. Nenhuma chama
 IA; qualquer pessoa com acesso ao codigo pode rodar de novo e conferir.
@@ -55,7 +55,7 @@ IA; qualquer pessoa com acesso ao codigo pode rodar de novo e conferir.
 git clone https://github.com/gufarina/alia.flow.git alia-flow
 cd alia-flow
 powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1
-#   -> uma linha por check, "Checks: X PASS, Y FAIL" no fim.
+# -> uma linha por check, "Checks: X PASS, Y FAIL" no fim.
 ```
 
 ### Demonstracao de memoria (ilustrativa, nao prova)
@@ -86,9 +86,9 @@ hora e motivo em log. Amostra pequena, citada com o numero, nunca como cobertura
 A Alia recebe um pedido em linguagem comum e gira um ciclo antes de devolver qualquer coisa:
 
 1. **Produz** - escolhe o especialista certo do squad e o faz carregar o segundo cerebro do
-   dominio antes do primeiro resultado.
+ dominio antes do primeiro resultado.
 2. **Avalia** - o resultado passa pelo Quality Gate (Funciona, DDD, Frugal, Rastreavel, Atrito).
-   Nada sai cru.
+ Nada sai cru.
 3. **Refina** - o que nao passou volta para correcao e nova avaliacao, ate aprovar.
 4. **Aprende** - o resultado vira memoria do cliente; a proxima volta comeca melhor que a de hoje.
 

@@ -2,7 +2,7 @@
 # Linter que bloqueia vocabulario proibido/deprecated no motor (engine/ + scripts/*.ps1).
 # Fonte dos termos: le a secao GUARD: de docs/CLAIMS.md (mesma fonte de verdade do smoke-test.ps1,
 # bloco "Guard de vetos") - nao duplica a lista.
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# UTF-8 sem BOM.
 
 param([switch]$Json)
 

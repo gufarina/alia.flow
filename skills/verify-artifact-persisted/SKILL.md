@@ -14,8 +14,6 @@ virado verificacao de git real.
 Spec do padrao: `engine/features/frugal-skills.md` (a skill canonica e validate-artifact).
 Mecanismo: `skills/verify-artifact-persisted/verify-artifact-persisted.ps1`.
 
-Sem acentos, sem emojis em qualquer arquivo gerado (regra do CEO).
-
 ## O que e e por que existe
 
 Validated Artifacts (`engine/features/validated-artifacts.md`) ja roda como Frugal Skill

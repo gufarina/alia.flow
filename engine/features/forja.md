@@ -5,7 +5,7 @@
 > frugalidade e advisor. Transforma pedido vago em Artifact entregue por um caminho PREVISIVEL
 > de 5 estacoes, com recuperacao e memoria embutidas. Origem e atribuicao: dossie da dissecacao
 > de 2026-07-07 (lab: opportunities/, dossie da origem; creditos em CREDITS.md).
-> Sem acentos, sem emojis. UTF-8 sem BOM.
+> UTF-8 sem BOM.
 
 ---
 

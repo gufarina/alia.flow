@@ -21,9 +21,7 @@
   em _backups\ (o mesmo backup que ja guarda state/config - um backup so).
 
   -Check imprime o relatorio (NOVO / ALTERADO / REMOVIDO por pasta) sem tocar em nada.
-  -DryRun e sinonimo de -Check (mantido por compatibilidade).
-
-  Sem acentos, sem emojis. UTF-8 sem BOM.
+  -DryRun e sinonimo de -Check (mantido por compatibilidade). UTF-8 sem BOM.
 #>
 param(
   [string]$From = "",
@@ -275,7 +273,7 @@ if (-not $Check) {
     "",
     "> Gerado por scripts/update-engine.ps1 a cada update aplicado (TASK-213, item 5b). Persiste o",
     "> Get-MirrorDiff que o script ja calcula - antes disto o diff so aparecia no console e sumia.",
-    "> Sem acentos, sem emojis.",
+    ">",
     "",
     $overlayGeradoEm,
     $overlayLabLine,

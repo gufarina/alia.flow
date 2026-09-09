@@ -1,6 +1,6 @@
 # Resultado - Teste de Ablacao de Conhecimento - Acme SaaS
 
-> Registro do resultado do scorer. Sem acentos, sem emojis.
+> Registro do resultado do scorer.
 
 ## Resumo
 A saida informed cobre mais termos-chave da linguagem ubiqua que a saida blind.

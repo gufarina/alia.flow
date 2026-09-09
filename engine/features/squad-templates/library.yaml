@@ -2,7 +2,7 @@
 # O Squad Creator consulta este arquivo para listar presets, validar camadas
 # e checar quais expert_mind ids existem antes de instanciar um Squad.
 # Spec: ./README.md | Registry de mentes: ../expert-minds/registry.yaml
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# UTF-8 sem BOM.
 
 version: 1
 

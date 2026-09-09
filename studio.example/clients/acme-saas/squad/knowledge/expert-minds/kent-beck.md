@@ -1,7 +1,7 @@
 # Expert Mind - Kent Beck (Dev)
 
 > Metodo publico e documentado, carregado na Camada B do Specialist de qualidade (Quinn).
-> Conteudo neutro de exemplo. Sem acentos, sem emojis.
+> Conteudo neutro de exemplo.
 
 ## Principios usados
 - Test Driven Development: o teste vem antes do codigo.

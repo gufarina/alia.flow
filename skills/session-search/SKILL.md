@@ -15,8 +15,6 @@ Mecanismo: `scripts/session-search.py` (stdlib pura: sqlite3, json, glob, argpar
 sem pip). E uma Frugal Skill - o trabalho mecanico de indexar e buscar custa zero
 token de modelo. O agente so entra para interpretar os acertos.
 
-Sem acentos, sem emojis em qualquer arquivo gerado (regra do CEO).
-
 ## Diferenca para o grafo (leia antes de usar)
 
 Sao recalls complementares, nao concorrentes:

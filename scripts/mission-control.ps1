@@ -5,6 +5,8 @@
   historia da operacao: quem pediu o que, o que foi produzido, DE ONDE se partiu
   (base_artifact - a linhagem), qual sessao executou e qual foi o veredito do Gate.
 
+ Cada Task mostra tokens/tool_uses/budget quando registrados (M4, baseline de custo).
+
   E a materializacao visual da LEI de rastreabilidade (engine/orchestration.md):
   se este painel nao conta a historia da operacao, o registro esta falhando.
 
@@ -16,7 +18,7 @@
   Uso:  powershell -ExecutionPolicy Bypass -File scripts/mission-control.ps1
         -StateFile <caminho>  (default: state.json na raiz da instancia)
         -OutFile <caminho>    (default: mission-control.html ao lado do state.json)
-  Escrita .NET UTF-8 sem BOM. Sem acentos, sem emojis. exit 0.
+ Escrita .NET UTF-8 sem BOM. exit 0.
 #>
 param(
   [string]$StateFile = "",
@@ -67,6 +69,7 @@ foreach ($t in $tasks) {
     if ((Get-ClientStateOf $clientStates (Field $t 'client')) -ne 'ativo') { $foraCobranca++; continue }
     $staleList += [PSCustomObject]@{ t=$t; age=$age }
   }
+
 }
 $stale = $staleList.Count
 
@@ -99,6 +102,7 @@ if (Test-Path -LiteralPath $smokeLogPathMc) {
   if ($mcLines.Count -gt 0) {
     try { $mcSmokeLast = $mcLines[-1] | ConvertFrom-Json } catch { $mcSmokeLast = $null }
   }
+
 }
 
 $sb = New-Object System.Text.StringBuilder
@@ -150,7 +154,9 @@ if ($stale -gt 0) {
     $t = $s.t
     [void]$sb.AppendLine('<div class="alert__row"><span class="alert__age">' + $s.age + 'd</span> <b>' + (Esc (Field $t 'id')) + '</b> ' + (Esc (Field $t 'title')) + ' <span class="alert__c">' + (Esc (Field $t 'client')) + ' / ' + (Esc (Field $t 'project')) + '</span></div>')
   }
+
   [void]$sb.AppendLine('</div>')
+
 }
 
 # --- Pendencias do motor (TASK-159) - staging RSI + ultimo placar do smoke. SO EXIBICAO. ---
@@ -184,8 +190,10 @@ if ($null -eq $mcSmokeLast) {
     foreach ($mcF in ($mcFailList | Select-Object -First 5)) {
       [void]$sb.AppendLine('<div class="eng__row eng__bad">&nbsp;&nbsp;- ' + (Esc ([string]$mcF)) + '</div>')
     }
+
     if ($mcFailList.Count -gt 5) { [void]$sb.AppendLine('<div class="eng__row">&nbsp;&nbsp;... e mais ' + ($mcFailList.Count - 5) + '</div>') }
   }
+
 }
 [void]$sb.AppendLine('</div>')
 
@@ -209,15 +217,24 @@ if ($tasks.Count -eq 0) {
         [void]$sb.AppendLine('<div class="tk__top"><span class="tk__id">' + (Esc (Field $t 'id')) + '</span><span class="tk__st">' + (Esc $stt) + '</span><span class="tk__st">' + (Esc (Field $t 'specialist')) + '</span><span style="font-size:10px;color:var(--g40)">' + (Esc (Field $t 'created')) + '</span></div>')
         [void]$sb.AppendLine('<div class="tk__t">' + (Esc (Field $t 'title')) + '</div>')
         $art = Field $t 'artifact'; $base = Field $t 'base_artifact'; $ses = Field $t 'session'; $gate = Field $t 'gate_verdict'
+ $tok = Field $t 'tokens'; $tu = Field $t 'tool_uses'; $bud = Field $t 'budget'; $bex = Field $t 'budget_exceeded'
         $meta = '<b>entregou:</b> ' + $(if ($art -eq '') { '<span class="miss">nao registrado</span>' } else { Esc $art })
         $meta += ' &nbsp;|&nbsp; <b>partiu de:</b> ' + $(if ($base -eq '') { '<span class="miss">nao registrado</span>' } else { Esc $base })
         $meta += '<br><b>gate:</b> ' + $(if ($gate -eq '') { '<span class="miss">sem veredito</span>' } else { Esc $gate })
         $meta += ' &nbsp;|&nbsp; <b>sessao:</b> ' + $(if ($ses -eq '') { '<span class="miss">nao registrada</span>' } else { Esc $ses })
+ if ($tok -ne '' -or $tu -ne '') {
+ $meta += '<br><b>custo:</b> tokens=' + $(if ($tok -eq '') { '-' } else { $tok }) + ' tool_uses=' + $(if ($tu -eq '') { '-' } else { $tu }) + ' budget=' + $(if ($bud -eq '') { '-' } else { $bud }) + $(if ($bex -eq 'True') { ' <span class="miss">ESTOUROU</span>' } else { '' })
+}
+
         [void]$sb.AppendLine('<div class="tk__meta">' + $meta + '</div>')
         [void]$sb.AppendLine('</div>')
+
       }
+
     }
+
   }
+
 }
 [void]$sb.AppendLine('<div class="ft">// SEM REGISTRO = NAO ACONTECEU &middot; SEM LINHAGEM = SEM CONTINUIDADE &middot; engine/orchestration.md (LEI de rastreabilidade)</div>')
 [void]$sb.AppendLine('</body></html>')

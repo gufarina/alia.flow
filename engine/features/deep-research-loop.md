@@ -4,7 +4,7 @@
 > "Deep research" aqui = pesquisa PROFUNDA de dominio, NAO a ferramenta deep_research do Perplexity
 > (essa e proibida - ver [Pesquisa Segura](../tools.md)). E o RSI alimentado de fora: para os
 > dominios ativos de velocidade alta, o Specialist fica mais inteligente sem virar enxame nem loop.
-> Receitado por projeto pela Alia via o [Loop Designer](loop-designer.md). Sem acentos, sem emojis.
+> Receitado por projeto pela Alia via o [Loop Designer](loop-designer.md).
 
 ---
 

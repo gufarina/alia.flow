@@ -11,8 +11,6 @@ Capacidade de discovery de mercado sob demanda: o operador da um tema e recebe u
 curto do que mudou nos sinais publicos recentes, ranqueado por importancia. E uma foto
 acionavel do agora, tirada quando o operador pede.
 
-Sem acentos, sem emojis em qualquer arquivo gerado (regra do CEO).
-
 ## Diferenca frente ao Deep Research Loop (nao confundir, nao duplicar)
 
 O [Deep Research Loop](../../engine/features/deep-research-loop.md) e outra coisa:

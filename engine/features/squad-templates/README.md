@@ -3,7 +3,7 @@
 > A estante da qual o Squad Creator MONTA, em vez de inventar do zero. O Alia Flow nao chega em
 > branco: chega com presets testados e Expert Minds prontos. Mantem o comportamento do legado
 > (identificar tema/assunto e criar os especialistas) e ADICIONA o que e nosso: o segundo cerebro
-> aplicado EM CAMADAS - o lider sempre tem, nem todo agente precisa. Sem acentos, sem emojis.
+> aplicado EM CAMADAS - o lider sempre tem, nem todo agente precisa.
 
 ---
 

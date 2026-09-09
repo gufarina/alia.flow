@@ -16,7 +16,7 @@
 #
 # Trocar o line-up de modelos: edite SO os `id` abaixo. As personas referenciam o
 # tier (strong/standard/fast), nunca o ID - um lugar muda tudo.
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# UTF-8 sem BOM.
 
 version: 1
 default: standard          # papel sem `model:` declarado roda aqui

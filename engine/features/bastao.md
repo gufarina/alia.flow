@@ -94,6 +94,17 @@ do [protocolo de 5 passos](../orchestration.md#o-protocolo-5-passos):
 5. **Sem Client/Task = sem bastao.** O bastao carrega `task_id`; sem Task registrada
    (IDENTIFICA + REGISTRA ja feitos) nao ha bastao valido para passar.
 
+## Bastao de sessao (mecanismo, `scripts/session-baton.ps1`)
+
+Hooks PreCompact e SessionEnd (fiacao do WARDEN) chamam `scripts/session-baton.ps1` com o payload
+do hook no stdin (`session_id`, `cwd`). O script acha no `state.json` do studio a(s) Task(s) com
+status `doing`/`review`/`in_review` cujo campo `session` bate o `session_id` recebido e escreve
+`studio/baton/<session_id>.md` com os campos deste contrato (de/para/task_id/decisoes/
+arquivos_tocados/bloqueios/proximo_passo/consumed). Sem Task da sessao: bastao minimo (data, cwd,
+"sem Task ativa") - informacao, nao erro. Teto DURO de 1800 bytes (~500 tokens); `exit 0` sempre
+(hook nunca trava a sessao). `scripts/session-start.ps1` (WARDEN) le o bastao mais recente da
+pasta no boot seguinte - este script so escreve.
+
 ## Segue
 [Orquestracao](../orchestration.md) - [Forja](forja.md) - [Advisor Pattern](advisor-pattern.md) -
 [Quality Gate](../governance/quality-gate.md) - [Template do bastao](bastao-template.yaml)

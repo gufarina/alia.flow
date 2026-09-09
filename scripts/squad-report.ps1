@@ -4,7 +4,7 @@
   Pergunta que responde: qual o status do squad para o Tier 2 (Alia)?
   Compila: membros do squad (squad.yaml: id, role, camada, gateway), loops ativos (loops.yaml:
   status active), e ultimas Tasks do Client (state.json). Frugal: so le e agrega. Escrita .NET
-  UTF-8 sem BOM. Sem acentos, sem emojis. RSI propoe, Gate aprova.
+  UTF-8 sem BOM. RSI propoe, Gate aprova.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Client,

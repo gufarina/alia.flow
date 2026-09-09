@@ -14,7 +14,6 @@
   delegados), entao o lembrete chega a coordenadora sem poluir o contexto de quem executa.
   O stdout e adicionado ao contexto pelo Claude Code. Curto de proposito: dispara em todo
   prompt, nao pode inchar o contexto. NUNCA bloqueia: exit 0 sempre, try/catch.
-  Sem acentos, sem emojis.
 #>
 try {
   Write-Host "[ALIA - lei de operacao, vale pra ESTE pedido] (1) DELEGA: dominio e do especialista do squad - a Alia coordena, registra a Task e aciona a mao mais capaz; nunca executa dominio com a propria mao (engine/orchestration.md, passo DELEGA). (2) FONTE ANTES DE VARRER: se o cliente tem graphify-out/, mapas ou docs curados, leia-os antes de qualquer varredura de codigo. Excecao unica: ordem explicita do operador para a Alia executar ela mesma."

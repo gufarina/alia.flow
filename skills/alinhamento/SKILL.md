@@ -11,7 +11,7 @@ provenance: nucleo
 > A lei diz que perguntar e o ULTIMO recurso (engine/constitution.md, "Politica de escalonamento").
 > Esta capacidade nao afrouxa a lei: ela separa o que a lei proibe perguntar (FATO) do que a lei
 > sempre permitiu perguntar (DECISAO exclusiva do operador) e crava QUANDO isso vale a interrupcao.
-> Sem acentos, sem emojis em qualquer arquivo gerado (regra do CEO). UTF-8 sem BOM.
+> UTF-8 sem BOM.
 
 ## A fronteira (a regra que nao se negocia)
 
@@ -134,4 +134,4 @@ Sem o passo 5 o motor pergunta a mesma coisa toda semana, e ai ele virou o probl
 - Toda pergunta sai com recomendacao e com a saida "voce decide".
 - Abaixo do piso a Alia executa: assumir-e-declarar vence perguntar, e perguntar vence assumir calado
   (engine/features/judgment-discipline.md, heuristica 3).
-- Escrita: UTF-8 sem BOM, sem acentos, sem emojis.
+- Escrita: UTF-8 sem BOM,

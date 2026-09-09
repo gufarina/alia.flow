@@ -3,7 +3,7 @@
 > Antes de criar, olhe o que ja virou padrao-ouro. Esta convencao da um lugar concreto ao
 > REUSE do IDS (o "registro" do que ja existe vira a pasta examples/ por squad) e um formato
 > padrao para rebater a desculpa que mais fura o REUSE First: "nao tinha exemplo, criei do zero".
-> Sem acentos, sem emojis.
+>
 
 ---
 

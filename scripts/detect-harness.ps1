@@ -32,6 +32,14 @@
 # UNICO ainda vale como pista. OpenCode nao publica variavel de ambiente propria em doc oficial -
 # por isso ele so e detectado por marcador unico ou pela pasta de config do usuario.
 
+# WARDEN 09/09/2026: wrapped em funcao Invoke-DetectHarness para chamada em-processo por
+# scripts/session-start.ps1. Rodar direto continua identico.
+
+[CmdletBinding()]
+param([switch]$Json)
+
+function Invoke-DetectHarness {
+
 [CmdletBinding()]
 param([switch]$Json)
 
@@ -46,26 +54,35 @@ function Get-HarnessProfile {
                 harness = 'claude-code'; spawn = 'yes'; hooks = 'yes'
                 skills_dir = '.claude/skills'; delegation_mode = 'spawn'; signal = $Signal
             }
+
         }
+
         'opencode' {
             return [ordered]@{
                 harness = 'opencode'; spawn = 'yes'; hooks = 'yes'
                 skills_dir = '.opencode/skills'; delegation_mode = 'spawn'; signal = $Signal
             }
+
         }
+
         'codex' {
             return [ordered]@{
                 harness = 'codex'; spawn = 'no'; hooks = 'no'
                 skills_dir = '.agents/skills'; delegation_mode = 'context-load'; signal = $Signal
             }
+
         }
+
         default {
             return [ordered]@{
                 harness = 'unknown'; spawn = 'no'; hooks = 'no'
                 skills_dir = '.agents/skills'; delegation_mode = 'context-load'; signal = $Signal
             }
+
         }
+
     }
+
 }
 
 $harness = 'unknown'
@@ -81,6 +98,7 @@ try {
         $harness = 'claude-code'
         $signal = 'env CLAUDECODE=1'
     }
+
     # --- 2. env do Codex (a shell tool do Codex seta CODEX_SANDBOX_NETWORK_DISABLED sempre) ---
     elseif ($env:CODEX_SANDBOX -or $env:CODEX_SANDBOX_NETWORK_DISABLED) {
         $harness = 'codex'
@@ -89,6 +107,7 @@ try {
         if ($env:CODEX_SANDBOX_NETWORK_DISABLED) { $found += 'CODEX_SANDBOX_NETWORK_DISABLED' }
         $signal = 'env ' + ($found -join '+')
     }
+
     else {
         # --- 3. heuristica por marcador de pasta (fraca - so vale marcador UNICO) ---
         $marks = @()
@@ -103,13 +122,18 @@ try {
             $harness = $hosts[0]
             $signal = 'marcador de pasta (unico): ' + ($marks -join ', ')
         }
+
         elseif ($hosts.Count -gt 1) {
+
             $harness = 'unknown'
             $signal = 'marcadores de pasta ambiguos (' + ($marks -join ', ') + ') - toda instalacao do Alia Flow tem os tres; sem env do host nao da pra decidir'
         }
+
     }
+
 }
 catch {
+
     $harness = 'unknown'
     $signal = 'erro na deteccao (fail-soft): ' + $_.Exception.Message
 }
@@ -122,5 +146,10 @@ if ($Json) {
 else {
     foreach ($k in $result.Keys) { Write-Output ("$k=" + $result[$k]) }
 }
+}
+
+if ($MyInvocation.InvocationName -ne '.') {
+ Invoke-DetectHarness -Json:$Json
 
 exit 0
+}

@@ -20,8 +20,7 @@
   nao existe). Saida: uma linha por Client + resumo "OK n | FICHA n | STALE n | N/A n".
   exit 0 = nada reprovado; exit 1 = FICHA ou STALE. -Path aponta a raiz da instancia (default: cwd).
   -ClientsDir troca o nome da pasta de Clients (default: "clients"); a fixture usa "fixture-clients"
-  pra nao vazar como material de cliente real no check-public-surface.ps1 (07/09/2026).
-  Sem acentos, sem emojis. UTF-8 sem BOM.
+  pra nao vazar como material de cliente real no check-public-surface.ps1 (07/09/2026). UTF-8 sem BOM.
 #>
 param(
   [string]$Path = ".",

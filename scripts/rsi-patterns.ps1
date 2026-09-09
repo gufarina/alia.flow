@@ -16,8 +16,7 @@
 
   Uso: scripts/rsi-patterns.ps1 [-ProposalsDir <caminho>] [-MinSessions 3] [-Write]
   -Write grava o relatorio (se achou algo) em memory/_proposals/patterns-<data>.md - sem isso,
-  so imprime (nenhum efeito colateral por padrao). exit 0 sempre (detector nunca falha o hook).
-  Sem acentos, sem emojis. UTF-8 sem BOM.
+  so imprime (nenhum efeito colateral por padrao). exit 0 sempre (detector nunca falha o hook). UTF-8 sem BOM.
 #>
 param(
   [string]$ProposalsDir = "",

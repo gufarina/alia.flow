@@ -1,6 +1,6 @@
 # Alia Flow - Response Guard (M1: o freio, contrato estruturado)
 # Configuracao lida por scripts/response-guard.ps1 (hook de Stop). Prosa/doutrina completa em
-# response-guard.md. Sem acentos, sem emojis. UTF-8 sem BOM.
+# response-guard.md. UTF-8 sem BOM.
 #
 # A VALVULA (excecao legitima da REGRA 1, 09/08/2026) NAO mora neste arquivo de proposito: ela e
 # ativada por linguagem natural do Operator no proprio pedido, nunca por configuracao (o Operator

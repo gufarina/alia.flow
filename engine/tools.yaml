@@ -1,7 +1,7 @@
 # Alia Flow - Manifesto de Selecao de Ferramentas e Frugalidade
 # Espelho estruturado de tools.md. Encoda a prioridade de camadas, o Frugality Check e a
 # metrica de Budget em forma checavel. Fonte canonica: tools.md. O smoke valida o pareamento.
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# UTF-8 sem BOM.
 
 principle: VIII   # Frugality Without Quality Loss
 invariant: "Reduzir custo e obrigatorio; reduzir qualidade e proibido."

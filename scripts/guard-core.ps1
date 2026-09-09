@@ -5,7 +5,7 @@
 # (engine/.core-baseline.sha256). Mudanca sem -AllowCore = bloqueio: forca a pessoa a
 # confirmar que a mudanca no nucleo foi intencional. Espelha a fronteira ja definida em
 # engine/governance/provenance.md (nucleo = so o operador humano muda, fora do ciclo automatico).
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# UTF-8 sem BOM.
 
 param([switch]$AllowCore, [switch]$Json)
 

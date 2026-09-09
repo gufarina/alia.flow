@@ -1,7 +1,7 @@
 # Examples padrao-ouro - Acme SaaS
 
 > Indice dos artefatos exemplares deste squad. Sao o "registro" do REUSE do IDS: consultar ANTES
-> de criar (REUSE >= 90% fit). Convencao em engine/features/examples-driven.md. Sem acentos, sem emojis.
+> de criar (REUSE >= 90% fit). Convencao em engine/features/examples-driven.md.
 
 ## Catalogo
 

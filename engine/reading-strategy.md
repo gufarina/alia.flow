@@ -4,7 +4,7 @@
 > arquivo inteiro quando um indice, uma assinatura ou uma fatia resolvem. E o Frugality Check (passo 2,
 > tools.md) aplicado a TODA leitura de markdown - o mesmo principio do repo-map do Aider, adaptado a
 > uma base de conhecimento em markdown. O manifesto maquinavel vive ao lado em
-> [reading-strategy.yaml](reading-strategy.yaml). Sem acentos, sem emojis.
+> [reading-strategy.yaml](reading-strategy.yaml).
 
 ---
 
@@ -36,6 +36,11 @@ e o que o coding agent hospedeiro ja faz de melhor.
 
 > Ordem de leitura: indice (1) -> assinatura (2) -> fatia (3). So se as tres nao bastarem, leia o
 > arquivo inteiro. A metrica e a mesma do produto: custo medio por Artifact cai com o tempo (tools.md).
+
+Vale para o Specialist tambem: o bundle gerado por `squad-bridge.ps1` manda entrar pelo
+`knowledge/MAP.md` e abrir fatia por header, nunca "carregar obrigatorio" doc inteiro ao acordar
+(ate a v1.69 o bundle mandava o contrario, e um Specialist pagava em media ~4,7k tokens antes de ler
+a pergunta - medido em 09/09/2026).
 
 ## Descartado de proposito (KISS/YAGNI)
 Embeddings, RAG e grafos de PageRank sobre a KB markdown: complexidade e dependencia sem ganho no

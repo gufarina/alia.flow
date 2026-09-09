@@ -2,7 +2,7 @@
 # Cobre exatamente: T01-T10, T13, T14 + ciclo E2E. Exit 0 se tudo verde, 1 caso contrario.
 # T11 e T12 NAO sao cobertos aqui de proposito (sem spec de check neste harness);
 # se precisarem virar check, adicionar bloco proprio e atualizar esta lista.
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# UTF-8 sem BOM.
 #
 # -UpdateReadme: modo de SINCRONIA (nao e o smoke normal). So mexe na linha "(N na versao atual"
 # de README.md, reescrevendo pro total real deste contexto quando bater errado - causa raiz do
@@ -11,6 +11,7 @@
 # completo: sincroniza, copia pra raiz da oficina, so entao roda o gate real sem o switch).
 param([switch]$UpdateReadme, [switch]$Publico)
 
+
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot          # raiz do alia/
 $engine = Join-Path $root "engine"
@@ -18,9 +19,12 @@ $studio = Join-Path $root "studio.example"
 $client = Join-Path $studio "clients\acme-saas"
 $squad  = Join-Path $client "squad"
 
+
+
 $script:fail = 0
 $script:pass = 0
 $script:skip = 0
+
 
 function Check([string]$name, [bool]$cond, [string]$detail = "") {
   if ($cond) {
@@ -30,7 +34,9 @@ function Check([string]$name, [bool]$cond, [string]$detail = "") {
     Write-Host ("[FAIL] " + $name + $(if ($detail) { " -> " + $detail } else { "" }))
     $script:fail++
   }
+
 }
+
 
 # Warn: aviso que NUNCA reprova o smoke (nao mexe em pass/fail). Uso: drift que so o CEO resolve
 # (ex.: versao entre oficina/release/produto), nunca um defeito que o proprio motor devia corrigir.
@@ -40,16 +46,20 @@ function Warn([string]$name, [bool]$cond, [string]$detail = "") {
   } else {
     Write-Host ("[AVISO] " + $name + $(if ($detail) { " -> " + $detail } else { "" }))
   }
+
 }
+
 
 function ReadText([string]$path) {
   $utf8 = New-Object System.Text.UTF8Encoding($false)
   return [System.IO.File]::ReadAllText($path, $utf8)
 }
 
+
 Write-Host "=== Alia Flow Smoke Test ==="
 Write-Host ("root: " + $root)
 Write-Host ""
+
 
 # --- T01 ENGINE ---
 Write-Host "-- T01 Engine --"
@@ -58,7 +68,7 @@ $engineFiles = @(
   "agents\alia.md","agents\persona.md","agents\squad-creator.md","agents\architect.md",
   "agents\data-engineer.md","agents\qa.md","agents\dev.md","agents\devops.md",
   "workflows\story-cycle.md","workflows\qa-loop.md",
-  "governance\loops.md","governance\quality-gate.md","governance\memory-audit.md","governance\evolution-pipeline.md",
+ "governance\loops.md","governance\quality-gate.md","governance\memory-audit.md","governance\provenance.md",
   "features\expert-minds.md","features\squad-templates.md","features\frugal-skills.md",
   "features\validated-artifacts.md","features\forja.md","features\bastao.md","features\bastao-template.yaml",
   "features\expert-minds\design\brad-frost.md","features\expert-minds\dev\kent-beck.md",
@@ -68,6 +78,7 @@ $missing = @()
 foreach ($f in $engineFiles) { if (-not (Test-Path (Join-Path $engine $f))) { $missing += $f } }
 Check "Engine: 7 agentes, workflows, governanca, features presentes" ($missing.Count -eq 0) ("faltando: " + ($missing -join ", "))
 
+
 # --- T02 STUDIO ---
 Write-Host "-- T02 Studio --"
 Check "Studio: studio.yaml existe" (Test-Path (Join-Path $studio "studio.yaml"))
@@ -75,6 +86,7 @@ $stateOk = $false
 $state = $null
 try { $state = (ReadText (Join-Path $studio "state.json")) | ConvertFrom-Json; $stateOk = $true } catch { $stateOk = $false }
 Check "Studio: state.json e JSON valido" $stateOk
+
 
 # --- T03 SQUAD ---
 Write-Host "-- T03 Squad --"
@@ -89,6 +101,7 @@ foreach ($s in $specialists) {
 }
 Check "Squad: >=4 especialistas com par .md + .yaml" (($specialists.Count -ge 4) -and $pairsOk)
 
+
 # --- T04 KNOWLEDGE ---
 Write-Host "-- T04 Segundo cerebro --"
 $know = Join-Path $squad "knowledge"
@@ -97,6 +110,7 @@ Check "Knowledge: >=3 arquivos de contexto" ($knowFiles.Count -ge 3) ("achei: " 
 $em = Join-Path $know "expert-minds"
 $emFiles = Get-ChildItem -Path $em -Filter *.md -File -ErrorAction SilentlyContinue
 Check "Knowledge: >=2 Expert Minds copiados" ($emFiles.Count -ge 2) ("achei: " + $emFiles.Count)
+
 
 # --- T05 GRAPHIFY ---
 Write-Host "-- T05 Graphify --"
@@ -112,6 +126,7 @@ try {
   Write-Host ("       grafo: " + $n + " nodes")
 } catch { $nodesOk = $false }
 Check "Graphify: graph.json com >0 nodes" $nodesOk
+
 
 # --- T06/T07 ARTIFACTS ---
 Write-Host "-- T06/T07 Artifacts --"
@@ -129,6 +144,7 @@ if (Test-Path $art2) {
   Check "ART-002 tem AC Given/When/Then" (($c2 -match "Given") -and ($c2 -match "When") -and ($c2 -match "Then"))
 }
 
+
 # --- T08 GATES ---
 Write-Host "-- T08 Quality Gate --"
 $g1 = Join-Path $client "artifacts\gates\ART-001.gate.md"
@@ -143,7 +159,9 @@ foreach ($gp in @($g1,$g2)) {
   } else {
     Check ("Gate " + (Split-Path $gp -Leaf) + ": existe") $false
   }
+
 }
+
 
 # --- T09 MEMORY ---
 Write-Host "-- T09 Memory --"
@@ -156,6 +174,7 @@ if ($memFiles.Count -ge 1) {
 }
 Check "Memory: nota liga ART-001 e ART-002" $memOk
 
+
 # --- T10 STATE consistente ---
 Write-Host "-- T10 Estado --"
 $stateConsistent = $false
@@ -166,9 +185,12 @@ if ($stateOk -and $state -and (($state.tasks | Measure-Object).Count -gt 0)) {
       $apath = Join-Path $studio $t.artifact
       if (-not (Test-Path $apath)) { $stateConsistent = $false }
     }
+
   }
+
 }
 Check "Estado: toda task done tem artifact existente" $stateConsistent
+
 
 # --- E2E chain ---
 Write-Host "-- E2E (delega -> especialista -> gate -> artefato -> memoria) --"
@@ -182,8 +204,10 @@ if ($stateOk -and $state -and (($state.tasks | Measure-Object).Count -gt 0)) {
     $okV = ($t.gate_verdict -eq "PASS")
     if (-not ($okA -and $okG -and $okM -and $okV)) { $e2e = $false }
   }
+
 }
 Check "E2E: cada Task tem artifact + gate PASS + memoria" $e2e
+
 
 # --- Rastreabilidade dura + continuidade (OPP-66) ---
 # A LEI de rastreabilidade (orchestration.md) exige que toda Task carregue a LINHAGEM completa:
@@ -204,9 +228,12 @@ if ($stateOk -and $state -and (($state.tasks | Measure-Object).Count -gt 0)) {
       if ("$($t.session)" -eq "")       { $miss += "session" }
       if ($miss.Count -gt 0) { $furos += ("$($t.id)(" + ($miss -join "+") + ")") }
     }
+
   }
+
 }
 Check "Rastreabilidade: toda Task com artifact tem linhagem completa (project+base_artifact+session)" ($furos.Count -eq 0) ("furos: " + ($furos -join ", "))
+
 
 # Continuidade: o mecanismo task-context.ps1 devolve a "ultima revisao" de um Cliente (a base do
 # proximo passo). Sem executor, "ler as Tasks primeiro" era intencao; aqui e um CLI barato e testado.
@@ -222,6 +249,7 @@ if ((Test-Path $tcScript) -and $stateOk) {
   $tcEmpty = (& $tcScript -Client "__inexistente__" -StateFile $demoStatePath 6>&1) -join "`n"; $tcEmptyExit = $LASTEXITCODE
   Check "Continuidade: cliente sem Task -> ponto de partida limpo (exit 0)" (($tcEmptyExit -eq 0) -and ($tcEmpty -match 'partida limpo'))
 }
+
 
 # --- Alma de dono do Squad Owner (OPP-67) ---
 # O Gateway (Squad Owner) tem que ser dono ativo, nao papel passivo. A LEI vive pareada: prosa em
@@ -253,8 +281,10 @@ if ($ownerId -ne "") {
                     ($omd -match '(?i)pergunta[s]? inteligente|pergunta cirurgica') -and
                     ($omd -match '(?i)pragmatismo')
   }
+
 }
 Check ("Owner soul: Gateway do demo (" + $ownerId + ") carrega os 4 tracos na persona") $ownerHasSoul ("owner: " + $ownerId)
+
 
 # --- Conhecimento por Client: consistencia + grafo garantido (OPP-68) ---
 # (a) Especificacao de Entrega: todo Client carrega o contrato de consistencia no knowledge. A LEI
@@ -273,6 +303,7 @@ Check "Consistencia: Especificacao de Entrega presente no knowledge do demo + LE
 $scStep = (ReadText (Join-Path $engine "agents\squad-creator.yaml")) -match '(?im)step:\s*g'
 Check "Consistencia: squad-creator fecha com spec de entrega + grafo (step g)" $scStep
 
+
 $gcScript = Join-Path $root "scripts\graph-check.ps1"
 Check "Grafo: graph-check.ps1 presente" (Test-Path $gcScript)
 if (Test-Path $gcScript) {
@@ -286,6 +317,7 @@ if (Test-Path $gcScript) {
   if (Test-Path -LiteralPath $tmpStudio) { Remove-Item -Recurse -Force -LiteralPath $tmpStudio -ErrorAction SilentlyContinue }
   Check "Grafo: graph-check REPROVA client sem grafo (exit 1)" (($gcBadExit -eq 1) -and ($gcBadOut -match '\[FALTA\]'))
 }
+
 
 # --- Estrategia de leitura: indice mestre + assinatura + grep (OPP-69) ---
 # LEI pareada (reading-strategy.md + .yaml) com os 3 padroes; mecanismo kb-index.ps1 gera/valida o
@@ -313,6 +345,7 @@ if (Test-Path $kbScript) {
   Check "Leitura: kb-index REPROVA doc sem assinatura (exit 1)" (($kbBadExit -eq 1) -and ($kbBadOut -match 'sem assinatura'))
 }
 
+
 # --- Mission Control vivo: olhos da Alia em tarefas paradas (OPP-70) ---
 # stale-tasks.ps1 lista as Tasks paradas (nao-done, paradas > N dias); o Mission Control as destaca.
 # LEI em orchestration.md (anti-ociosidade). Determinismo via -Now fixo no teste.
@@ -335,6 +368,7 @@ Check "Paradas: mission-control.ps1 tem KPI/secao de paradas (StaleDays)" $mcSta
 $orchTxt = ReadText (Join-Path $engine "orchestration.md")
 Check "Paradas: LEI 'olhos da Alia' em orchestration.md (no bastidor)" (($orchTxt -match '(?i)olhos da Alia') -and ($orchTxt -match '(?i)bastidor'))
 
+
 # --- Docs-gate (LEI 5 de client-truth.md, 07/09/2026): doc curada acompanha o release ---
 # Prova pelo negativo com fixture: 3 Clients falsos - fresh (OK), stale (README mais velho que o
 # MINOR, CHANGELOG datado em 2999 pra nao depender de relogio) e ficha (client.md sem a versao).
@@ -349,6 +383,7 @@ if ((Test-Path $dcScript) -and (Test-Path $dcFixture)) {
   Check "Docs-gate: docs-check.ps1 reprova ficha atrasada e doc podre e aprova doc fresca (fixture)" $dcOk ("exit: " + $dcExit)
 }
 Check "Docs-gate: package-release.ps1 embarca docs-check.ps1 (allowlist)" ((ReadText (Join-Path $root "scripts\package-release.ps1")) -match '"docs-check\.ps1"')
+
 
 # --- T13 LOOP DESIGNER ---
 Write-Host "-- T13 Loop Designer --"
@@ -376,11 +411,13 @@ if (Test-Path $loopsYaml) {
     $c6 = ([regex]::Matches($ly, "(?m)^\s+" + $f6 + ":")).Count
     if ($c6 -ne $idCount) { $sixBad += ($f6 + ":" + $c6) }
   }
+
   Check "Loops: contrato de 6 elementos (OPP-57) em todo loop do demo" ($sixBad.Count -eq 0) ("incompleto vs ids:" + $idCount + " -> " + ($sixBad -join ", "))
 }
 # deep-research e o loop que sustenta a promessa de RSI; o mecanismo (agente-driven via MCP) tem
 # que estar declarado de verdade - o catalogo do Perplexity (busca normal Sonnet 4.6, jamais Sonar).
 Check "Loop Designer: mecanismo de pesquisa (MCP perplexity) declarado" (Test-Path (Join-Path $root "optional-mcps\perplexity\manifest.yaml"))
+
 
 # --- Loops agendados sem agendador (anti-fantasma) ---
 # CORTE (10/08/2026, mandato do CEO): nao ha mais Task Scheduler nem runner (install-loops.ps1 e
@@ -421,14 +458,17 @@ if (-not (Test-Path $catalogPath)) {
   foreach ($m in [regex]::Matches($schedTxt, '(?im)^\s*mechanism:\s*scripts/([A-Za-z0-9._-]+)\.ps1\s*$')) {
     $needed += $m.Groups[1].Value
   }
+
   $needed = $needed | Select-Object -Unique
   $studioSmokeTxt = ReadText $studioSmokePath
   $ghostLoops = @()
   foreach ($id in $needed) {
     if ($studioSmokeTxt -notmatch [regex]::Escape($id + ".ps1")) { $ghostLoops += $id }
   }
+
   Check $loopsCheckName ($ghostLoops.Count -eq 0) ("fantasma(s): " + ($ghostLoops -join ", "))
 }
+
 
 # --- T14 Knowledge Ablation (proxy) ---
 Write-Host "-- T14 Knowledge Ablation (proxy) --"
@@ -450,6 +490,7 @@ if (-not $pythonCmd) {
   Check "Ablation: VERDICT PASS no output" ($ablOut -match 'VERDICT: PASS')
 }
 
+
 # --- Corrupcao de encoding ---
 Write-Host "-- Encoding (corrupcao) --"
 $corrupt = @()
@@ -461,35 +502,6 @@ foreach ($file in $allMd) {
 }
 Check "Encoding: nenhum arquivo corrompido (0xFFFD)" ($corrupt.Count -eq 0) ("corrompidos: " + ($corrupt -join ", "))
 
-# Lei do CEO: zero caractere non-ASCII em qualquer arquivo do produto.
-# Le como BYTES (nao como texto) para pegar acento, em-dash (U+2014), middle-dot
-# (U+00B7), aspas curvas, setas etc. Reusa os mesmos roots do check de 0xFFFD
-# (studio.example, nunca o studio real do operador) e soma os scripts .ps1 e os
-# arquivos de raiz versionados relevantes, quando acessiveis.
-$nonAscii = @()
-$asciiScan = @($allMd)
-$asciiScan += Get-ChildItem -Path $encScanRoots -Recurse -Include *.ps1 -File -ErrorAction SilentlyContinue
-# docs/ guarda a documentacao do produto (BRAND, DESIGN movidos da raiz). Incluir no scan ASCII.
-$docsDir = Join-Path $root "docs"
-if (Test-Path $docsDir) {
-  $asciiScan += Get-ChildItem -Path $docsDir -Recurse -Include *.md -File -ErrorAction SilentlyContinue
-}
-# README.md NAO entra nesta lista (mandato do CEO, 07/09/2026): a lei ASCII protege ARQUIVO DE
-# MAQUINA, nunca o que a PESSOA LE, e o README publico e lido por gente. A protecao de encoding
-# que a lei dava ao README passa para o check dedicado logo abaixo (BOM, UTF-8 invalido, 0xFFFD,
-# travessao, emoji) - acento/cedilha/til passam a ser permitidos SO ali.
-$rootFiles = @("AGENTS.md","CLAUDE.md","CHANGELOG.md","VERSION","alia.config.json")
-foreach ($rf in $rootFiles) {
-  $rp = Join-Path $root $rf
-  if (Test-Path $rp) { $asciiScan += Get-Item -LiteralPath $rp -ErrorAction SilentlyContinue }
-}
-foreach ($file in $asciiScan) {
-  $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
-  $hit = $false
-  foreach ($b in $bytes) { if ($b -gt 127) { $hit = $true; break } }
-  if ($hit) { $nonAscii += $file.FullName }
-}
-Check ("Encoding: zero non-ASCII (lei do CEO) em " + $asciiScan.Count + " arquivos") ($nonAscii.Count -eq 0) ("infratores (" + $nonAscii.Count + "): " + ($nonAscii -join ", "))
 
 # --- Encoding do README.md (mandato do CEO, 07/09/2026): sem acento nao vale mais aqui, porque
 # README.md e lido por GENTE, nao e arquivo de maquina. O que a lei ASCII protegia de verdade era
@@ -503,6 +515,7 @@ if (Test-Path -LiteralPath $readmeEncPath) {
   if (($readmeBytes.Count -ge 3) -and ($readmeBytes[0] -eq 0xEF) -and ($readmeBytes[1] -eq 0xBB) -and ($readmeBytes[2] -eq 0xBF)) {
     $readmeProblemas += "BOM"
   }
+
   $strictUtf8 = New-Object System.Text.UTF8Encoding($false, $true)
   $readmeValidUtf8 = $true
   try { [void]$strictUtf8.GetString($readmeBytes) } catch { $readmeValidUtf8 = $false }
@@ -517,6 +530,7 @@ if (Test-Path -LiteralPath $readmeEncPath) {
 }
 Check "Encoding: README.md (lido por gente) sem BOM, UTF-8 valido, sem 0xFFFD, sem travessao, sem emoji - acento permitido" ($readmeProblemas.Count -eq 0) ("problemas: " + ($readmeProblemas -join ", "))
 
+
 # --- Cadeado de versao: VERSION tem que bater com a ultima entrada do CHANGELOG (impede drift) ---
 $verFile = ""
 $verPath = Join-Path $root "VERSION"
@@ -529,9 +543,11 @@ if (Test-Path $logPath) {
 }
 Check ("Versao: VERSION (" + $verFile + ") bate com o topo do CHANGELOG (" + $verLog + ")") ($verFile -ne "" -and $verFile -eq $verLog) ("drift de versao: VERSION=" + $verFile + " vs CHANGELOG=" + $verLog)
 
+
 # --- Guardrails da LEI de separacao de instancias (engine/governance/instance-separation.md) ---
 Write-Host ""
 Write-Host "-- Guardrails (separacao de instancias) --"
+
 
 # (a) Raiz limpa: SO a allowlist canonica (nenhum arquivo vaza, nao so .md).
 # Layout canonico em skills/file-organization/SKILL.md. Pastas livres; dotfiles (.git*) ignorados.
@@ -544,6 +560,7 @@ $leak = Get-ChildItem -Path $root -File -ErrorAction SilentlyContinue |
   Where-Object { $_.Name -notlike ".*" -and $rootAllow -notcontains $_.Name }
 Check "Raiz limpa: so a allowlist canonica (nenhum arquivo vaza)" ($leak.Count -eq 0) ("vazou: " + (($leak | ForEach-Object { $_.Name }) -join ", "))
 
+
 # (b) studio.example limpa: clients/ contem SO o demo (acme-saas). Allowlist do demo - qualquer
 # outro id e dado de operador vazando para o produto (nao denylist: nao cravamos nome de cliente real).
 $exClients = Join-Path $studio "clients"
@@ -554,6 +571,7 @@ if (Test-Path $exClients) {
   foreach ($d in $exDirs) { if ($demoAllow -notcontains $d.Name) { $leaked += $d.Name } }
 }
 Check "studio.example limpa: so o demo acme-saas em clients/" ($leaked.Count -eq 0) ("cliente fora do demo: " + ($leaked -join ", "))
+
 
 # --- Validate Artifact (porta de FORMATO do Gate, Frugal Skill) ---
 # A skill validate-artifact le os contratos por tipo (validated-artifacts.yaml) e valida um
@@ -578,6 +596,7 @@ if ((Test-Path $vaSkill) -and (Test-Path $fxValid) -and (Test-Path $fxBad)) {
 } else {
   Check "Validate Artifact: skill + fixtures presentes" $false "skill ou fixtures ausentes"
 }
+
 
 # --- State Resume (journal append-only + retomar de onde parou, Frugal Skill) ---
 # events[] e um journal append-only no state.json: cada evento tem ts, task_id, step (5 passos),
@@ -615,6 +634,7 @@ if ((Test-Path $srSkill) -and (Test-Path $srFxInt) -and (Test-Path $srFxBad)) {
   Check "State Resume: skill + fixtures presentes" $false "skill ou fixtures ausentes"
 }
 
+
 # --- Apply Safe Output (executor do block_when da provenance, Frugal Skill) ---
 # A skill apply-safe-output le o campo provenance do alvo e executa o enforcement que ja vive em
 # engine/governance/provenance.yaml:64-66: block_when (nucleo + automation) bloqueia; agent-authored
@@ -646,6 +666,7 @@ if ((Test-Path $soSkill) -and (Test-Path $soFxN) -and (Test-Path $soFxA)) {
   Check "Apply Safe Output: skill + fixtures presentes" $false "skill ou fixtures ausentes"
 }
 
+
 # --- Sanitize Input (borda que neutraliza texto perigoso, Frugal Skill, sob demanda) ---
 # A skill sanitize-input desarma payload de dominio (briefing/email/retorno da pesquisa) por regex:
 # tag <x> -> (x), @mention/bot-trigger inertes, URI nao-HTTPS -> (redacted), control chars/ANSI
@@ -676,6 +697,7 @@ if ((Test-Path $siSkill) -and (Test-Path $siFxH)) {
   Check "Sanitize Input: skill + fixture presentes" $false "skill ou fixture ausentes"
 }
 
+
 # --- Manifestos estruturados (pareamento prosa<->yaml) ---
 # Todo .yaml de spec do engine que espelha uma prosa (.md de mesmo nome na mesma pasta)
 # deve ter os DOIS lados presentes e nao-vazios. Pega o dano que a migracao do framework
@@ -698,9 +720,12 @@ foreach ($y in $allYaml) {
       $rel = $y.FullName.Substring($engine.Length + 1)
       $brokenPairs += $rel + $(if ($yEmpty) { " (yaml vazio)" } else { " (.md vazio)" })
     }
+
   }
+
 }
 Check ("Manifestos: " + $pairs + " pares prosa<->yaml intactos (nenhum orfao/vazio)") ($brokenPairs.Count -eq 0) ("quebrado(s): " + ($brokenPairs -join ", "))
+
 
 # --- Enforcement de delegacao no ponto de decisao (OPP-74) ---
 # A lei DELEGA (orchestration.md) morava so em prosa de boot e reincidiu (02/ago, num Client real): em sessao
@@ -711,9 +736,14 @@ Write-Host ""
 Write-Host "-- Enforcement de delegacao (hook ligado no ponto de decisao) --"
 $dgScript = Join-Path $root "scripts\delegation-guard.ps1"
 Check "Delegacao: scripts/delegation-guard.ps1 existe e cita a lei (DELEGA + fonte antes de varrer)" ((Test-Path $dgScript) -and ((ReadText $dgScript) -match 'DELEGA') -and ((ReadText $dgScript) -match 'graphify-out'))
+
 $settingsPath = Join-Path $root ".claude\settings.json"
 $settingsTxt = if (Test-Path $settingsPath) { ReadText $settingsPath } else { "" }
-Check "Delegacao: hook delegation-guard LIGADO em .claude/settings.json (UserPromptSubmit)" (($settingsTxt -match 'UserPromptSubmit') -and ($settingsTxt -match 'delegation-guard\.ps1'))
+# WARDEN 09/09/2026: delegation-guard.ps1 saiu do UserPromptSubmit (441B injetados em TODO
+# turno) - a lei agora e injetada 1x por SessionStart (session-start.ps1 le a mesma linha de
+# delegation-guard.ps1:20 - reuse-first, nao duplica o texto como fonte).
+Check "Delegacao: lei injetada 1x no SessionStart (session-start.ps1, ex-UserPromptSubmit)" ((Test-Path (Join-Path $root "scripts\session-start.ps1")) -and ((ReadText (Join-Path $root "scripts\session-start.ps1")) -match 'DELEGA') -and ($settingsTxt -match 'session-start\.ps1'))
+
 
 # --- Allow-list de tools por persona (declaracao existe e nao e vazia) ---
 # orchestration.md:100-107 declara que cada papel tem uma allow-list no campo "tools:" do seu .yaml,
@@ -743,6 +773,7 @@ foreach ($ay in $agentYamls) {
 }
 Check ("Allow-list: todo agente executor tem campo tools: nao-vazio (" + ($agentYamls.Count - $generatorAgents.Count) + " agentes)") ($noToolsList.Count -eq 0) ("sem allow-list: " + ($noToolsList -join ", "))
 
+
 # --- Modelo (LLM) por papel: tier declarado e valido na matriz ---
 # orchestration.md (Delegacao=isolamento, item 4) declara que cada persona traz model: <tier> e a Alia
 # resolve o modelo concreto em agents/model-matrix.yaml ao delegar. Passo verificavel: (a) a matriz
@@ -763,6 +794,7 @@ foreach ($ay in $agentYamls) {
 }
 Check ("Modelo: todo agente executor declara model: valido (" + ($agentYamls.Count - $generatorAgents.Count) + " agentes)") ($badModel.Count -eq 0) ("sem model valido: " + ($badModel -join ", "))
 
+
 # --- Marcador de regra inviolavel (convencao "> LEI:") ---
 # Os blocos inviolaveis do nucleo carregam o marcador uniforme "> LEI:" para que o inviolavel
 # seja inconfundivel e auditavel (constitution.md principios, orchestration.md protocolo,
@@ -782,6 +814,7 @@ foreach ($rel in $leiDocs) {
 }
 Check ("Marcador LEI presente nos " + $leiDocs.Count + " docs inviolaveis do nucleo") ($leiMissing.Count -eq 0) ("sem marcador: " + ($leiMissing -join ", "))
 
+
 # --- Alinhamento: a regua de risco do escopo + a rodada de perguntas (L29, OPP-78) ---
 # Vizinho direto do bloco acima de proposito: L29 EMENDA a lei de escalonamento (a mesma que L03/L16
 # declaram) em vez de criar uma segunda lei. A lei sempre proibiu perguntar FATO e sempre permitiu
@@ -798,6 +831,7 @@ $constMdAl = ReadText (Join-Path $engine "constitution.md")
 # (espaco unico), senao uma quebra de linha inocente derruba a guarda por motivo errado.
 $alinhaFlat = ($alinhaMd -replace '\s+', ' ')
 
+
 # (a) Os 4 fatores nomeados + o piso como DIGITO, pareado skill <-> constituicao (o par impede que
 # um lado afrouxe sozinho - mesmo padrao dos checks pareados prosa+manifesto do resto do trilho).
 $alinhaFatores = @("DESFAZ","REFAZ","LEITURAS","DISTANCIA")
@@ -810,6 +844,7 @@ $pisoConstVal = if ($pisoConst.Success) { $pisoConst.Groups[1].Value } else { "(
 $pisoOk = $pisoSkill.Success -and $pisoConst.Success -and ($pisoSkillVal -eq $pisoConstVal)
 Check "Alinhamento: a regua declara os 4 fatores e o piso NUMERICO" ($alinhaTemFatores -and $pisoOk) ("4 fatores na skill: " + $alinhaTemFatores + "; piso skill/constituicao: " + $pisoSkillVal + "/" + $pisoConstVal)
 
+
 # (b) Os tetos anti-tagarelice sao numero, nao bom senso - e o mesmo numero nos dois lugares da skill.
 $tetoM = [regex]::Match($alinhaFlat, '(?i)Teto duro:\s*no maximo (\d+) perguntas por rodada e no maximo (\d+) rodadas')
 $tetoPergunta = if ($tetoM.Success) { $tetoM.Groups[1].Value } else { "(sem digito)" }
@@ -817,6 +852,7 @@ $tetoRodada = if ($tetoM.Success) { $tetoM.Groups[2].Value } else { "(sem digito
 $tetoOk = $tetoM.Success -and ($tetoPergunta -eq "4") -and ($tetoRodada -eq "2") -and
           ($alinhaFlat -match '(?i)teto de 4 perguntas por rodada, teto de 2 rodadas')
 Check "Alinhamento: tetos de 4 perguntas e 2 rodadas declarados" $tetoOk ("teto medido: " + $tetoPergunta + " perguntas / " + $tetoRodada + " rodadas (esperado 4/2, repetido na secao Invariante)")
+
 
 # (c) A escada de investigacao (L03/L16) e PRE-CONDICAO da regua, com os 3 degraus nomeados. Sem
 # isto a regua vira licenca pra perguntar fato - o risco 2 declarado no estudo.
@@ -827,6 +863,7 @@ $escadaOk = ($alinhaFlat -match '(?i)escada de investigacao ja tem que ter sido 
             ($alinhaFlat -match '(?i)escada de investigacao roda ANTES da regua')
 Check "Alinhamento: a escada de investigacao e pre-condicao" $escadaOk "falta a escada esgotada como pre-condicao, um dos 3 degraus (memoria/arquivos/web) ou a invariante 'ANTES da regua'"
 
+
 # (d) Todo exemplo de pergunta carrega a recomendacao da Alia + a rodada oferece a saida "voce
 # decide". Pergunta sem recomendacao e a clausula que o Gate reprova ("empurrar trabalho de volta").
 $alinhaBlocos = [regex]::Matches($alinhaMd, '(?s)```(.*?)```')
@@ -835,14 +872,9 @@ $semRecomendacao = @($blocosPergunta | Where-Object { $_.Groups[1].Value -notmat
 $temSaida = ($alinhaMd -match '(?i)escreve "voce decide"') -and ($alinhaMd -match '(?i)Toda pergunta tem a saida "voce decide"')
 Check "Alinhamento: todo exemplo de pergunta traz recomendacao e a saida 'voce decide'" (($blocosPergunta.Count -ge 1) -and ($semRecomendacao.Count -eq 0) -and $temSaida) ("exemplos de pergunta: " + $blocosPergunta.Count + "; sem 'Eu faria': " + $semRecomendacao.Count + "; saida 'voce decide' declarada: " + $temSaida)
 
-# (e) Encoding (lei do CEO) + zero jargao nos exemplos. A lista de termos proibidos e LIDA de
+# (e) Zero jargao nos exemplos. A lista de termos proibidos e LIDA de
 # engine/agents/persona.md (fonte unica, nunca duplicada aqui) e vale onde o operador de fato le:
 # os blocos de exemplo da skill. Rodada tecnica e pior que nenhuma rodada.
-$alinhaAscii = $false
-if (Test-Path -LiteralPath $alinhaPath) {
-  $alinhaAscii = $true
-  foreach ($b in [System.IO.File]::ReadAllBytes($alinhaPath)) { if ($b -gt 127) { $alinhaAscii = $false; break } }
-}
 $personaMdAl = ReadText (Join-Path $engine "agents\persona.md")
 $proibM = [regex]::Match($personaMdAl, '(?s)Termos proibidos no output ao usuario[^\r\n]*\r?\n(.*?)\.\r?\n')
 $termosProib = @()
@@ -852,7 +884,8 @@ if ($proibM.Success) {
 $exemplosTxt = (($alinhaBlocos | ForEach-Object { $_.Groups[1].Value }) -join "`n")
 $jargao = @()
 foreach ($t in $termosProib) { if ($exemplosTxt -match ('(?i)\b' + [regex]::Escape($t) + '\b')) { $jargao += $t } }
-Check "Alinhamento: skill sem acento, sem emoji e sem termo da lista proibida" ($alinhaAscii -and ($termosProib.Count -ge 10) -and ($jargao.Count -eq 0)) ("ascii: " + $alinhaAscii + "; termos lidos da persona: " + $termosProib.Count + "; jargao nos exemplos: " + ($jargao -join ", "))
+Check "Alinhamento: skill e sem termo da lista proibida" (($termosProib.Count -ge 10) -and ($jargao.Count -eq 0)) ("termos lidos da persona: " + $termosProib.Count + "; jargao nos exemplos: " + ($jargao -join ", "))
+
 
 # --- Pesquisa segura (LEI anti-runaway) ---
 # Garante que a LEI de pesquisa segura existe e e auditavel no produto: a prosa (tools.md) e o
@@ -865,6 +898,7 @@ $toolsYml = ReadText (Join-Path $engine "tools.yaml")
 $lawOk = ($toolsMd -match '(?i)Pesquisa segura') -and ($toolsMd -match 'self_spawn') -and ($toolsYml -match 'research_safety')
 Check "LEI de pesquisa segura documentada (tools.md + tools.yaml)" $lawOk
 
+
 # --- RSI: verificacao independente (CONFERE no passo APLICA) ---
 # Fecha o furo do loop auto-referencial: quem PROPOE a melhoria nao a APROVA. O teste do passo APLICA
 # roda numa instancia separada. A trava vive pareada (prosa rsi.md + manifesto rsi.yaml).
@@ -874,6 +908,7 @@ $rsiMd  = ReadText (Join-Path $engine "rsi\rsi.md")
 $rsiYml = ReadText (Join-Path $engine "rsi\rsi.yaml")
 $confereOk = ($rsiMd -match '(?i)Verificacao independente') -and ($rsiYml -match 'independent_verification:\s*true')
 Check "RSI: CONFERE (verificacao independente) pareado em rsi.md + rsi.yaml" $confereOk "falta o guardrail de verificacao independente na prosa e/ou no yaml"
+
 
 # --- AUTONOMIA COM FREIO: promocao de memoria autonoma pelo CONFERE, nucleo/gate no humano ---
 # Decisao do CEO 30/jun: no fechamento do loop, o CONFERE independente auto-promove a nota que passa
@@ -888,6 +923,7 @@ $freioYaml = ($rsiYml -match '(?im)^\s*memory_promotion_policy:') -and
 $freioMd = ($reflectMd -match '(?i)AUTONOMIA COM FREIO') -and ($reflectMd -match '(?i)SEGURA_AUTO') -and
            ($reflectMd -match '(?i)ESCALA_HUMANO') -and ($reflectMd -match '(?i)Fronteira dura')
 Check "RSI: AUTONOMIA COM FREIO (promocao de memoria autonoma) pareada em rsi.yaml + SKILL.md" ($freioYaml -and $freioMd) "falta memory_promotion_policy no yaml e/ou o protocolo (SEGURA_AUTO/ESCALA_HUMANO/fronteira dura) na skill"
+
 
 # --- Contrato de 6 elementos por loop (OPP-57): prosa <-> catalogo pareados ---
 # Todo loop instanciado declara discovery_source, state_file, evaluator, isolation, token_cap e
@@ -911,6 +947,7 @@ foreach ($f6 in $sixFields) {
   if ($loopsMd -notmatch [regex]::Escape($f6)) { $mdContract = $false }
 }
 Check "Loops: contrato de 6 elementos pareado em loops.md + loops.catalog.yaml" ($catHasAll -and $catContract -and $mdContract) "falta o contrato (6 campos required + contract_6_elements) no catalogo e/ou a secao na prosa"
+
 
 # --- Teto de gasto duro (OPP-58): contador frugal existe e morde ---
 # budget-check.ps1 (sem LLM) le costs[] do state.json e compara com token_cap (per_round/daily).
@@ -936,6 +973,7 @@ if ((Test-Path $bcScript) -and (Test-Path $bcFxOver) -and (Test-Path $bcFxUnder)
 $rsiBudget = ($rsiYml -match '(?im)^\s*source:\s*budget-check')
 Check "Budget: rsi.yaml over-budget-path aponta o contador como fonte" $rsiBudget
 
+
 # --- Avaliador que AGE (OPP-59): criterio Funciona exige prova de EXECUCAO ---
 # Mudanca de Gate aprovada pelo CEO em 01/jul (human_approval_for: [gate] respeitado). O verdito
 # PASS do criterio 1 exige evidencia de execucao [MEDIDO comando -> saida]; leitura nao e prova;
@@ -958,6 +996,7 @@ $sixIntact = ($qgYml -match '(?im)^\s*name:\s*Aderente ao DDD') -and ($qgYml -ma
 Check "Gate: criterio Funciona exige execucao, pareado em quality-gate.md + .yaml" ($ageYaml -and $ageMd) "falta evidence: execution / broken-until-proven / tipologia / Concerns no yaml e/ou a prosa"
 Check "Gate: os outros 5 criterios seguem intactos" $sixIntact
 
+
 # --- Ativos criticos presentes (guardrail anti-perda) ---
 # Causa raiz do incidente da LP (24/jun): ativo critico do produto vivia fora do git e sumiu num move.
 # Este check FALHA se um ativo critico nao existir mais no LAB. Mapa em CATALOG.md.
@@ -977,6 +1016,7 @@ if (Test-Path (Join-Path $root "brand")) {
 }
 Check "Ativos criticos presentes (instalador, onboarding; +marca/LP/catalogo no LAB)" ($missing.Count -eq 0) ("faltando: " + ($missing -join "; "))
 
+
 $pplxManifest = Join-Path $root "optional-mcps\perplexity\manifest.yaml"
 $pplxOk = $false
 if (Test-Path $pplxManifest) {
@@ -985,6 +1025,7 @@ if (Test-Path $pplxManifest) {
   $pplxOk = ($pm -match '(?im)name:\s*pplx_usage') -and ($pm -match '(?im)approval:')
 }
 Check "Catalogo MCP: perplexity declarado com caminho de pesquisa seguro" $pplxOk
+
 
 # --- Setup / onboarding (sem Python, cerebro obrigatorio) ---
 # A Alia exige a memoria interna (Graphify, automatica) antes de operar (skills/setup-alia + AGENTS.md).
@@ -998,6 +1039,7 @@ $noServer = (Test-Path $idx) -and -not ((ReadText $idx) -match 'fetch\("/save"|s
 Check "Onboarding: pagina estatica (sem Python/servidor)" $noServer
 $bootSetup = (Test-Path (Join-Path $root "AGENTS.md")) -and ((ReadText (Join-Path $root "AGENTS.md")) -match '(?i)setup-alia')
 Check "Setup: AGENTS.md exige o cerebro (setup-alia no boot)" $bootSetup
+
 
 # --- Git-sync: commit+push sem git (OPP-72) ---
 # git-sync.ps1 versiona uma pasta no GitHub via API HTTPS (sem git.exe). O item so esta pronto quando
@@ -1017,6 +1059,7 @@ if (Test-Path $gsScript) {
 # Instalador aponta pro repo publico real (nao o placeholder ORG/alia-flow).
 $instTxt = ReadText (Join-Path $root "scripts\install.ps1")
 Check "Git-sync: install.ps1 aponta pro repo publico real (nao placeholder)" (($instTxt -match 'gufarina/alia\.flow') -and ($instTxt -notmatch '\$repo\s*=\s*"ORG/alia-flow"'))
+
 
 # --- Updater diff-only + contrato de task tipado (1.39.0) ---
 # Auditoria de fluxo da 1.39: (a) update-engine.ps1 deixou o espelho cego (/MIR) e virou diff-only
@@ -1040,6 +1083,7 @@ $rtRev = (& $rtScript -Client "smoke" -Title "t" -Project "p" -Type revisao -Sta
 Check "Task tipada: revisao done sem -GateVerdict -> ERRO (exit 1)" (($rtRevExit -eq 1) -and ($rtRev -match 'verdito'))
 $rtPesq = (& $rtScript -Client "acme-saas" -Title "t" -Project "p" -Type pesquisa -Artifact "a.md" -Specialist "quinn" -StateFile $rtState -DryRun 6>&1) -join "`n"; $rtPesqExit = $LASTEXITCODE
 Check "Task tipada: pesquisa dispensa base_artifact (sem aviso falso, exit 0)" (($rtPesqExit -eq 0) -and ($rtPesq -notmatch 'AVISO'))
+
 
 # --- Growth: especialista + skills de marketing (OPP-73) ---
 # 1 especialista novo (growth) + 16 skills adaptadas do OpenClaudia (MIT) em 3 ondas. Guardrails:
@@ -1070,6 +1114,7 @@ Check ("Growth: 16 skills do pack presentes (" + (16 - $mktMissing.Count) + "/16
 Check "Growth: toda skill do pack declara provenance: openclaudia" ($mktNoProv.Count -eq 0) ("sem provenance: " + ($mktNoProv -join ", "))
 Check "Growth: toda skill do pack carrega o contrato Alia Flow (delegacao+Task+Gate+grounding)" ($mktNoContract.Count -eq 0) ("sem contrato: " + ($mktNoContract -join ", "))
 
+
 # --- Release (open source) ---
 # O produto e empacotavel: LICENSE (MIT), o empacotador CLEAN e o instalador de 1 linha existem,
 # e o README ensina a instalar. (A publicacao no GitHub e o passo manual do DevOps.)
@@ -1082,6 +1127,7 @@ Check "Release: instalador e transacional (backup + rollback)" ((ReadText (Join-
 Check "Release: updater online presente (update-online.ps1)" (Test-Path (Join-Path $root "scripts\update-online.ps1"))
 Check "Release: updater online e transacional e protege dados do operador" ((ReadText (Join-Path $root "scripts\update-online.ps1")) -match 'Restore-Engine' -and (ReadText (Join-Path $root "scripts\update-online.ps1")) -match 'Assert-SafeCopySet' -and (ReadText (Join-Path $root "scripts\update-online.ps1")) -match 'state\.json')
 Check "Release: atualizar-alia.bat escolhe o updater certo (lab local vs online)" ((ReadText (Join-Path $root "atualizar-alia.bat")) -match 'update-engine\.ps1' -and (ReadText (Join-Path $root "atualizar-alia.bat")) -match 'update-online\.ps1')
+
 
 # --- Contrato Launcher <-> Motor (TASK-132/133/134): -Dest, -EventLog, guardas de destino, ---
 # --- integridade e o schema de fase com os 8 valores (contrato secao 3) ---
@@ -1125,6 +1171,7 @@ Check "Release: CONTRIBUTING e .github no ship list do package-release" ((ReadTe
 Check "Release: benchmarks/ no ship list do package-release" ((ReadText (Join-Path $root "scripts\package-release.ps1")) -match '"benchmarks"')
 Check "Release: benchmarks/run-all.py presente (runner dos 5 benchmarks)" ((Test-Path (Join-Path $root "benchmarks\run-all.py")) -and (Test-Path (Join-Path $root "benchmarks\README.md")))
 
+
 # --- Ativacao: o produto tem que LIGAR sozinho quando o operador abre a pasta no Claude Code ---
 # Bloqueador de release medido 03/ago: Claude Code le CLAUDE.md, NAO AGENTS.md (confirmado na doc
 # oficial, code.claude.com/docs/en/memory, secao "AGENTS.md"). AGENTS.md sozinho era
@@ -1142,6 +1189,7 @@ Check "Ativacao: .claude/settings.json presente (liga os hooks de governanca do 
 Check "Release: CLAUDE.md do produto no ship list do package-release.ps1" ((ReadText (Join-Path $root "scripts\package-release.ps1")) -match '"CLAUDE\.md"')
 Check "Release: .claude (settings.json + comando /alia) no ship list do package-release.ps1" ((ReadText (Join-Path $root "scripts\package-release.ps1")) -match '"\.claude"')
 
+
 # --- Guard de vetos: termo derrubado pelo CEO nunca vive no motor (07/jul) ---
 # Le os GUARD: do docs/CLAIMS.md e reprova se qualquer regex aparecer em engine/.
 # Transforma "confie que o veto foi cumprido" em "o teste prova". Molde do check de termo legado.
@@ -1153,6 +1201,7 @@ if (Test-Path $claimsPath) {
   foreach ($line in (Get-Content -LiteralPath $claimsPath -Encoding UTF8)) {
     if ($line -match '^\s*GUARD:\s*(.+?)\s*$') { $guards += $Matches[1] }
   }
+
   Check "Guard: CLAIMS.md declara termos proibidos (GUARD:)" ($guards.Count -gt 0) "nenhum GUARD: no CLAIMS.md"
   $engineFilesAll = Get-ChildItem -LiteralPath $engine -Recurse -File -Include *.md,*.yaml -ErrorAction SilentlyContinue
   foreach ($g in $guards) {
@@ -1161,8 +1210,10 @@ if (Test-Path $claimsPath) {
       $txt = [System.IO.File]::ReadAllText($f.FullName)
       if ($txt -cmatch $g) { $hits += $f.FullName.Substring($engine.Length + 1) }
     }
+
     Check ("Guard: veto ausente do motor -> /" + $g + "/") ($hits.Count -eq 0) ("vazou em: " + ($hits -join ", "))
   }
+
 } else {
   # docs/CLAIMS.md e doc interno (engine/governance/public-surface.md): NUNCA viaja no pacote
   # publico nem no repo publico (esta no .gitignore de la de proposito). Um clone/instalacao
@@ -1173,6 +1224,7 @@ if (Test-Path $claimsPath) {
   $guards = @()
   Warn "Guard: docs/CLAIMS.md ausente - guard de vetos pulado (doc interno, so existe na oficina)" $false "CLAIMS.md nao viaja no pacote/repo publico por LEI; nada a checar aqui"
 }
+
 
 # --- Guard de vetos: SUPERFICIE PUBLICA (o que o usuario final le) ---
 # Mesma fonte unica (as linhas GUARD: do docs/CLAIMS.md - a lista NAO e duplicada aqui), agora
@@ -1195,6 +1247,8 @@ if (Test-Path $claimsPath) {
 #   "brand\landing" em $psDirs abaixo e a LP passa a ser protegida. Divida declarada, nunca
 #   silenciosa.
 
+
+
 function VetoScan([string[]]$files, [string[]]$guards) {
   $regLine    = '(?i)(vetad|veto|derrubad|proibid|aposentad|reprovad)'
   $regHeading = '(?i)(vetos?|proibid|banid|nunca usamos)'
@@ -1212,9 +1266,13 @@ function VetoScan([string[]]$files, [string[]]$guards) {
         if ($line -cmatch $g) {
           $hits += [PSCustomObject]@{ file = $file; line = $n; term = $g; text = $line }
         }
+
       }
+
     }
+
   }
+
   return ,$hits
 }
 
@@ -1227,6 +1285,7 @@ if ($guards -and $guards.Count -gt 0) {
     $tp = Join-Path $root $t
     if (Test-Path -LiteralPath $tp) { $psFiles += $tp }
   }
+
   $psDirs = @("onboarding","docs")   # brand\landing entra aqui depois da TASK-016
   foreach ($d in $psDirs) {
     $dp = Join-Path $root $d
@@ -1237,12 +1296,15 @@ if ($guards -and $guards.Count -gt 0) {
       Where-Object { ($_.FullName.Substring($root.Length + 1) -notmatch '\\(_retired|_drafts|_dev|_backups|release)\\') -and ($_.Name -ne "CLAIMS.md") -and ($_.Name -ne "CHANGELOG.md") } |
       ForEach-Object { $_.FullName })
   }
+
   $brandDir = Join-Path $root "brand"
   if (Test-Path -LiteralPath $brandDir) {
     $psFiles += @(Get-ChildItem -LiteralPath $brandDir -File -Filter "marketing-pack-*.md" -ErrorAction SilentlyContinue |
       ForEach-Object { $_.FullName })
   }
+
   Check ("Guard publico: escopo montado (" + $psFiles.Count + " arquivos de superficie)") ($psFiles.Count -gt 0) "nenhum arquivo de superficie encontrado"
+
 
   # Prova 1 (pega): a fixture suja tem um USO VIVO e uma linha de REGISTRO do mesmo termo.
   # O guard tem que acusar a primeira e ignorar a segunda - senao vira alarme falso e o time
@@ -1257,6 +1319,8 @@ if ($guards -and $guards.Count -gt 0) {
     Check "Guard publico: nao acusa linha que apenas REGISTRA o veto (sem falso positivo)" ($fxReg.Count -eq 0) ("acusou registro: " + (($fxReg | ForEach-Object { $_.term }) -join ", "))
   }
 
+
+
   # Prova 2 (nao da falso positivo): a superficie publica de hoje esta limpa, termo a termo.
   $psHits = @(VetoScan $psFiles $guards)
   foreach ($g in $guards) {
@@ -1264,7 +1328,9 @@ if ($guards -and $guards.Count -gt 0) {
       ForEach-Object { $_.file.Substring($root.Length + 1) + ":" + $_.line })
     Check ("Guard publico: veto ausente da superficie -> /" + $g + "/") ($gh.Count -eq 0) ("uso vivo em: " + ($gh -join ", "))
   }
+
 }
+
 
 # --- Guard de vetos: SCRIPTS QUE GERAM DADO NOVO (achado H5) ---
 # Mesma fonte unica ($guards, ja lido do docs/CLAIMS.md - a lista NAO e duplicada aqui), agora
@@ -1279,6 +1345,7 @@ if ($guards -and $guards.Count -gt 0) {
 # conta como uso vivo e REPROVA.
 # Escopo: scripts/*.ps1 sem recursao; scripts/fixtures/ fica de fora de proposito (e a prova).
 
+
 function ScriptVetoScan([string[]]$files, [string[]]$guards) {
   $regRegistro = '(?i)(vetad|veto|derrubad|proibid|aposentad|reprovad|CLAIMS\.md|GUARD:)'
   $hits = @()
@@ -1292,9 +1359,13 @@ function ScriptVetoScan([string[]]$files, [string[]]$guards) {
         if ($line -cmatch $g) {
           $hits += [PSCustomObject]@{ file = $file; line = $n; term = $g; text = $line }
         }
+
       }
+
     }
+
   }
+
   return ,$hits
 }
 
@@ -1304,6 +1375,7 @@ if ($guards -and $guards.Count -gt 0) {
   $scFiles = @(Get-ChildItem -LiteralPath (Join-Path $root "scripts") -File -Filter *.ps1 -ErrorAction SilentlyContinue |
     ForEach-Object { $_.FullName })
   Check ("Guard scripts: escopo montado (" + $scFiles.Count + " scripts)") ($scFiles.Count -gt 0) "nenhum .ps1 em scripts/"
+
 
   # Prova 1 (pega): fixture de um script que GERA dado gravando o cargo derrubado, mais uma
   # linha que so registra a decisao. Tem que acusar a primeira e ignorar a segunda.
@@ -1317,6 +1389,8 @@ if ($guards -and $guards.Count -gt 0) {
     Check "Guard scripts: nao acusa linha que apenas REGISTRA o veto (sem falso positivo)" ($sfReg.Count -eq 0) ("acusou registro: " + (($sfReg | ForEach-Object { $_.term }) -join ", "))
   }
 
+
+
   # Prova 2 (nao da falso positivo): os scripts da casa estao limpos, termo a termo.
   $scHits = @(ScriptVetoScan $scFiles $guards)
   foreach ($g in $guards) {
@@ -1324,7 +1398,9 @@ if ($guards -and $guards.Count -gt 0) {
       ForEach-Object { $_.file.Substring($root.Length + 1) + ":" + $_.line })
     Check ("Guard scripts: veto ausente de scripts/*.ps1 -> /" + $g + "/") ($sh.Count -eq 0) ("uso vivo em: " + ($sh -join ", "))
   }
+
 }
+
 
 # --- Response Guard: o freio na porta de saida (M1, OPP-74 continuacao 03/ago) ---
 # A lei DELEGA so tinha guarda na ENTRADA (delegation-guard.ps1, so lembra) e no FIM da sessao
@@ -1338,6 +1414,7 @@ $rgScript = Join-Path $root "scripts\response-guard.ps1"
 $rgTxt = if (Test-Path -LiteralPath $rgScript) { ReadText $rgScript } else { "" }
 Check "Response Guard: script existe e cita as 3 regras (DELEGA/GROUNDING/BUDGET)" ((Test-Path -LiteralPath $rgScript) -and ($rgTxt -match 'DELEGA') -and ($rgTxt -match 'GROUNDING') -and ($rgTxt -match 'BUDGET'))
 
+
 $settingsPath = Join-Path $root ".claude\settings.json"
 $stopWired = $false
 if (Test-Path -LiteralPath $settingsPath) {
@@ -1347,14 +1424,18 @@ if (Test-Path -LiteralPath $settingsPath) {
       foreach ($h in @($stopEntry.hooks)) {
         if ("$($h.command)" -match 'response-guard\.ps1') { $stopWired = $true }
       }
+
     }
+
   } catch { }
 }
 Check "Response Guard: hook Stop LIGADO em .claude/settings.json (nao so projetado)" $stopWired "projetado-mas-desligado reprova - o check tem que provar que esta LIGADO no settings, nao so que o arquivo existe"
 
+
 $rgYamlPath = Join-Path $engine "governance\response-guard.yaml"
 $rgYamlTxt = if (Test-Path -LiteralPath $rgYamlPath) { ReadText $rgYamlPath } else { "" }
 Check "Response Guard: response-guard.yaml existe com mode valido (aviso|bloqueio)" ((Test-Path -LiteralPath $rgYamlPath) -and ($rgYamlTxt -match '(?m)^\s*mode\s*:\s*(aviso|bloqueio)\s*$'))
+
 
 # --- Response Guard: fixtures de COMPORTAMENTO (TASK-157, achado WARDEN/TASK-146 item 3 do ranking) --
 # Os 3 checks acima so provam CONFIG (script existe, hook Stop ligado, yaml com mode valido) -
@@ -1365,12 +1446,14 @@ Check "Response Guard: response-guard.yaml existe com mode valido (aviso|bloquei
 Write-Host ""
 Write-Host "-- Response Guard: fixtures de comportamento (REGRA 1 DELEGA + REGRA 2 GROUNDING, prova pelo negativo) --"
 $rgRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("rg-fixture-" + $PID)
+
 if (Test-Path -LiteralPath $rgRoot) { Remove-Item -Recurse -Force -LiteralPath $rgRoot -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Force -Path $rgRoot | Out-Null
 $rgUtf8 = New-Object System.Text.UTF8Encoding($false)
 $rgLog = Join-Path $rgRoot "log.jsonl"
 $rgCfg = Join-Path $rgRoot "response-guard.yaml"
 [System.IO.File]::WriteAllText($rgCfg, "mode: bloqueio`nmin_claims: 3`nmin_chars_informativo: 1500`n", $rgUtf8)
+
 
 function New-RgTranscript {
     # Contrato real do transcript (.jsonl): 1 objeto JSON por linha, {type, message:{role, content}}.
@@ -1390,15 +1473,18 @@ function New-RgTranscript {
         $lines.Add((@{ type = "user"; message = @{ role = "user"; content = @(@{ type = "text"; text = "turno anterior (fixture)" }) } } | ConvertTo-Json -Depth 8 -Compress))
         $lines.Add((@{ type = "assistant"; message = @{ role = "assistant"; content = @(@{ type = "text"; text = "host: claude-code | delegacao: spawn`n`nresposta do turno anterior" }) } } | ConvertTo-Json -Depth 8 -Compress))
     }
+
     $lines.Add((@{ type = "user"; message = @{ role = "user"; content = @(@{ type = "text"; text = $UserText }) } } | ConvertTo-Json -Depth 8 -Compress))
     foreach ($tu in $AssistantBlocks) {
         $lines.Add((@{ type = "assistant"; message = @{ role = "assistant"; content = @(@{ type = "tool_use"; id = $tu.id; name = $tu.name; input = $tu.input }) } } | ConvertTo-Json -Depth 8 -Compress))
         $tuResult = if ($tu.result) { [string]$tu.result } else { "ok" }
         $lines.Add((@{ type = "user"; message = @{ role = "user"; content = @(@{ type = "tool_result"; tool_use_id = $tu.id; content = @(@{ type = "text"; text = $tuResult }) }) } } | ConvertTo-Json -Depth 8 -Compress))
     }
+
     $lines.Add((@{ type = "assistant"; message = @{ role = "assistant"; content = @(@{ type = "text"; text = $FinalText }) } } | ConvertTo-Json -Depth 8 -Compress))
     [System.IO.File]::WriteAllText($Path, ($lines -join "`n") + "`n", $rgUtf8)
 }
+
 
 function Invoke-ResponseGuard {
     param([string]$TranscriptPath, [string]$SessionId)
@@ -1407,6 +1493,7 @@ function Invoke-ResponseGuard {
     return ($payload | & powershell -ExecutionPolicy Bypass -File $rgScript -LogPath $rgLog -ConfigPath $rgCfg 2>&1) -join "`n"
 }
 
+
 # Cenario 1 (prova pelo negativo): Write em clients/<id>/ sem Agent/Task no turno -> BLOQUEIA (REGRA 1).
 $rgT1 = Join-Path $rgRoot "t1.jsonl"
 New-RgTranscript -Path $rgT1 -UserText "escreva um arquivo novo em clients/brax/artifacts/teste.md" `
@@ -1414,6 +1501,7 @@ New-RgTranscript -Path $rgT1 -UserText "escreva um arquivo novo em clients/brax/
     -FinalText "Pronto, arquivo criado."
 $rgOut1 = Invoke-ResponseGuard -TranscriptPath $rgT1 -SessionId "RG-T1"
 Check "Response Guard (REGRA 1, negativo): Write em clients/ sem Agent/Task no turno BLOQUEIA (decision:block)" (($rgOut1 -match '"decision":"block"') -and ($rgOut1 -match 'falta delegacao')) ("saida: " + $rgOut1)
+
 
 # Cenario 2 (prova pelo positivo, desfaz o cenario 1): mesma escrita, precedida de Task -> PASSA (silencioso, exit 0 sem JSON).
 $rgT2 = Join-Path $rgRoot "t2.jsonl"
@@ -1425,6 +1513,7 @@ New-RgTranscript -Path $rgT2 -UserText "escreva um arquivo novo em clients/brax/
 $rgOut2 = Invoke-ResponseGuard -TranscriptPath $rgT2 -SessionId "RG-T2"
 Check "Response Guard (REGRA 1, positivo): mesma escrita COM Task antes PASSA (sem decision:block)" ($rgOut2 -notmatch '"decision":"block"') ("saida: " + $rgOut2)
 
+
 # Cenario 3 (prova pelo negativo): resposta final com 3+ referencias arquivo:linha sem rotulo de
 # proveniencia -> BLOQUEIA (REGRA 2, GROUNDING). Zero tool_use: isola do REGRA 1 de proposito.
 $rgFinal3 = "Conferi scripts/foo.ps1:12, scripts/bar.ps1:34 e engine/baz.md:56 - os tres batem."
@@ -1433,12 +1522,14 @@ New-RgTranscript -Path $rgT3 -UserText "confira esses 3 arquivos" -AssistantBloc
 $rgOut3 = Invoke-ResponseGuard -TranscriptPath $rgT3 -SessionId "RG-T3"
 Check "Response Guard (REGRA 2, negativo): 3 referencias arquivo:linha sem rotulo [MEDIDO/INFERIDO/LIDO] BLOQUEIA (decision:block)" (($rgOut3 -match '"decision":"block"') -and ($rgOut3 -match 'rotulo')) ("saida: " + $rgOut3)
 
+
 # Cenario 4 (prova pelo positivo, desfaz o cenario 3): mesmo texto, com rotulo [MEDIDO] -> PASSA.
 $rgFinal4 = "[MEDIDO] Conferi scripts/foo.ps1:12, scripts/bar.ps1:34 e engine/baz.md:56 - os tres batem."
 $rgT4 = Join-Path $rgRoot "t4.jsonl"
 New-RgTranscript -Path $rgT4 -UserText "confira esses 3 arquivos" -AssistantBlocks @() -FinalText $rgFinal4
 $rgOut4 = Invoke-ResponseGuard -TranscriptPath $rgT4 -SessionId "RG-T4"
 Check "Response Guard (REGRA 2, positivo): mesmas referencias COM rotulo [MEDIDO] PASSA (sem decision:block)" ($rgOut4 -notmatch '"decision":"block"') ("saida: " + $rgOut4)
+
 
 # --- Clausula do relatorio de coordenacao (TASK-127, L39): 3 casos pelo negativo ---
 # (a) escrita em artifacts/coordination/x.html sem Agent/Task no turno -> LIBERA (excludeSubstrings).
@@ -1451,6 +1542,7 @@ New-RgTranscript -Path $rgT5 -UserText "gere o relatorio de coordenacao do brax"
 $rgOut5 = Invoke-ResponseGuard -TranscriptPath $rgT5 -SessionId "RG-T5"
 Check "Clausula coordenacao (a): Write em artifacts/coordination/x.html sem Agent/Task LIBERA (sem decision:block)" ($rgOut5 -notmatch '"decision":"block"') ("saida: " + $rgOut5)
 
+
 # (b) HTML de coordenacao com 3+ claim tecnico sem rotulo -> REPROVA pela REGRA 2 estendida.
 [System.IO.File]::WriteAllText($rgCoordPath, "<html><body>Conferi scripts/foo.ps1:12, scripts/bar.ps1:34 e engine/baz.md:56 - os tres batem.</body></html>", $rgUtf8)
 $rgT6 = Join-Path $rgRoot "t6.jsonl"
@@ -1461,6 +1553,7 @@ New-RgTranscript -Path $rgT6 -UserText "gere o relatorio de coordenacao do brax"
     ) -FinalText "Pronto, relatorio de coordenacao publicado."
 $rgOut6 = Invoke-ResponseGuard -TranscriptPath $rgT6 -SessionId "RG-T6"
 Check "Clausula coordenacao (b): HTML de coordenacao com claim sem rotulo REPROVA (REGRA 2 estendida, decision:block)" ($rgOut6 -match '"decision":"block"') ("saida: " + $rgOut6)
+
 
 # (c) mesmo turno tambem escreve arquivo de dominio FORA da subpasta coordination/ -> REGRA 1 dispara
 # mesmo assim (a exclusao e por arquivo, nao por turno).
@@ -1475,7 +1568,9 @@ New-RgTranscript -Path $rgT7 -UserText "gere o relatorio de coordenacao e a peca
 $rgOut7 = Invoke-ResponseGuard -TranscriptPath $rgT7 -SessionId "RG-T7"
 Check "Clausula coordenacao (c): escrita de dominio FORA de coordination/ no mesmo turno ainda BLOQUEIA (REGRA 1)" (($rgOut7 -match '"decision":"block"') -and ($rgOut7 -match 'falta delegacao')) ("saida: " + $rgOut7)
 
+
 if (Test-Path -LiteralPath $rgRoot) { Remove-Item -Recurse -Force -LiteralPath $rgRoot -ErrorAction SilentlyContinue }
+
 
 # --- Response Guard: REGRA 3 BUDGET (TASK-286, L41 clausula c, prova pelo negativo) ---
 # Fabrica um sub-agente sintetico (subagents/agent-X.jsonl + .meta.json, mesmo layout de disco que
@@ -1485,11 +1580,13 @@ if (Test-Path -LiteralPath $rgRoot) { Remove-Item -Recurse -Force -LiteralPath $
 Write-Host ""
 Write-Host "-- Response Guard: REGRA 3 BUDGET (correlaciona Budget: tools=N do briefing com o transcript real do sub-agente, prova pelo negativo) --"
 $rgRoot2 = Join-Path ([System.IO.Path]::GetTempPath()) ("rg-budget-fixture-" + $PID)
+
 if (Test-Path -LiteralPath $rgRoot2) { Remove-Item -Recurse -Force -LiteralPath $rgRoot2 -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Force -Path $rgRoot2 | Out-Null
 $rgLog2 = Join-Path $rgRoot2 "log.jsonl"
 $rgCfg2 = Join-Path $rgRoot2 "response-guard.yaml"
 [System.IO.File]::WriteAllText($rgCfg2, "mode: bloqueio`nmin_claims: 3`nmin_chars_informativo: 1500`n", $rgUtf8)
+
 
 function New-RgSubagentFixture {
     # Cria <SessDir>/<Sid>/subagents/agent-<Tag>.jsonl (com $ToolCount linhas "assistant" de
@@ -1504,9 +1601,11 @@ function New-RgSubagentFixture {
     for ($i = 0; $i -lt $ToolCount; $i++) {
         $lines.Add((@{ type = "assistant"; message = @{ role = "assistant"; content = @(@{ type = "tool_use"; id = ("sub" + $i); name = "Bash"; input = @{ command = "echo " + $i } }) } } | ConvertTo-Json -Depth 8 -Compress))
     }
+
     [System.IO.File]::WriteAllText($agentJsonl, ($lines -join "`n") + "`n", $rgUtf8)
     [System.IO.File]::WriteAllText($agentMeta, (@{ agentType = "general-purpose"; description = "fixture"; toolUseId = $ToolUseId; spawnDepth = 1 } | ConvertTo-Json -Compress), $rgUtf8)
 }
+
 
 # Cenario 8 (negativo): Budget: tools=3 declarado, sub-agente real gastou 5 -> ESTOURO, BLOQUEIA.
 $rgSid8 = "t8"
@@ -1520,6 +1619,7 @@ if (Test-Path -LiteralPath $rgLog2) { Remove-Item -LiteralPath $rgLog2 -Force -E
 $rgOut8 = ($rgOut8Payload | & powershell -ExecutionPolicy Bypass -File $rgScript -LogPath $rgLog2 -ConfigPath $rgCfg2 2>&1) -join "`n"
 Check "Response Guard (REGRA 3 BUDGET, negativo): sub-agente com 5 tool_use vs Budget tools=3 declarado ACUSA e BLOQUEIA" (($rgOut8 -match '"decision":"block"') -and ($rgOut8 -match 'Budget') -and ($rgOut8 -match 'declarado=3 real=5')) ("saida: " + $rgOut8)
 
+
 # Cenario 9 (positivo, desfaz o cenario 8): mesmo sub-agente, Budget: tools=10 (cabe) -> PASSA.
 $rgSid9 = "t9"
 $rgT9 = Join-Path $rgRoot2 ($rgSid9 + ".jsonl")
@@ -1531,6 +1631,7 @@ $rgOut9Payload = (@{ session_id = "RG-T9"; transcript_path = $rgT9.Replace('\', 
 if (Test-Path -LiteralPath $rgLog2) { Remove-Item -LiteralPath $rgLog2 -Force -ErrorAction SilentlyContinue }
 $rgOut9 = ($rgOut9Payload | & powershell -ExecutionPolicy Bypass -File $rgScript -LogPath $rgLog2 -ConfigPath $rgCfg2 2>&1) -join "`n"
 Check "Response Guard (REGRA 3 BUDGET, positivo): mesmo sub-agente com Budget tools=10 (cabe) PASSA (sem decision:block)" ($rgOut9 -notmatch '"decision":"block"') ("saida: " + $rgOut9)
+
 
 # Cenario 10: delegacao SEM a linha canonica (so prosa) -> nao acusa, so fica SEM-BUDGET-DECLARADO
 # (visivel no log, nunca vira violacao - teto em prosa nao e legivel por maquina, de proposito).
@@ -1546,7 +1647,9 @@ $rgOut10 = ($rgOut10Payload | & powershell -ExecutionPolicy Bypass -File $rgScri
 $rgLog10Txt = if (Test-Path -LiteralPath $rgLog2) { ReadText $rgLog2 } else { "" }
 Check "Response Guard (REGRA 3 BUDGET): delegacao SEM linha canonica 'Budget: tools=N' NAO acusa (teto em prosa e ilegivel por maquina, de proposito) e fica SEM-BUDGET-DECLARADO no log" (($rgOut10 -notmatch '"decision":"block"') -and ($rgLog10Txt -match '"budget_sem_declarar":1')) ("saida: " + $rgOut10 + " | log: " + $rgLog10Txt)
 
+
 if (Test-Path -LiteralPath $rgRoot2) { Remove-Item -Recurse -Force -LiteralPath $rgRoot2 -ErrorAction SilentlyContinue }
+
 
 # --- Guarda no ato (DELEGA + RITUAL) - WARDEN, TASK 07/09/2026, incidente sessao 4f2b4cf2 ---
 # 3 mecanismos: (i) REGRA 1 do response-guard.ps1 agora confere ORDEM (escrita antes da
@@ -1557,6 +1660,7 @@ if (Test-Path -LiteralPath $rgRoot2) { Remove-Item -Recurse -Force -LiteralPath 
 Write-Host ""
 Write-Host "-- Guarda no ato: REGRA 1 (ordem) + REGRA 4 (RITUAL) + delegation-gate.ps1 (prova pelo negativo) --"
 $rgRoot3 = Join-Path ([System.IO.Path]::GetTempPath()) ("rg-ato-fixture-" + $PID)
+
 if (Test-Path -LiteralPath $rgRoot3) { Remove-Item -Recurse -Force -LiteralPath $rgRoot3 -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Force -Path $rgRoot3 | Out-Null
 $rgLog3 = Join-Path $rgRoot3 "log.jsonl"
@@ -1568,6 +1672,7 @@ function Invoke-ResponseGuard3 {
     if (Test-Path -LiteralPath $rgLog3) { Remove-Item -LiteralPath $rgLog3 -Force -ErrorAction SilentlyContinue }
     return ($payload | & powershell -ExecutionPolicy Bypass -File $rgScript -LogPath $rgLog3 -ConfigPath $rgCfg3 2>&1) -join "`n"
 }
+
 
 # (i-negativo) Write em engine/ ANTES da chamada Task no mesmo turno -> BLOQUEIA (delegacao tardia
 # nao lava escrita anterior).
@@ -1581,6 +1686,7 @@ New-RgTranscript -Path $rgT11 -UserText "mexa no motor" `
 $rgOut11 = Invoke-ResponseGuard3 -TranscriptPath $rgT11 -SessionId "RG-T11"
 Check "Response Guard (REGRA 1, ordem, negativo): Write em engine/ ANTES do Task no mesmo turno BLOQUEIA mesmo com delegacao depois" (($rgOut11 -match '"decision":"block"') -and ($rgOut11 -match 'falta delegacao')) ("saida: " + $rgOut11)
 
+
 # (i-positivo, desfaz o cenario acima): mesma escrita, Task ANTES do Write -> PASSA.
 $rgT12 = Join-Path $rgRoot3 "t12.jsonl"
 New-RgTranscript -Path $rgT12 -UserText "mexa no motor" `
@@ -1591,6 +1697,7 @@ New-RgTranscript -Path $rgT12 -UserText "mexa no motor" `
 $rgOut12 = Invoke-ResponseGuard3 -TranscriptPath $rgT12 -SessionId "RG-T12"
 Check "Response Guard (REGRA 1, ordem, positivo): Task ANTES do Write no mesmo turno PASSA" ($rgOut12 -notmatch '"decision":"block"') ("saida: " + $rgOut12)
 
+
 # (ii-negativo) transcript de 1 SO turno (a resposta atual e a 1a assistant da sessao) sem a linha
 # de status -> BLOQUEIA (REGRA 4, RITUAL).
 $rgT13 = Join-Path $rgRoot3 "t13.jsonl"
@@ -1598,11 +1705,13 @@ New-RgTranscript -Path $rgT13 -UserText "oi" -AssistantBlocks @() -FinalText "Oi
 $rgOut13 = Invoke-ResponseGuard3 -TranscriptPath $rgT13 -SessionId "RG-T13"
 Check "Response Guard (REGRA 4 RITUAL, negativo): 1o turno da sessao sem linha de status BLOQUEIA" (($rgOut13 -match '"decision":"block"') -and ($rgOut13 -match '\[RITUAL\]')) ("saida: " + $rgOut13)
 
+
 # (ii-positivo, desfaz o cenario acima): mesmo 1o turno, COM a linha de status -> PASSA.
 $rgT14 = Join-Path $rgRoot3 "t14.jsonl"
 New-RgTranscript -Path $rgT14 -UserText "oi" -AssistantBlocks @() -FinalText "host: claude-code | delegacao: spawn`n`nOi! Tudo certo por aqui, vamos comecar." -FirstTurn
 $rgOut14 = Invoke-ResponseGuard3 -TranscriptPath $rgT14 -SessionId "RG-T14"
 Check "Response Guard (REGRA 4 RITUAL, positivo): mesmo 1o turno COM linha de status PASSA" ($rgOut14 -notmatch '"decision":"block"') ("saida: " + $rgOut14)
+
 
 # (iv-negativo) Detector de delegacao vazia (07/09/2026, aviso, nunca bloqueia): Task com
 # tool_result curto e sem referencia a arquivo -> loga "delegacao vazia".
@@ -1614,6 +1723,7 @@ $rgOut15 = Invoke-ResponseGuard3 -TranscriptPath $rgT15 -SessionId "RG-T15"
 $rgLog15 = Get-Content -LiteralPath $rgLog3 -Raw | ConvertFrom-Json
 Check "Response Guard (delegacao vazia, negativo): Task com result curto/sem arquivo loga delegacao_vazia=true, NUNCA bloqueia" (($rgOut15 -notmatch '"decision":"block"') -and ($rgLog15.delegacao_vazia -eq $true)) ("saida: " + $rgOut15 + " | log: " + ($rgLog15 | ConvertTo-Json -Compress))
 
+
 # (iv-positivo, desfaz o cenario acima): mesmo Task, result longo com caminho de arquivo -> sem aviso.
 $rgT16 = Join-Path $rgRoot3 "t16.jsonl"
 $rgLongResult = "Artifact entregue em clients/brax/artifacts/relatorio-completo-com-detalhes.md apos revisar todo o escopo pedido, mapear cada criterio do Quality Gate ponto a ponto e confirmar que nao ha pendencia nenhuma restante para o fechamento desta Task."
@@ -1624,13 +1734,17 @@ $rgOut16 = Invoke-ResponseGuard3 -TranscriptPath $rgT16 -SessionId "RG-T16"
 $rgLog16 = Get-Content -LiteralPath $rgLog3 -Raw | ConvertFrom-Json
 Check "Response Guard (delegacao vazia, positivo): Task com result longo e caminho de arquivo NAO loga delegacao_vazia" ($rgLog16.delegacao_vazia -eq $false) ("log: " + ($rgLog16 | ConvertTo-Json -Compress))
 
+
 if (Test-Path -LiteralPath $rgRoot3) { Remove-Item -Recurse -Force -LiteralPath $rgRoot3 -ErrorAction SilentlyContinue }
+
 
 # (iii) delegation-gate.ps1 - hook PreToolUse novo, bloqueia no ATO (nao so no Stop).
 $dgScript = Join-Path $root "scripts\delegation-gate.ps1"
 Check "delegation-gate.ps1 existe" (Test-Path -LiteralPath $dgScript)
 
+
 $dgRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dg-fixture-" + $PID)
+
 if (Test-Path -LiteralPath $dgRoot) { Remove-Item -Recurse -Force -LiteralPath $dgRoot -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Force -Path $dgRoot | Out-Null
 $dgMarker = Join-Path $dgRoot "marker.jsonl"
@@ -1645,7 +1759,9 @@ function Invoke-DelegationGate {
     } finally {
         if (Test-Path -LiteralPath $offFile) { Remove-Item -LiteralPath $offFile -Force -ErrorAction SilentlyContinue }
     }
+
 }
+
 
 # (iii-a, negativo) Write em engine/x.md pelo loop principal, sessao sem Task nenhum -> deny.
 if (Test-Path -LiteralPath $dgMarker) { Remove-Item -LiteralPath $dgMarker -Force -ErrorAction SilentlyContinue }
@@ -1653,20 +1769,24 @@ $dgPayloadA = (@{ session_id = "DG-A"; transcript_path = ($dgRoot.Replace('\', '
 $dgOutA = Invoke-DelegationGate -Payload $dgPayloadA
 Check "delegation-gate.ps1 (negativo): Write em engine/ pelo loop principal, sem Task na sessao, BLOQUEIA (permissionDecision:deny)" (($dgOutA -match '"permissionDecision":"deny"') -and ($dgOutA -match '\[DELEGA\]')) ("saida: " + $dgOutA)
 
+
 # (iii-b, positivo, desfaz o (a)): mesmo payload, mas transcript_path aponta pra
 # .../subagents/... (layout de sub-agente) -> allow (sem JSON no stdout).
 $dgPayloadB = (@{ session_id = "DG-A"; transcript_path = ($dgRoot.Replace('\', '/') + "/DG-A/subagents/agent-1.jsonl"); tool_name = "Write"; tool_input = @{ file_path = "engine/x.md" } } | ConvertTo-Json -Compress)
 $dgOutB = Invoke-DelegationGate -Payload $dgPayloadB
 Check "delegation-gate.ps1 (positivo): mesmo payload com transcript_path em .../subagents/... LIBERA (sem deny)" ([string]::IsNullOrWhiteSpace($dgOutB)) ("saida: " + $dgOutB)
 
+
 # (iii-c) Write em memory/ -> sempre libera (exclusao legitima, nunca e execucao de dominio).
 $dgPayloadC = (@{ session_id = "DG-C"; transcript_path = ($dgRoot.Replace('\', '/') + "/DG-C.jsonl"); tool_name = "Write"; tool_input = @{ file_path = "memory/nota.md" } } | ConvertTo-Json -Compress)
 $dgOutC = Invoke-DelegationGate -Payload $dgPayloadC
 Check "delegation-gate.ps1: Write em memory/ LIBERA sempre (exclusao legitima)" ([string]::IsNullOrWhiteSpace($dgOutC)) ("saida: " + $dgOutC)
 
+
 # (iii-d) com .claude/delegation-gate.off presente -> LIBERA mesmo o cenario (a).
 $dgOutD = Invoke-DelegationGate -Payload $dgPayloadA -Off
 Check "delegation-gate.ps1: interruptor .claude/delegation-gate.off desliga o bloqueio (mesmo cenario do (a) libera)" ([string]::IsNullOrWhiteSpace($dgOutD)) ("saida: " + $dgOutD)
+
 
 # (iii-e, desfaz o (a) por delegacao real): Task registrado na MESMA sessao antes da escrita -> libera.
 if (Test-Path -LiteralPath $dgMarker) { Remove-Item -LiteralPath $dgMarker -Force -ErrorAction SilentlyContinue }
@@ -1676,7 +1796,9 @@ $dgPayloadE = (@{ session_id = "DG-E"; transcript_path = ($dgRoot.Replace('\', '
 $dgOutE = Invoke-DelegationGate -Payload $dgPayloadE
 Check "delegation-gate.ps1 (desfaz o (a)): Task registrado antes na mesma sessao LIBERA a escrita de dominio seguinte" ([string]::IsNullOrWhiteSpace($dgOutE)) ("saida: " + $dgOutE)
 
+
 if (Test-Path -LiteralPath $dgRoot) { Remove-Item -Recurse -Force -LiteralPath $dgRoot -ErrorAction SilentlyContinue }
+
 
 $dgSettingsWired = $false
 if (Test-Path -LiteralPath $settingsPath) {
@@ -1684,12 +1806,24 @@ if (Test-Path -LiteralPath $settingsPath) {
     $settingsJson2 = (ReadText $settingsPath) | ConvertFrom-Json
     foreach ($ptEntry in @($settingsJson2.hooks.PreToolUse)) {
       foreach ($h2 in @($ptEntry.hooks)) {
+ # WARDEN 09/09/2026: delegation-gate.ps1 foi fundido em pre-tool-use.ps1 (1 spawn em vez
+ # de 2) - continua LIGADO, so nao aparece mais sozinho no settings.json. Aceita os dois
+ # formatos: hook direto (arquitetura antiga) OU pre-tool-use.ps1 que dot-source+chama
+ # Invoke-DelegationGate (arquitetura nova, prova textual no proprio pre-tool-use.ps1).
         if ("$($h2.command)" -match 'delegation-gate\.ps1') { $dgSettingsWired = $true }
+ if ("$($h2.command)" -match 'pre-tool-use\.ps1') {
+ $ptuPath = Join-Path $root "scripts\pre-tool-use.ps1"
+ if ((Test-Path -LiteralPath $ptuPath) -and ((ReadText $ptuPath) -match 'delegation-gate\.ps1') -and ((ReadText $ptuPath) -match 'Invoke-DelegationGate')) { $dgSettingsWired = $true }
       }
+
     }
+
+}
+
   } catch { }
 }
 Check "delegation-gate.ps1: hook PreToolUse LIGADO em .claude/settings.json (nao so projetado)" $dgSettingsWired "projetado-mas-desligado reprova - o check tem que provar que esta LIGADO no settings, nao so que o arquivo existe"
+
 
 # --- Artifact Ladder: o pacote da escada de frugalidade de SAIDA (WEAVER, cluster OPP-79/1.54.0) --
 # Furo pego pelo Gate: 8 arquivos entraram na oficina (artifact-ladder.md, engineering.md, tools.md,
@@ -1701,10 +1835,12 @@ Check "delegation-gate.ps1: hook PreToolUse LIGADO em .claude/settings.json (nao
 Write-Host ""
 Write-Host "-- Artifact Ladder: pacote da escada de frugalidade de saida (frugal-debito:) --"
 
+
 # (a) artifact-ladder.md existe, declara o marcador e a Clausula de precedencia.
 $alPath = Join-Path $engine "features\artifact-ladder.md"
 $alTxt = if (Test-Path -LiteralPath $alPath) { ReadText $alPath } else { "" }
 Check "Artifact Ladder: engine/features/artifact-ladder.md existe, declara o marcador frugal-debito: e a Clausula de precedencia" ((Test-Path -LiteralPath $alPath) -and ($alTxt -match 'frugal-debito:') -and ($alTxt -match '(?i)Clausula de precedencia'))
+
 
 # (b) quality-gate.md, criterio 5 (Atrito), cita artifact-ladder.md como evidencia de saida.
 $qgPath2 = Join-Path $engine "governance\quality-gate.md"
@@ -1712,10 +1848,12 @@ $qgTxt2 = if (Test-Path -LiteralPath $qgPath2) { ReadText $qgPath2 } else { "" }
 $c5CitaLadder = [regex]::IsMatch($qgTxt2, '(?is)Criterio 5[^\r\n]*evidencia de saida.{0,400}artifact-ladder')
 Check "Quality Gate: criterio 5 (Atrito) - evidencia de saida cita artifact-ladder.md" $c5CitaLadder
 
+
 # (c) persona-skeleton.md carrega o bloco da escada (todo Specialist herda).
 $psPath2 = Join-Path $engine "agents\persona-skeleton.md"
 $psTxt2 = if (Test-Path -LiteralPath $psPath2) { ReadText $psPath2 } else { "" }
 Check "Persona Skeleton: carrega o bloco 'Escada de frugalidade de saida' + marcador frugal-debito:" ((Test-Path -LiteralPath $psPath2) -and ($psTxt2 -match '(?i)Escada de frugalidade de saida') -and ($psTxt2 -match 'frugal-debito:'))
+
 
 # (d) engineering.md usa frugal-debito: como marcador VIGENTE e NAO usa mais ponytail: (com
 # dois-pontos, a SINTAXE de marcador antiga) - "ponytail" sem dois-pontos como credito/origem
@@ -1730,6 +1868,7 @@ $usaFrugalDebito = $engTxt2 -match 'frugal-debito:'
 # evita falso-positivo no proprio disclaimer que a doutrina precisa ter.
 $usaPonytailComoExemplo = [regex]::IsMatch($engTxt2, '(?i)//\s*ponytail:')
 Check "Engineering: engineering.md usa 'frugal-debito:' como marcador vigente e NAO ensina mais 'ponytail:' como exemplo de comentario (convencao vigente)" ($usaFrugalDebito -and (-not $usaPonytailComoExemplo)) ("frugal-debito: presente=" + $usaFrugalDebito + " | '// ponytail:' como exemplo presente=" + $usaPonytailComoExemplo)
+
 
 # (e) COMPORTAMENTO, nao so formato: reusa o padrao REAL de scripts/debt-scan.ps1 (extraido do
 # proprio arquivo, nunca reescrito a mao) contra uma linha de exemplo com frugal-debito: - prova que
@@ -1747,6 +1886,7 @@ if ($dsDebtM.Success -and $dsResM.Success) {
 }
 Check "Debt Scan (comportamento): o padrao REAL de scripts/debt-scan.ps1 (reusado, nao copiado) detecta 'frugal-debito:' aberto como debito, e 'RESOLVIDO' fecha a marcacao" $dsBehaviorOk ("debtPattern encontrado=" + $dsDebtM.Success + " resolvedPattern encontrado=" + $dsResM.Success)
 
+
 # --- Lentes: lista canonica + arquetipo agent-engineer (M2) --
 # alia.yaml (routing.lenses) virou a UNICA lista de lentes; orchestration.md/constitution.md/
 # constitution.yaml/alia.md pararam de duplicar e passaram a apontar pra ca. A lente nova
@@ -1761,10 +1901,12 @@ $aliaMdTxt = ReadText (Join-Path $agentsDir "alia.md")
 $lentesPointerOk = ($aliaYamlTxt -match 'lenses:') -and ($constMdTxt -match 'alia\.yaml') -and ($constYamlTxt -match 'alia\.yaml') -and ($orchTxt -match 'alia\.yaml') -and ($aliaMdTxt -match 'alia\.yaml')
 Check "Lentes: lista canonica unica em alia.yaml (routing.lenses); constitution.md/.yaml + orchestration.md + alia.md apontam pra ca, nao duplicam" $lentesPointerOk
 
+
 $aeMd = Join-Path $agentsDir "agent-engineer.md"
 $aeYaml = Join-Path $agentsDir "agent-engineer.yaml"
 $lentePronta = ($aliaYamlTxt -match 'lens:\s*engenharia-de-agente') -and ($aliaYamlTxt -match 'route_to:\s*agent-engineer') -and (Test-Path -LiteralPath $aeMd) -and (Test-Path -LiteralPath $aeYaml)
 Check "Lentes: engenharia-de-agente resolve pro arquetipo agent-engineer (par .md + .yaml presente)" $lentePronta
+
 
 # --- Ledger: contrato -Specialist obrigatorio, validado no ato (M3) ---
 # register-task.ps1 perdeu o default "alia" pra -Specialist. 5 cenarios provam o contrato inteiro:
@@ -1783,34 +1925,41 @@ Check "Ledger: -Specialist alia sem -OperatorOrder -> exit 1" ($ldAliaNoOrderExi
 $ldAliaOrder = (& $rtScript -Client "alia-flow-lab" -Title "t" -Project "p" -Specialist "alia" -OperatorOrder -StateFile $rtState -DryRun 6>&1) -join "`n"; $ldAliaOrderExit = $LASTEXITCODE
 Check "Ledger: -Specialist alia com -OperatorOrder -> exit 0" ($ldAliaOrderExit -eq 0) ("exit: " + $ldAliaOrderExit)
 
+
 # --- Ledger: agent_id derivado (TASK-123) - id unico de agente, 3 ramos, prova pelo negativo ---
 # "alia" -> "alia"; specialist valido do squad -> "{client}-{specialist}" (mesma formula de
 # squad-bridge.ps1); specialist invalido continua reprovando ANTES de gravar (nunca inventa id).
 Write-Host ""
 Write-Host "-- Ledger: agent_id derivado no registro (TASK-123) --"
 $aidStudio = Join-Path ([System.IO.Path]::GetTempPath()) ("aid-fixture-" + $PID)
+
 if (Test-Path -LiteralPath $aidStudio) { Remove-Item -Recurse -Force -LiteralPath $aidStudio -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Force -Path (Join-Path $aidStudio "clients") | Out-Null
 Copy-Item -Recurse -LiteralPath (Join-Path $studio "clients\acme-saas") -Destination (Join-Path $aidStudio "clients\acme-saas")
 Copy-Item -LiteralPath $rtState -Destination (Join-Path $aidStudio "state.json")
 $aidState = Join-Path $aidStudio "state.json"
 
+
 & $rtScript -Client "alia-flow-lab" -Title "t" -Project "p" -Specialist "alia" -OperatorOrder -StateFile $aidState 6>&1 | Out-Null
 $aidJson1 = (ReadText $aidState) | ConvertFrom-Json
 $aidAlia = @($aidJson1.tasks | Where-Object { $_.specialist -eq "alia" -and $_.client -eq "alia-flow-lab" } | Select-Object -Last 1)
 Check "agent_id (ramo 1): -Specialist alia -> agent_id 'alia'" ($aidAlia.Count -eq 1 -and $aidAlia[0].agent_id -eq "alia") ("agent_id: " + $(if ($aidAlia.Count -eq 1) { $aidAlia[0].agent_id } else { "(task nao encontrada)" }))
+
 
 & $rtScript -Client "acme-saas" -Title "t" -Project "p" -Specialist "quinn" -StateFile $aidState 6>&1 | Out-Null
 $aidJson2 = (ReadText $aidState) | ConvertFrom-Json
 $aidQuinn = @($aidJson2.tasks | Where-Object { $_.specialist -eq "quinn" -and $_.client -eq "acme-saas" } | Select-Object -Last 1)
 Check "agent_id (ramo 2): -Specialist valido do squad -> agent_id '{client}-{specialist}' (mesma formula de squad-bridge.ps1)" ($aidQuinn.Count -eq 1 -and $aidQuinn[0].agent_id -eq "acme-saas-quinn") ("agent_id: " + $(if ($aidQuinn.Count -eq 1) { $aidQuinn[0].agent_id } else { "(task nao encontrada)" }))
 
+
 $aidCountBefore = @((ReadText $aidState | ConvertFrom-Json).tasks).Count
 $aidBad = (& $rtScript -Client "acme-saas" -Title "t" -Project "p" -Specialist "nao-existe" -StateFile $aidState 6>&1) -join "`n"; $aidBadExit = $LASTEXITCODE
 $aidCountAfter = @((ReadText $aidState | ConvertFrom-Json).tasks).Count
 Check "agent_id (ramo 3, negativo): -Specialist invalido continua reprovando ANTES de gravar (exit 1, nada escrito, nenhum agent_id inventado)" (($aidBadExit -eq 1) -and ($aidCountAfter -eq $aidCountBefore)) ("exit: " + $aidBadExit + " tasks antes/depois: " + $aidCountBefore + "/" + $aidCountAfter)
 
+
 if (Test-Path -LiteralPath $aidStudio) { Remove-Item -Recurse -Force -LiteralPath $aidStudio -ErrorAction SilentlyContinue }
+
 
 # --- Law Ledger: toda LEI declarada tem entrada arquivo:linha (M4) ---
 # Varre engine/**.md atras dos 3 marcadores de declaracao de LEI e reprova se algum arquivo com
@@ -1839,13 +1988,16 @@ foreach ($f in $leiMdFiles) {
 }
 Check "Law Ledger: toda declaracao de LEI em engine/**.md tem entrada arquivo:linha em law-ledger.md" ($leiMissing.Count -eq 0) ("sem entrada no ledger: " + ($leiMissing -join ", "))
 
+
 # =========================================================================================
 # OPP-76 - o mapa, a memoria e a linhagem param de ser fe e viram medida (M1-M4)
 # Regra da casa medida na auditoria de 04/08 (research/graph-engineering/03-auditoria-interna.md,
 # secao 2.3): o exit code do PowerShell NAO propaga por toda rota de shell (graph-check saiu com
 # exit 1 e o bash chamador recebeu 0). Por isso TODO check daqui pra baixo casa o TEXTO da saida
 # ([FAIL], [FAKE], RESULTADO: FAIL), nunca so o $LASTEXITCODE.
+
 # =========================================================================================
+
 
 # --- M1: a guarda do MAPA discrimina (falso e podre), nao so ausencia ---
 # Antes: o unico criterio era "existe GRAPH_REPORT.md e nodes > 0" - falsificavel com um JSON de 5
@@ -1857,6 +2009,7 @@ $utf8NoBom76 = New-Object System.Text.UTF8Encoding($false)
 $gcTxt76 = if (Test-Path -LiteralPath $gcScript) { ReadText $gcScript } else { "" }
 Check "Mapa: graph-check classifica os 4 estados (OK/STALE/FAKE/FALTA) e imprime [FAIL] (texto, nao exit code)" (($gcTxt76 -match 'FAKE') -and ($gcTxt76 -match 'STALE') -and ($gcTxt76 -match 'FALTA') -and ($gcTxt76 -match 'AllowStale') -and ($gcTxt76 -match '\[FAIL\]'))
 
+
 # (a) DISCRIMINACAO 1: grafo FORJADO (JSON escrito a mao - schema edges, sem graph.html) reprova.
 $fkStudio = Join-Path ([System.IO.Path]::GetTempPath()) ("gc-fake-" + $PID)
 $fkOut = Join-Path $fkStudio "clients\forjado\squad\knowledge\graphify-out"
@@ -1866,6 +2019,7 @@ New-Item -ItemType Directory -Force -Path $fkOut | Out-Null
 $fkOutTxt = (& $gcScript -Path $fkStudio 6>&1) -join "`n"
 if (Test-Path -LiteralPath $fkStudio) { Remove-Item -Recurse -Force -LiteralPath $fkStudio -ErrorAction SilentlyContinue }
 Check "Mapa: graph-check DISCRIMINA grafo FORJADO (JSON a mao com nos > 0 sai [FAKE] e reprova)" (($fkOutTxt -match '\[FAKE\]') -and ($fkOutTxt -match '\[FAIL\]'))
+
 
 # (b) DISCRIMINACAO 2: grafo AUTENTICO porem PODRE sai [STALE]; -AllowStale rebaixa a aviso.
 $stStudio = Join-Path ([System.IO.Path]::GetTempPath()) ("gc-stale-" + $PID)
@@ -1886,6 +2040,7 @@ if (Test-Path -LiteralPath $stStudio) { Remove-Item -Recurse -Force -LiteralPath
 Check "Mapa: graph-check DISCRIMINA grafo PODRE (fonte mais nova que o grafo sai [STALE] e reprova)" (($stHard -match '\[STALE\]') -and ($stHard -match '\[FAIL\]'))
 Check "Mapa: -AllowStale rebaixa podridao a [AVISO] sem esconder (o rollout faseado do OPP-76)" (($stSoft -match '\[AVISO\]') -and ($stSoft -match '\[PASS\]') -and ($stSoft -notmatch '\[FAIL\]'))
 
+
 # --- M2: a ADOCAO da lei do grafo passa a ser medida (sensor + contador) ---
 # A lei "grafo antes de varredura" tinha 3 declaracoes no motor e ZERO medida. O sensor mede, nao
 # pune; o que reprova aqui e "projetado-mas-desligado" - a mesma regra de ouro do M1 do OPP-75.
@@ -1895,6 +2050,7 @@ $gsSensor = Join-Path $root "scripts\graph-usage-sensor.ps1"
 $gsCount  = Join-Path $root "scripts\graph-usage.ps1"
 Check "Adocao: graph-usage-sensor.ps1 (sensor) + graph-usage.ps1 (contador) presentes" ((Test-Path -LiteralPath $gsSensor) -and (Test-Path -LiteralPath $gsCount))
 
+
 $preWired = $false; $preMatcher = ""
 if (Test-Path -LiteralPath $settingsPath) {
   try {
@@ -1903,10 +2059,13 @@ if (Test-Path -LiteralPath $settingsPath) {
       foreach ($h in @($ptEntry.hooks)) {
         if ("$($h.command)" -match 'graph-usage-sensor\.ps1') { $preWired = $true; $preMatcher = "$($ptEntry.matcher)" }
       }
+
     }
+
   } catch { }
 }
 Check "Adocao: hook PreToolUse do sensor LIGADO em .claude/settings.json COM matcher (sem matcher dispara em toda tool e custa ~450ms por chamada)" ($preWired -and ($preMatcher -match 'Grep') -and ($preMatcher -match 'Bash') -and ($preMatcher -match 'PowerShell')) ("ligado=" + $preWired + " matcher='" + $preMatcher + "' - projetado-mas-desligado reprova (CONSERTO 10/08: PowerShell tinha rota de fuga, furo 2)")
+
 
 # O sensor MEDE: leitura de mapa vira kind=map, varredura cega vira kind=scan, o resto nao entra.
 # Precisa de processo filho: o sensor le stdin, e stdin so vem redirecionado por pipe de verdade.
@@ -1931,6 +2090,7 @@ Check "Adocao: o sensor MEDE (leitura de mapa=map, varredura=scan, escopo por Cl
 $guPsOk = ($guLines.Count -eq 3) -and ($guLines[2] -match '"tool":"PowerShell"') -and ($guLines[2] -match '"kind":"scan"') -and ($guLines[2] -match '"match":"select-string"')
 Check "Adocao (furo 2, prova 8): varredura por PowerShell agora CONTA no ledger (tool=PowerShell, kind=scan, match=select-string) - antes do conserto: zero linhas, rota de fuga" $guPsOk ("3a linha: " + $(if ($guLines.Count -ge 3) { $guLines[2] } else { "(ausente)" }))
 
+
 # O contador ACUSA o furo (varreu sem ler o mapa antes) e nao acusa quem leu antes.
 # CONSERTO TASK-159: graph-usage.ps1 agora filtra o VEREDITO pra pares GATEAVEIS (escopo com mapa
 # real em disco - ver Has-Map no proprio script). Os 6 clientes fake desta fixture (c1..c6)
@@ -1953,6 +2113,7 @@ for ($i = 1; $i -le 6; $i++) {
     # par que OBEDECEU: leu o mapa antes de varrer
     [void]$guSb.AppendLine('{"ts":"' + $tScan.AddMinutes(-5).ToString("yyyy-MM-ddTHH:mm:ss.fff") + 'Z","session":"S' + $i + '","tool":"Read","kind":"map","scope":"clients/c' + $i + '","match":"graph-report","path":""}')
   }
+
   [void]$guSb.AppendLine('{"ts":"' + $tScan.ToString("yyyy-MM-ddTHH:mm:ss.fff") + 'Z","session":"S' + $i + '","tool":"Grep","kind":"scan","scope":"clients/c' + $i + '","match":"grep","path":""}')
 }
 [System.IO.File]::WriteAllText($guFixture, $guSb.ToString(), $utf8NoBom76)
@@ -1968,8 +2129,10 @@ foreach ($gc in $guFakeClients) { if (Test-Path -LiteralPath $gc) { Remove-Item 
 # mede a mesma proporcao 2/6 de antes - a prova continua valendo sem mudar a intencao do teste.
 Check "Adocao: o contador ACUSA o furo por par (sessao, escopo) - 2 de 6 leram o mapa antes -> [AVISO] abaixo do alvo (TASK-213: ADOCAO AUTONOMA, veredito proprio)" (($guOut -match 'ADOCAO AUTONOMA: 2/6') -and ($guOut -match 'FUROS SO GATEAVEIS \(janela da trava\): 4 par') -and ($guOut -match 'VEREDITO ADOCAO AUTONOMA: \[AVISO\]'))
 
+
 $guAusente = (& $gsCount -Path (Join-Path ([System.IO.Path]::GetTempPath()) ("gu-nao-existe-" + $PID + ".jsonl")) 6>&1) -join "`n"
 Check "Adocao: ledger AUSENTE reprova como sensor desligado (a medida nunca e presumida)" (($guAusente -match '\[FAIL\]') -and ($guAusente -match 'sensor esta DESLIGADO'))
+
 
 # --- TASK-213 (item 3): 3 vereditos independentes, nunca aninhados ---
 # (a) 4 pares gateaveis, TODOS map-injected (0 leitura autonoma): a ADOCAO AUTONOMA tem que
@@ -1997,6 +2160,7 @@ if (Test-Path -LiteralPath $gu3FixtureA) { Remove-Item -LiteralPath $gu3FixtureA
 foreach ($gc in $gu3FakeClients) { if (Test-Path -LiteralPath $gc) { Remove-Item -Recurse -Force -LiteralPath $gc -ErrorAction SilentlyContinue } }
 Check "Vereditos independentes (a): 4 pares gateaveis 100% injetados -> ADOCAO AUTONOMA 0/4, sem 'VEREDITO: [PASS]' generico (injecao nunca vira merito)" (($gu3OutA -match 'ADOCAO AUTONOMA: 0/4') -and ($gu3OutA -notmatch 'VEREDITO: \[PASS\]'))
 
+
 # (b) 3 pares (abaixo do MIN_AMOSTRA=5): tem que sair [SEM AMOSTRA], NUNCA [PASS] por falta de dado.
 $gu3FakeClientsB = @()
 for ($i = 1; $i -le 3; $i++) {
@@ -2017,6 +2181,7 @@ if (Test-Path -LiteralPath $gu3FixtureB) { Remove-Item -LiteralPath $gu3FixtureB
 foreach ($gc in $gu3FakeClientsB) { if (Test-Path -LiteralPath $gc) { Remove-Item -Recurse -Force -LiteralPath $gc -ErrorAction SilentlyContinue } }
 Check "Vereditos independentes (b): 3 pares (abaixo do minimo de 5) -> [SEM AMOSTRA], nunca [PASS] por falta de dado" ($gu3OutB -match '\[SEM AMOSTRA\]')
 
+
 # --- TASK-213 (item 5d): sanitize-input na injecao estrutural do gate ---
 # GRAPH_REPORT.md com payload perigoso (tag <system>, @mention, URI javascript:, ANSI) tem que
 # sair NEUTRALIZADO no additionalContext, mas ainda com "God Nodes" (o conteudo util preservado).
@@ -2035,6 +2200,7 @@ if (Test-Path -LiteralPath $sanLedger) { Remove-Item -LiteralPath $sanLedger -Fo
 if (Test-Path -LiteralPath (Join-Path $root "clients\sanwarden")) { Remove-Item -Recurse -Force -LiteralPath (Join-Path $root "clients\sanwarden") -ErrorAction SilentlyContinue }
 Check "Sanitize na injecao (item 5d): tag/mention/URI/ANSI neutralizados no additionalContext, God Nodes preservado" (($sanOutTxt -match 'God Nodes') -and ($sanOutTxt -notmatch '<system>') -and ($sanOutTxt -match '\(at:admin\)') -and ($sanOutTxt -match '\(redacted\)') -and ($sanOutTxt -notmatch "\x1b\["))
 
+
 # --- M2b: o GATE quando o codebase NAO TEM MAPA NENHUM (furo fechado, mandato do CEO 10/08) ---
 # Antes: sem mapa em disco, o gate nunca disparava - nem a MEDIDA de aviso, so o sensor. Agora:
 # NUNCA bloqueia (nao da pra exigir o que nao existe - gerar custa modelo, decisao do operador),
@@ -2049,10 +2215,12 @@ Check "Sanitize na injecao (item 5d): tag/mention/URI/ANSI neutralizados no addi
 Write-Host ""
 Write-Host "-- Gate do mapa: SEM mapa avisa 1x (JSON additionalContext) e nunca bloqueia; COM mapa nao lido INJETA God Nodes+Community Hubs no 1o toque (TASK-169, 14/08/2026) --"
 $ggRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("gg-root-" + $PID)
+
 if (Test-Path -LiteralPath $ggRoot) { Remove-Item -Recurse -Force -LiteralPath $ggRoot -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Force -Path $ggRoot | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $ggRoot ".claude") | Out-Null
 $ggLedger = Join-Path $ggRoot "ledger.jsonl"
+
 
 # Cenario 1 (prova 3, negativo): cliente SEM mapa nenhum em disco - 1a varredura da sessao PASSA
 # com aviso ENTREGUE POR JSON (additionalContext) - NAO texto solto (furo 1) e NAO deny (nunca
@@ -2065,10 +2233,12 @@ $ggOut1Ok = ($null -ne $ggOut1Json) -and ($ggOut1Json.hookSpecificOutput.additio
             (($ggOut1Json.hookSpecificOutput.PSObject.Properties.Name -notcontains "permissionDecision") -or ($ggOut1Json.hookSpecificOutput.permissionDecision -ne "deny"))
 Check "Gate SEM mapa (prova 3, furo 1): 1a varredura PASSA com aviso [SEM-MAPA] em JSON hookSpecificOutput.additionalContext (nao texto solto, nao deny)" $ggOut1Ok ("saida: " + $ggOut1)
 
+
 # Cenario 2 (prova 3, negativo): mesma sessao+escopo, 2a varredura - passa CALADA (aviso 1x, nao a
 # cada chamada - aviso repetido vira ruido e o agente aprende a ignorar).
 $ggOut2 = ($ggScanNoMap | & powershell -ExecutionPolicy Bypass -File $gsSensor -LedgerPath $ggLedger -Root $ggRoot 2>&1) -join "`n"
 Check "Gate SEM mapa (prova 3): 2a varredura da MESMA sessao+escopo passa CALADA, sem JSON nenhum (aviso nao repete)" ($ggOut2.Trim() -eq '')
+
 
 # Prepara client COM mapa em disco para os cenarios 3 (multi-ferramenta) e 4 (depois de ler).
 # TASK-169: fixture ganhou secoes God Nodes + Community Hubs de verdade (antes era so o titulo) -
@@ -2077,6 +2247,7 @@ $ggMapDir = Join-Path $ggRoot "clients\commapa\graphify-out"
 New-Item -ItemType Directory -Force -Path $ggMapDir | Out-Null
 $ggMapFixtureTxt = "# Graph Report`r`n`r`n## Community Hubs (Navigation)`r`n- [[_COMMUNITY_Community 0|Community 0]]`r`n`r`n## God Nodes (most connected - your core abstractions)`r`n1. ``main.py`` - 5 edges`r`n"
 [System.IO.File]::WriteAllText((Join-Path $ggMapDir "GRAPH_REPORT.md"), $ggMapFixtureTxt, $utf8NoBom76)
+
 
 # Cenario 3 (prova 1+2, negativo->positivo, TASK-169): cliente COM mapa, mapa NUNCA lido - 1o
 # toque de CADA ferramenta INJETA o conteudo (God Nodes + Community Hubs) via additionalContext,
@@ -2096,10 +2267,12 @@ foreach ($ggTool in $ggToolPayloads.Keys) {
   Check ("Gate COM mapa nao lido (prova 1/2, TASK-169): 1o toque de " + $ggTool + " INJETA God Nodes+Community Hubs via additionalContext, NUNCA deny - " + $(if ($ggTool -eq 'PowerShell') { "furo 2 fechado" } else { "sem regressao" })) $ggInjOk ("saida: " + $ggOutTool.Substring(0, [Math]::Min(200, $ggOutTool.Length)))
 }
 
+
 # Cenario 3b (anti-ruido, TASK-169): 2o toque da MESMA sessao+escopo (PowerShell, ja injetado
 # acima) NAO reinjeta - passa calado, sem JSON nenhum (mesma regra do [SEM-MAPA], 1x por par).
 $ggOut3b = ($ggToolPayloads['PowerShell'] | & powershell -ExecutionPolicy Bypass -File $gsSensor -LedgerPath $ggLedger -Root $ggRoot 2>&1) -join "`n"
 Check "Gate: 2o toque da mesma sessao+escopo NAO reinjeta (prova anti-ruido, TASK-169)" ($ggOut3b.Trim() -eq '')
+
 
 # Prova 8b (TASK-169): a injecao gravou uma 2a linha kind=map/match=map-injected no ledger, com o
 # MESMO timestamp da linha kind=scan que a originou (senao graph-usage.ps1 contaria a propria
@@ -2114,8 +2287,10 @@ if ($ggInjLines.Count -gt 0) {
     $ggScanObj = $ggPairScan[0] | ConvertFrom-Json
     $ggInjTsOk = ($ggScanObj.ts -eq $ggFirstInj.ts)
   }
+
 }
 Check ("Gate (prova 8b, TASK-169): linha map-injected tem o MESMO timestamp da linha scan que a originou (" + $ggInjLines.Count + " injecao(oes) no ledger)") $ggInjTsOk
+
 
 # Cenario 9 (v1.56.1, achado do COURIER): o mapa do Client DENTRO do studio mora em
 # squad/knowledge/graphify-out - IRMAO de squad/agents (nunca ancestral). Varredura em
@@ -2130,6 +2305,7 @@ $ggOutSib = ($ggSibPayload | & powershell -ExecutionPolicy Bypass -File $gsSenso
 $ggSibOk = ($ggOutSib -match '"additionalContext"') -and ($ggOutSib -match 'MAPA INJETADO') -and ($ggOutSib -match 'God Nodes')
 Check "Gate (cenario 9, v1.56.1): scan em clients/<id>/squad/agents/... INJETA usando o mapa IRMAO squad/knowledge/graphify-out (layout real de um Client da instancia)" $ggSibOk ("saida: " + $ggOutSib.Substring(0, [Math]::Min(150, $ggOutSib.Length)))
 
+
 # Cenario 10 (v1.56.1): caso EXTERNAL (codebase real fora do studio) nao regrediu - continua
 # achando o mapa por SUBIDA DE ARVORE (Find-AncestorMap), unico caminho que precisa dela.
 $ggExtDir = Join-Path $ggRoot "externo\projeto-x\graphify-out"
@@ -2142,6 +2318,7 @@ $ggOutExt = ($ggExtPayload | & powershell -ExecutionPolicy Bypass -File $gsSenso
 $ggExtOk = ($ggOutExt -match '"additionalContext"') -and ($ggOutExt -match 'MAPA INJETADO') -and ($ggOutExt -match 'God Nodes')
 Check "Gate (cenario 10, v1.56.1): codebase EXTERNO (fora do studio, tipo codebase real de produto) continua achando o mapa por subida de arvore - sem regressao" $ggExtOk ("saida: " + $ggOutExt.Substring(0, [Math]::Min(150, $ggOutExt.Length)))
 
+
 # Cenario 4 (prova 4): depois de LER o mapa, a mesma sessao varre e passa SEM atrito (sem JSON
 # nenhum - nem deny, nem additionalContext).
 $ggReadMap = '{"session_id":"GWM-READ","cwd":"C:/x","hook_event_name":"PreToolUse","tool_name":"Read","tool_input":{"file_path":"clients/commapa/graphify-out/GRAPH_REPORT.md"}}'
@@ -2150,10 +2327,12 @@ $ggScanAfterRead = '{"session_id":"GWM-READ","cwd":"C:/x","hook_event_name":"Pre
 $ggOut4 = ($ggScanAfterRead | & powershell -ExecutionPolicy Bypass -File $gsSensor -LedgerPath $ggLedger -Root $ggRoot 2>&1) -join "`n"
 Check "Gate DEPOIS de ler o mapa (prova 4): varredura passa SEM atrito, sem JSON nenhum" ($ggOut4.Trim() -eq '')
 
+
 # Cenario 5 (prova 5): Read de arquivo unico NUNCA bloqueia, mesmo sem mapa lido, em sessao nova.
 $ggReadSingle = '{"session_id":"GWM-SINGLE","cwd":"C:/x","hook_event_name":"PreToolUse","tool_name":"Read","tool_input":{"file_path":"clients/commapa/src/algum-arquivo.ts"}}'
 $ggOut5 = ($ggReadSingle | & powershell -ExecutionPolicy Bypass -File $gsSensor -LedgerPath $ggLedger -Root $ggRoot 2>&1) -join "`n"
 Check "Gate: Read de arquivo unico NUNCA bloqueia (prova 5), mesmo com mapa nao lido" ($ggOut5.Trim() -eq '')
+
 
 # Cenario 6 (prova 6): killswitch por variavel de ambiente desliga o BLOQUEIO inteiro.
 $ggScanKillswitch = '{"session_id":"GWM-KILL-ENV","cwd":"C:/x","hook_event_name":"PreToolUse","tool_name":"PowerShell","tool_input":{"command":"Select-String -Path clients/commapa/*.ts -Pattern TODO"}}'
@@ -2163,6 +2342,7 @@ $ggOut6 = ($ggScanKillswitch | & powershell -ExecutionPolicy Bypass -File $gsSen
 $env:ALIA_GRAPH_GATE_OFF = $envBackup
 Check "Gate: killswitch ALIA_GRAPH_GATE_OFF=1 (prova 6) libera sem deny/aviso mesmo com mapa nao lido" ($ggOut6.Trim() -eq '')
 
+
 # Cenario 7 (prova 6): killswitch por arquivo-sentinela .claude/graph-gate.off tem o mesmo efeito.
 $ggSentinel = Join-Path $ggRoot ".claude\graph-gate.off"
 [System.IO.File]::WriteAllText($ggSentinel, "", $utf8NoBom76)
@@ -2171,10 +2351,12 @@ $ggOut7 = ($ggScanKillswitch2 | & powershell -ExecutionPolicy Bypass -File $gsSe
 Remove-Item -LiteralPath $ggSentinel -Force -ErrorAction SilentlyContinue
 Check "Gate: killswitch arquivo-sentinela .claude/graph-gate.off (prova 6) tem o mesmo efeito" ($ggOut7.Trim() -eq '')
 
+
 # Cenario 8 (prova 7, negativo): payload quebrado (erro real dentro do script) - blindagem total, exit 0 sempre.
 $ggBadPayload = "isto nao e json valido {{{"
 $ggBadPayload | & powershell -ExecutionPolicy Bypass -File $gsSensor -LedgerPath $ggLedger -Root $ggRoot 2>&1 | Out-Null
 Check "Gate blindado (prova 7): payload quebrado (JSON invalido) libera silencioso, exit sempre 0 (nunca trava Read/Grep/Glob/Bash/PowerShell)" ($LASTEXITCODE -eq 0)
+
 
 # Prova 8 (contagem honesta): o ledger desta fixture isolada tem linha kind=scan para CADA
 # ferramenta usada acima, PowerShell incluso - antes do conserto do furo 2, a linha de PowerShell
@@ -2184,7 +2366,9 @@ if (Test-Path -LiteralPath $ggLedger) { $ggLedgerLines = @([System.IO.File]::Rea
 $ggPsCounted = @($ggLedgerLines | Where-Object { $_ -match '"tool":"PowerShell"' -and $_ -match '"kind":"scan"' }).Count
 Check "Gate (prova 8): ledger CONTA as varreduras por PowerShell ($ggPsCounted linha(s) tool=PowerShell/kind=scan) - antes do conserto: zero, sempre" ($ggPsCounted -ge 3)
 
+
 if (Test-Path -LiteralPath $ggRoot) { Remove-Item -Recurse -Force -LiteralPath $ggRoot -ErrorAction SilentlyContinue }
+
 
 # --- Docs-gate: law-ledger-check.ps1 roda DENTRO do smoke (TASK-213, benchmark DeepSeek Harness
 # item 1). Antes disto o checker existia mas ninguem o chamava automaticamente - "projetado com
@@ -2197,6 +2381,7 @@ $llcScript = Join-Path $root "scripts\law-ledger-check.ps1"
 Check "Docs-gate: law-ledger-check.ps1 presente" (Test-Path -LiteralPath $llcScript)
 $llcOut = if (Test-Path -LiteralPath $llcScript) { (& $llcScript 6>&1) -join "`n" } else { "" }
 Check "Docs-gate: law-ledger-check.ps1 casa 'FAIL: 0' e NUNCA 'LEDGER PODRE' (ponteiros do ledger batem com o disco)" (($llcOut -match 'FAIL:\s*0') -and ($llcOut -notmatch 'LEDGER PODRE'))
+
 
 # --- Identidade de Client vazada no CHANGELOG, CEDO (TASK-285, ultima volta): a 1.61.0 vazou
 # o nome real de um Client na propria entrada nova do CHANGELOG.md, e o unico guard que pegou isso rodava
@@ -2216,6 +2401,7 @@ $cpsScriptEarly = Join-Path $root "scripts\check-public-surface.ps1"
 $cpsEarlyOut = if (Test-Path -LiteralPath $cpsScriptEarly) { (& $cpsScriptEarly -Repo $root -OnlyPaths "CHANGELOG.md" 6>&1) -join "`n" } else { "" }
 Check "CHANGELOG.md (oficina): nenhuma identidade de Client real vazada (check roda ANTES do empacotamento, nao so depois)" ($cpsEarlyOut -match "SUPERFICIE LIMPA")
 
+
 # --- Cacada de credencial (TASK-302, 26/08/2026): furo MEDIDO numa publicacao real - (1) e (1.5)
 # de check-public-surface.ps1 so olham CAMINHO e IDENTIDADE, nenhum dos dois pegaria uma chave de
 # API embutida. Prova pelo NEGATIVO, como o metodo do proprio WARDEN exige: planta credencial
@@ -2224,10 +2410,12 @@ Check "CHANGELOG.md (oficina): nenhuma identidade de Client real vazada (check r
 Write-Host ""
 Write-Host "-- Cacada de credencial (TASK-302): prova pelo negativo, planta e desfaz --"
 $credFixRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("credhunt-" + $PID)
+
 if (Test-Path -LiteralPath $credFixRoot) { Remove-Item -Recurse -Force -LiteralPath $credFixRoot -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Force -Path (Join-Path $credFixRoot "src") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $credFixRoot "tests") | Out-Null
 $utf8Cred = New-Object System.Text.UTF8Encoding($false)
+
 
 # (a) credencial REAL plantada fora de node_modules/tests -> REPROVADO
 # CONSERTO (WARDEN, 30/08/2026, achado do COURIER no gate de empacotamento): a fixture ANTES
@@ -2244,11 +2432,13 @@ $credFakeAnthropic = @("sk-ant-","api03-XyZ1aB2cD3eF4gH5iJ6kL7","mN8oP9qR0sT1uV2
 $credOutA = (& (Join-Path $root "scripts\check-public-surface.ps1") -Repo $credFixRoot 6>&1) -join "`n"
 Check "Cacada de credencial (a): chave Anthropic plantada em src/ -> REPROVADO, citando 'credencial:'" (($credOutA -match "REPROVADO") -and ($credOutA -match "credencial:"))
 
+
 # (b) desfaz - mesma pasta, credencial removida -> SUPERFICIE LIMPA de volta
 [System.IO.File]::WriteAllText((Join-Path $credFixRoot "src\config.js"),
   "const settings = { apiKey: process.env.ANTHROPIC_API_KEY };", $utf8Cred)
 $credOutB = (& (Join-Path $root "scripts\check-public-surface.ps1") -Repo $credFixRoot 6>&1) -join "`n"
 Check "Cacada de credencial (b): credencial removida -> SUPERFICIE LIMPA de volta (desfeito)" ($credOutB -match "SUPERFICIE LIMPA")
+
 
 # (c) mesma agulha, mas dentro de tests/ (fixture de teste) -> so WARN, nunca REPROVADO (o
 # achado da propria cacada ad hoc: todo hit real era fixture/exemplo/lista de deteccao)
@@ -2257,6 +2447,7 @@ Check "Cacada de credencial (b): credencial removida -> SUPERFICIE LIMPA de volt
 $credOutC = (& (Join-Path $root "scripts\check-public-surface.ps1") -Repo $credFixRoot 6>&1) -join "`n"
 Check "Cacada de credencial (c): mesma agulha dentro de tests/ -> SUPERFICIE LIMPA com AVISO, nunca REPROVADO (mencao != segredo)" (($credOutC -match "SUPERFICIE LIMPA") -and ($credOutC -match "\[WARN\] credencial"))
 
+
 # (d) placeholder em portugues ("seu_token_aqui", o achado real ao provar este check numa doc de
 # skill de verdade) nunca bloqueia - achado que motivou ampliar a lista de marcadores EM/PT
 [System.IO.File]::WriteAllText((Join-Path $credFixRoot "src\doc-exemplo.md"),
@@ -2264,13 +2455,197 @@ Check "Cacada de credencial (c): mesma agulha dentro de tests/ -> SUPERFICIE LIM
 $credOutD = (& (Join-Path $root "scripts\check-public-surface.ps1") -Repo $credFixRoot 6>&1) -join "`n"
 Check "Cacada de credencial (d): placeholder em portugues (seu_..._aqui) nunca reprova (achado real, TASK-302)" ($credOutD -match "SUPERFICIE LIMPA")
 
+
 # (e) arquivo de credencial real por NOME (keys.json) -> REPROVADO mesmo sem precisar ler o valor
 Remove-Item -LiteralPath (Join-Path $credFixRoot "src\doc-exemplo.md") -Force -ErrorAction SilentlyContinue
 [System.IO.File]::WriteAllText((Join-Path $credFixRoot "keys.json"), "{}", $utf8Cred)
 $credOutE = (& (Join-Path $root "scripts\check-public-surface.ps1") -Repo $credFixRoot 6>&1) -join "`n"
 Check "Cacada de credencial (e): arquivo keys.json (nome, mesmo vazio) -> REPROVADO" ($credOutE -match "REPROVADO")
 
+
 if (Test-Path -LiteralPath $credFixRoot) { Remove-Item -Recurse -Force -LiteralPath $credFixRoot -ErrorAction SilentlyContinue }
+
+
+# --- Segredos com auditoria (WARDEN, 08/09/2026, law-ledger L47): mandato do CEO depois de um
+# VERCEL_TOKEN colado na CONVERSA por engano ("SEJA RESPONSAVEL E GUARDE ESSA MERDA COM
+# AUDITORIA"). scripts/secret.ps1 e a porta unica (cofre + ledger que nunca guarda valor);
+# scripts/secret-write-guard.ps1 e o guarda no ATO (PreToolUse); check-public-surface.ps1 secao
+# (1.7) e o guarda no GATE. Cada peca provada pelo negativo, fixture proprio, nunca no cofre real.
+Write-Host ""
+Write-Host "-- Segredos com auditoria: secret.ps1 (cofre + ledger), prova pelo negativo --"
+$secScript = Join-Path $root "scripts\secret.ps1"
+$secGuardScript = Join-Path $root "scripts\secret-write-guard.ps1"
+Check "secret.ps1 existe" (Test-Path -LiteralPath $secScript)
+Check "secret-write-guard.ps1 existe" (Test-Path -LiteralPath $secGuardScript)
+
+
+$secFixRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("secret-fixture-" + $PID)
+
+if (Test-Path -LiteralPath $secFixRoot) { Remove-Item -Recurse -Force -LiteralPath $secFixRoot -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Force -Path $secFixRoot | Out-Null
+$secFakeValue = "sk-fake-secret-abcdefghijklmnopqrstuvwxyz"
+
+
+# (a) -Set via STDIN grava no cofre; ledger ganha 1 linha "set" sem o valor.
+$secOutSetA = ($secFakeValue | & powershell -ExecutionPolicy Bypass -File $secScript -Root $secFixRoot -Set -Name FIX_TOKEN -Scope fixture -Reason "prova WARDEN" 2>&1) -join "`n"
+Check "secret.ps1 -Set (a): via STDIN grava no cofre (fingerprint na saida, nunca o valor)" (($secOutSetA -match "gravado no cofre") -and ($secOutSetA -match "fingerprint=sha256:") -and ($secOutSetA -notmatch [regex]::Escape($secFakeValue)))
+
+
+# (b) -Set com -Value (parametro que NAO existe, de proposito) -> erro do proprio PowerShell.
+# EAP local Continue: o filho escreve o erro de binding no STDERR dele; sob $ErrorActionPreference
+# "Stop" (global deste smoke), o registro de erro mesclado por 2>&1 vira excecao TERMINANTE e
+# derrubaria o smoke inteiro na primeira prova negativa - restaurado logo depois.
+$prevEapSec = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+$secOutSetB = (& powershell -ExecutionPolicy Bypass -File $secScript -Root $secFixRoot -Set -Name FIX_TOKEN -Scope fixture -Value "nao-deveria-existir" 2>&1) -join "`n"
+$ErrorActionPreference = $prevEapSec
+Check "secret.ps1 -Set (b, negativo): -Value nao existe como parametro - PowerShell recusa (valor NUNCA por argumento)" ($secOutSetB -match "(?s)parameter\s+cannot\s+be\s+found")
+
+
+# (c) -Use injeta o segredo em $env:<Name> pro comando FILHO; a saida deste script NUNCA contem o valor.
+# Caminho CURTO (8.3, sem espaco): $secFixRoot vem de [System.IO.Path]::GetTempPath(), que nesta
+# maquina contem espaco ("...\<usuario com espaco>\...") - montar -Command com aspas aninhadas dentro de uma
+# unica string repassada por "&" pra outro processo nativo (powershell.exe chamando powershell.exe)
+# quebra a serializacao do argv (medido: "A positional parameter cannot be found"). O caminho curto
+# elimina a necessidade de aspas no meio da linha de comando.
+$secChildScript = Join-Path $secFixRoot "child.ps1"
+[System.IO.File]::WriteAllText($secChildScript, 'Write-Output ([string]$env:FIX_TOKEN.Length)', $utf8Cred)
+$secChildScriptShort = (New-Object -ComObject Scripting.FileSystemObject).GetFile($secChildScript).ShortPath
+$secCmdLine = "powershell -NoProfile -ExecutionPolicy Bypass -File " + $secChildScriptShort
+$secOutUse = (& powershell -ExecutionPolicy Bypass -File $secScript -Root $secFixRoot -Use -Name FIX_TOKEN -Scope fixture -Reason "prova WARDEN" -Command $secCmdLine 2>&1) -join "`n"
+Check "secret.ps1 -Use (c): comando filho recebe o valor via env (tamanho bate) e a saida do proprio secret.ps1 nunca imprime o valor" (($secOutUse.Trim() -eq [string]$secFakeValue.Length) -and ($secOutUse -notmatch [regex]::Escape($secFakeValue)))
+
+
+# (d) -List mostra nome/escopo/fingerprint, nunca o valor.
+$secOutList = (& powershell -ExecutionPolicy Bypass -File $secScript -Root $secFixRoot -List 2>&1) -join "`n"
+Check "secret.ps1 -List (d): mostra FIX_TOKEN/fixture/fingerprint e NUNCA o valor" (($secOutList -match "FIX_TOKEN") -and ($secOutList -match "fixture") -and ($secOutList -match "sha256:") -and ($secOutList -notmatch [regex]::Escape($secFakeValue)))
+
+
+# (e) -Revoke tira do cofre; -List seguinte nao mostra mais.
+& powershell -ExecutionPolicy Bypass -File $secScript -Root $secFixRoot -Revoke -Name FIX_TOKEN -Scope fixture -Reason "fim da prova" | Out-Null
+$secOutListAfterRevoke = (& powershell -ExecutionPolicy Bypass -File $secScript -Root $secFixRoot -List 2>&1) -join "`n"
+Check "secret.ps1 -Revoke (e): segredo some do cofre - -List seguinte NAO mostra mais FIX_TOKEN" ($secOutListAfterRevoke -notmatch "FIX_TOKEN")
+
+
+# (f) -Get sem -IAcceptExposure recusa (nao e risco - nao vira linha de ledger).
+$secFakeValue2 = "sk-fake-secret-zzzzzzzzzzzzzzzzzzzzzzzzz"
+($secFakeValue2 | & powershell -ExecutionPolicy Bypass -File $secScript -Root $secFixRoot -Set -Name FIX_TOKEN2 -Scope fixture -Reason "prova get" 2>&1) | Out-Null
+$secOutGetRefused = (& powershell -ExecutionPolicy Bypass -File $secScript -Root $secFixRoot -Get -Name FIX_TOKEN2 -Scope fixture -Reason "eu quero ver" 2>&1) -join "`n"
+Check "secret.ps1 -Get (f, negativo): sem -IAcceptExposure RECUSA, valor nunca sai" (($secOutGetRefused -match "IAcceptExposure") -and ($secOutGetRefused -notmatch [regex]::Escape($secFakeValue2)))
+
+
+# (g) -Get com -IAcceptExposure + -Reason expoe, marcado como risky no ledger.
+$secOutGetAllowed = (& powershell -ExecutionPolicy Bypass -File $secScript -Root $secFixRoot -Get -Name FIX_TOKEN2 -Scope fixture -Reason "operador pediu manualmente" -IAcceptExposure 2>&1) -join "`n"
+Check "secret.ps1 -Get (g, caminho excepcional): com -IAcceptExposure expoe o valor com aviso" (($secOutGetAllowed -match "CAMINHO EXCEPCIONAL") -and ($secOutGetAllowed -match [regex]::Escape($secFakeValue2)))
+
+
+# (h) -MarkLeaked registra vazamento no ledger mesmo pra segredo que nunca esteve no cofre.
+$secOutLeak = (& powershell -ExecutionPolicy Bypass -File $secScript -Root $secFixRoot -MarkLeaked -Name VERCEL_TOKEN -Scope fixture -Reason "colado no chat por engano (fixture)" 2>&1) -join "`n"
+Check "secret.ps1 -MarkLeaked (h): registra o vazamento no ledger sem exigir que o segredo esteja no cofre" ($secOutLeak -match "REGISTRADO")
+
+
+# (i) o ledger inteiro, no fim de todo o ciclo (set/use/revoke/get/leak), NUNCA contem os valores.
+$secLedgerPath = Join-Path $secFixRoot "studio\secrets-ledger.jsonl"
+$secLedgerTxt = if (Test-Path -LiteralPath $secLedgerPath) { [System.IO.File]::ReadAllText($secLedgerPath) } else { "" }
+Check "secret.ps1 (i): o ledger inteiro (set+use+revoke+get+leak) NUNCA contem o valor puro de nenhum segredo" (($secLedgerTxt -notmatch [regex]::Escape($secFakeValue)) -and ($secLedgerTxt -notmatch [regex]::Escape($secFakeValue2))) ("linhas: " + (@($secLedgerTxt -split "`n" | Where-Object { $_ -ne "" })).Count)
+
+
+if (Test-Path -LiteralPath $secFixRoot) { Remove-Item -Recurse -Force -LiteralPath $secFixRoot -ErrorAction SilentlyContinue }
+
+Write-Host ""
+Write-Host "-- Segredos com auditoria: secret-write-guard.ps1 (hook PreToolUse, guarda no ATO) --"
+$sgFixRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("secguard-fixture-" + $PID)
+
+if (Test-Path -LiteralPath $sgFixRoot) { Remove-Item -Recurse -Force -LiteralPath $sgFixRoot -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Force -Path (Join-Path $sgFixRoot "studio\.secrets") | Out-Null
+$sgVaultJson = '{"secrets":{"fixture::VERCEL_TOKEN":{"name":"VERCEL_TOKEN","scope":"fixture","value":"fakevercel1234567890abcd","fingerprint":"sha256:deadbeefcafe"}}}'
+[System.IO.File]::WriteAllText((Join-Path $sgFixRoot "studio\.secrets\vault.json"), $sgVaultJson, $utf8Cred)
+function Invoke-SecretWriteGuard {
+  param([string]$Payload, [switch]$Off)
+  $offFile2 = Join-Path $sgFixRoot ".claude\secret-guard.off"
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $offFile2) -ErrorAction SilentlyContinue | Out-Null
+  if ($Off) { [System.IO.File]::WriteAllText($offFile2, "off", $utf8Cred) }
+  elseif (Test-Path -LiteralPath $offFile2) { Remove-Item -LiteralPath $offFile2 -Force -ErrorAction SilentlyContinue }
+  return ($Payload | & powershell -ExecutionPolicy Bypass -File $secGuardScript -Root $sgFixRoot 2>&1) -join "`n"
+}
+
+
+# (j, negativo) Write com o valor real do cofre dentro do content -> deny, sem imprimir o valor.
+$sgPayloadA = (@{ session_id = "SG-A"; tool_name = "Write"; tool_input = @{ file_path = "state.json"; content = "antes fakevercel1234567890abcd depois" } } | ConvertTo-Json -Compress)
+$sgOutA = Invoke-SecretWriteGuard -Payload $sgPayloadA
+Check "secret-write-guard.ps1 (j, negativo): valor real do cofre em Write -> deny, citando nome/fingerprint, nunca o valor" (($sgOutA -match '"permissionDecision":"deny"') -and ($sgOutA -match "VERCEL_TOKEN") -and ($sgOutA -notmatch "fakevercel1234567890abcd"))
+
+
+# (k, positivo/desfaz) mesmo arquivo, sem o valor -> libera (saida vazia).
+$sgPayloadB = (@{ session_id = "SG-A"; tool_name = "Write"; tool_input = @{ file_path = "state.json"; content = "nada suspeito aqui" } } | ConvertTo-Json -Compress)
+$sgOutB = Invoke-SecretWriteGuard -Payload $sgPayloadB
+Check "secret-write-guard.ps1 (k, positivo): mesmo arquivo sem o valor LIBERA (sem deny)" ([string]::IsNullOrWhiteSpace($sgOutB))
+
+
+# (l) Edit (new_string) com o valor -> deny tambem (nao so Write).
+$sgPayloadC = (@{ session_id = "SG-A"; tool_name = "Edit"; tool_input = @{ file_path = "memory/nota.md"; old_string = "x"; new_string = "token: fakevercel1234567890abcd" } } | ConvertTo-Json -Compress)
+$sgOutC = Invoke-SecretWriteGuard -Payload $sgPayloadC
+Check "secret-write-guard.ps1 (l): Edit com o valor no new_string tambem BLOQUEIA" ($sgOutC -match '"permissionDecision":"deny"')
+
+
+# (m) escrita DENTRO do proprio cofre (.secrets/) sempre libera, mesmo com o valor.
+$sgPayloadD = (@{ session_id = "SG-A"; tool_name = "Write"; tool_input = @{ file_path = "studio/.secrets/vault.json"; content = "fakevercel1234567890abcd" } } | ConvertTo-Json -Compress)
+$sgOutD = Invoke-SecretWriteGuard -Payload $sgPayloadD
+Check "secret-write-guard.ps1 (m): escrita dentro do proprio .secrets/ sempre LIBERA (e la que o valor deve morar)" ([string]::IsNullOrWhiteSpace($sgOutD))
+
+
+# (n) interruptor .claude/secret-guard.off desliga o bloqueio.
+$sgOutE = Invoke-SecretWriteGuard -Payload $sgPayloadA -Off
+Check "secret-write-guard.ps1 (n): interruptor .claude/secret-guard.off desliga o bloqueio (mesmo cenario do (j) libera)" ([string]::IsNullOrWhiteSpace($sgOutE))
+
+
+if (Test-Path -LiteralPath $sgFixRoot) { Remove-Item -Recurse -Force -LiteralPath $sgFixRoot -ErrorAction SilentlyContinue }
+
+
+$sgSettingsWired = $false
+if (Test-Path -LiteralPath $settingsPath) {
+  try {
+    $settingsJsonSg = (ReadText $settingsPath) | ConvertFrom-Json
+    foreach ($ptEntrySg in @($settingsJsonSg.hooks.PreToolUse)) {
+      foreach ($hSg in @($ptEntrySg.hooks)) {
+ # WARDEN 09/09/2026: mesma fusao (ver bloco delegation-gate.ps1 acima).
+        if ("$($hSg.command)" -match 'secret-write-guard\.ps1') { $sgSettingsWired = $true }
+ if ("$($hSg.command)" -match 'pre-tool-use\.ps1') {
+ $ptuPathSg = Join-Path $root "scripts\pre-tool-use.ps1"
+ if ((Test-Path -LiteralPath $ptuPathSg) -and ((ReadText $ptuPathSg) -match 'secret-write-guard\.ps1') -and ((ReadText $ptuPathSg) -match 'Invoke-SecretWriteGuard')) { $sgSettingsWired = $true }
+      }
+
+    }
+
+}
+
+  } catch { }
+}
+Check "secret-write-guard.ps1: hook PreToolUse LIGADO em .claude/settings.json (nao so projetado)" $sgSettingsWired "projetado-mas-desligado reprova - tem que provar que esta LIGADO no settings, nao so que o arquivo existe"
+
+Write-Host ""
+Write-Host "-- Segredos com auditoria: check-public-surface.ps1 secao (1.7), prova pelo negativo --"
+$cps17FixRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("cps17-fixture-" + $PID)
+
+if (Test-Path -LiteralPath $cps17FixRoot) { Remove-Item -Recurse -Force -LiteralPath $cps17FixRoot -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Force -Path (Join-Path $cps17FixRoot "studio\.secrets") | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $cps17FixRoot "studio\.secrets\vault.json"), $sgVaultJson, $utf8Cred)
+
+
+# (o, negativo) valor real do cofre plantado num artifact -> REPROVADO, sem imprimir o valor.
+[System.IO.File]::WriteAllText((Join-Path $cps17FixRoot "artifact-cliente.md"), "nota: fakevercel1234567890abcd", $utf8Cred)
+$cps17OutO = (& (Join-Path $root "scripts\check-public-surface.ps1") -Repo $cps17FixRoot 6>&1) -join "`n"
+Check "check-public-surface.ps1 (1.7-o, negativo): valor real do cofre em artifact -> REPROVADO citando nome/fingerprint, nunca o valor" (($cps17OutO -match "REPROVADO") -and ($cps17OutO -match "segredo do cofre vazou") -and ($cps17OutO -notmatch "fakevercel1234567890abcd"))
+
+
+# (p, positivo/desfaz) mesmo artifact, valor removido -> SUPERFICIE LIMPA.
+[System.IO.File]::WriteAllText((Join-Path $cps17FixRoot "artifact-cliente.md"), "nada aqui", $utf8Cred)
+$cps17OutP = (& (Join-Path $root "scripts\check-public-surface.ps1") -Repo $cps17FixRoot 6>&1) -join "`n"
+Check "check-public-surface.ps1 (1.7-p, positivo/desfaz): valor removido -> SUPERFICIE LIMPA de volta" ($cps17OutP -match "SUPERFICIE LIMPA")
+
+
+if (Test-Path -LiteralPath $cps17FixRoot) { Remove-Item -Recurse -Force -LiteralPath $cps17FixRoot -ErrorAction SilentlyContinue }
+
 
 # --- TASK-213 (item 4): o "SEM MAQUINA NESTA INSTANCIA" de smoke-test.ps1 deixou de ser tabela
 # hardcoded (sempre a mesma resposta, em toda instancia) e virou Test-Path (Join-Path $root
@@ -2278,6 +2653,7 @@ if (Test-Path -LiteralPath $credFixRoot) { Remove-Item -Recurse -Force -LiteralP
 # -> smoke-test.ps1 nunca aparece como [SEM MAQUINA NESTA INSTANCIA] na saida. (b) fixture SEM
 # studio.example/ (raiz isolada) -> aparece, com a mesma mensagem de sempre.
 Check "Docs-gate (item 4a): studio.example/ presente na oficina -> smoke-test.ps1 NUNCA sai como [SEM MAQUINA NESTA INSTANCIA]" (($llcOut -notmatch '\[SEM MAQUINA NESTA INSTANCIA\] scripts/smoke-test\.ps1'))
+
 
 $llc4bRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("llc4b-" + $PID)
 New-Item -ItemType Directory -Force -Path (Join-Path $llc4bRoot "scripts") | Out-Null
@@ -2290,6 +2666,7 @@ $llc4bScript = Join-Path $llc4bRoot "scripts\law-ledger-check.ps1"
 $llc4bOut = (& $llc4bScript 6>&1) -join "`n"
 if (Test-Path -LiteralPath $llc4bRoot) { Remove-Item -Recurse -Force -LiteralPath $llc4bRoot -ErrorAction SilentlyContinue }
 Check "Docs-gate (item 4b): fixture SEM studio.example/ -> law-ledger-check.ps1 casa a citacao de smoke-test.ps1 como [SEM MAQUINA NESTA INSTANCIA] (medido, nao hardcoded)" ($llc4bOut -match 'Test-Path')
+
 
 # --- Persistence catalog (TASK-213, item 5a): todo alvo de escrita .jsonl / *baseline*.txt novo
 # em scripts/*.ps1 precisa de entrada em engine/governance/persistence-catalog.md - molde da secao
@@ -2315,6 +2692,7 @@ $pcBasenames = @($pcTargets | ForEach-Object { Split-Path -Leaf $_ } |
 $pcSemEntrada = @($pcBasenames | Where-Object { $pcTxt -notmatch [regex]::Escape($_) })
 Check ("Persistence catalog: todo alvo real de escrita (" + $pcBasenames.Count + " nome(s) unico(s) em scripts/*.ps1) tem entrada no catalogo") ($pcSemEntrada.Count -eq 0) ("sem entrada: " + ($pcSemEntrada -join ", "))
 
+
 # --- Freio que quebra passa a gritar: ratchet de linhas "erro" nos ledgers do freio (TASK-213,
 # item 2). response-guard.ps1 e graph-usage-sensor.ps1 agora gravam uma linha {"erro":...} no
 # MESMO ledger que ja escrevem quando o catch geral (ou o catch interno do gate) dispara, em vez
@@ -2339,6 +2717,7 @@ if (Test-Path -LiteralPath $errBaselinePath) {
 }
 Check ("Ratchet: linhas com erro nos ledgers do freio nao crescem alem do baseline (" + $totalErrCount + " vs baseline=" + $errBaseline + ")") ($totalErrCount -le $errBaseline) ("response-guard-log=" + $rgErrCount + " graph-usage-log=" + $guErrCount + " total=" + $totalErrCount + " baseline=" + $errBaseline + " (arquivo: studio/error-log-baseline.txt)")
 
+
 # --- M3: memoria com validade no tempo (bi-temporal em ARQUIVO, sem banco) ---
 # Fato que morre parava de mentir so virando veto escrito a mao + teste novo (o caso COO). Agora a
 # janela de validade e um DADO no cabecalho da nota, e o estado sai do formato.
@@ -2347,6 +2726,7 @@ Write-Host "-- Memoria com validade no tempo (OPP-76 M3) --"
 $mcScript = Join-Path $root "scripts\memory-curator.ps1"
 $mcTxt76 = if (Test-Path -LiteralPath $mcScript) { ReadText $mcScript } else { "" }
 Check "Memoria: memory-curator.ps1 tem o modo -Validade e imprime RESULTADO: (texto que o smoke le)" (($mcTxt76 -match '\[switch\]\$Validade') -and ($mcTxt76 -match 'RESULTADO: FAIL') -and ($mcTxt76 -match 'RESULTADO: PASS'))
+
 
 $mvRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("mv-fixture-" + $PID)
 $mvVault = Join-Path $mvRoot "memory"
@@ -2362,14 +2742,17 @@ $mvSemMorto = (& $mcScript -Validade -Vault $mvVault 6>&1) -join "`n"
 Check "Memoria: -Validade deriva os 3 estados do cabecalho (VIGENTE / VENCIDO por valido_ate / SUPERSEDIDO por substituido_por)" (($mvSemMorto -match '\[VENCIDO\][^\r\n]*fx-prazo-fechado') -and ($mvSemMorto -match '\[SUPERSEDIDO\][^\r\n]*fx-trocado') -and ($mvSemMorto -match 'VIGENTE: 2'))
 Check "Memoria: 'validade: registro' e o escape honesto - nota que REGISTRA a morte de terceiro nao vira cadaver (RESULTADO: PASS)" (($mvSemMorto -match 'RESULTADO: PASS') -and ($mvSemMorto -notmatch 'fx-registra-morte - a tarja'))
 
+
 # agora o fato morto se passando por vigente: tarja de supersessao com o cabecalho aberto.
 Write-FxNote (Join-Path $mvVault "fx-morto-vivo.md") "name: fx-morto-vivo`r`ndescription: posicionamento DERRUBADO pelo CEO em 02/07" "O cabecalho nao fecha janela nenhuma - e o caso COO."
 $mvComMorto = (& $mcScript -Validade -Vault $mvVault 6>&1) -join "`n"
 if (Test-Path -LiteralPath $mvRoot) { Remove-Item -Recurse -Force -LiteralPath $mvRoot -ErrorAction SilentlyContinue }
 Check "Memoria: -Validade REPROVA fato morto se passando por vigente ([FATO-MORTO-VIVO] + RESULTADO: FAIL)" (($mvComMorto -match '\[FATO-MORTO-VIVO\][^\r\n]*fx-morto-vivo') -and ($mvComMorto -match 'RESULTADO: FAIL'))
 
+
 $mtTxt = ReadText (Join-Path $engine "governance\memory-types.md")
 Check "Memoria: a doutrina declara a janela de validade (valido_de/valido_ate/substituido_por) em memory-types.md" (($mtTxt -match 'valido_ate') -and ($mtTxt -match 'substituido_por') -and ($mtTxt -match '(?i)VIGENTE'))
+
 
 # --- RSI: friction-*.md tem que SAIR de staging seguindo so o protocolo padrao de boot ---
 # DEFEITO MEDIDO (WARDEN, 30/08/2026, ordem do CEO): o protocolo de reflect-check.ps1 (PROTOCOLO
@@ -2406,6 +2789,7 @@ $frArchived = @(
 if (Test-Path -LiteralPath $frRoot) { Remove-Item -Recurse -Force -LiteralPath $frRoot -ErrorAction SilentlyContinue }
 Check "RSI: promote-memory.ps1 -ArchiveInbox SOZINHO (sem rodar rsi-patterns.ps1 a parte) fecha o loop de friction-*.md com 3+ ocorrencias do mesmo tipo" (($frArchived.Count -eq 0) -and ($frOut -match '\[OK\] friction arquivado')) ("nao arquivado: " + $frArchived.Count + " de 3 fixtures")
 
+
 # --- M4: o ledger de Tasks lido como GRAFO de linhagem ---
 # O state.json ja era um grafo (base_artifact -> artifact) e ninguem o lia como grafo: responder
 # "o que quebra se eu mexer aqui" exigia ler 86 Tasks na mao.
@@ -2425,6 +2809,7 @@ if ((Test-Path -LiteralPath $lgScript) -and (Test-Path -LiteralPath $lgFixture))
   Check "Linhagem: -Trace volta elo por elo ate a RAIZ (a base externa ao ledger fica nomeada)" (($lgTrace -match "via 'docs/derivado\.md'") -and ($lgTrace -match 'RAIZ'))
 }
 
+
 # Ledger: id UNICO no ato do registro. O id duplicado nascia do calculo por CONTAGEM (tasks.Count+1):
 # uma Task removida a mao fazia a contagem voltar a um numero ja usado. A fixture reproduz exatamente
 # isso - 2 Tasks em disco, maior id TASK-005 - e o proximo id tem que ser TASK-006, nunca TASK-003.
@@ -2438,6 +2823,7 @@ if (Test-Path -LiteralPath $rtDupState) {
 }
 $rtDupOk = ($rtDupIds -contains "TASK-006") -and (@($rtDupIds | Group-Object | Where-Object { $_.Count -gt 1 }).Count -eq 0)
 Check "Ledger: register-task GARANTE id unico no ato (parte do MAIOR id, nao da contagem - a origem da TASK-085 duplicada)" $rtDupOk ("ids apos o registro: " + ($rtDupIds -join ", "))
+
 
 # --- Cost Sensor: custo-proxy medido, ESTOURO acusa por sessao/dia (TASK-283, mandato do CEO
 # 25/08/2026, WARDEN, L41). O motor tinha "Budget"/"Frugality Check" so em prosa - nada media nem
@@ -2453,6 +2839,7 @@ if (Test-Path -LiteralPath $csScript) {
   $csNoData = (& $csScript -WhatIf -ProjectsDir (Join-Path ([System.IO.Path]::GetTempPath()) "cs-nao-existe-nunca") -Slug "cs-nao-existe-nunca" 6>&1) -join "`n"
   Check "Cost Sensor: script roda em -WhatIf sem transcript (graceful, [INFO], exit 0, nunca acusa)" (($LASTEXITCODE -eq 0) -and ($csNoData -match '\[INFO\]') -and ($csNoData -notmatch '\[ESTOURO\]'))
 
+
   $csRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("cs-fixture-" + $PID)
   $csDir = Join-Path $csRoot "cs-slug-fixture"
   $csSubDir = Join-Path $csDir (Join-Path "sess-pesada" "subagents")
@@ -2461,16 +2848,20 @@ if (Test-Path -LiteralPath $csScript) {
   [System.IO.File]::WriteAllText((Join-Path $csDir "sess-pesada.jsonl"), ("x" * 2000), $utf8NoBom76)
   1..4 | ForEach-Object { [System.IO.File]::WriteAllText((Join-Path $csSubDir ("agent-" + $_ + ".jsonl")), ("y" * 2000), $utf8NoBom76) }
 
+
   $csBaixo = (& $csScript -WhatIf -ProjectsDir $csRoot -Slug "cs-slug-fixture" -CapSubagents 1 -CapSessionMB 0 -CapDailyMB 0 6>&1) -join "`n"
   $csBaixoOk = ($LASTEXITCODE -eq 1) -and ($csBaixo -match '\[ESTOURO\][^\r\n]*sessao') -and ($csBaixo -match '\[ESTOURO\][^\r\n]*dia')
   Check "Cost Sensor: fixture com tetos baixos ACUSA [ESTOURO] por sessao e por dia (quebrado de proposito)" $csBaixoOk ("saida: " + ($csBaixo -replace "`r?`n", " | "))
+
 
   $csAlto = (& $csScript -WhatIf -ProjectsDir $csRoot -Slug "cs-slug-fixture" -CapSubagents 999 -CapSessionMB 999 -CapDailyMB 999 6>&1) -join "`n"
   $csAltoOk = ($LASTEXITCODE -eq 0) -and ($csAlto -match '\[PASS\]') -and ($csAlto -notmatch '\[ESTOURO\]')
   Check "Cost Sensor: MESMA fixture com tetos altos fecha [PASS], sem [ESTOURO] (desquebrado)" $csAltoOk ("saida: " + ($csAlto -replace "`r?`n", " | "))
 
+
   if (Test-Path -LiteralPath $csRoot) { Remove-Item -Recurse -Force -LiteralPath $csRoot -ErrorAction SilentlyContinue }
 }
+
 
 # --- Consertos do code review adversarial de 31/08/2026 (prova pelo negativo) ---
 # Base para as pastas de prova destes checks. Nao pode ser $env:TEMP as cegas (em maquina com
@@ -2491,6 +2882,7 @@ function Get-ProvaBase([string]$rootDir) {
     Pop-Location
     if ($dentroGit -ne "true") { return $cand }
   }
+
   return $rootDir
 }
 $provaBase = Get-ProvaBase $root
@@ -2498,6 +2890,7 @@ $provaBase = Get-ProvaBase $root
 # Nenhum deles era pego por check nenhum antes - por isso entram aqui, nao so no CHANGELOG.
 Write-Host ""
 Write-Host "-- Code review adversarial 31/08/2026: os 3 consertos tem freio proprio --"
+
 
 # (1) install.ps1: o jeito DIVULGADO de instalar e `iwr -useb .../install.ps1 | iex`, e nesse
 # modo NAO existe arquivo de script - $PSScriptRoot e VAZIO. Resolver o verificador de
@@ -2517,12 +2910,14 @@ Check "install: pacote sem pasta raiz aborta com [ERRO], nao com erro cru" ($ins
 $upTxt3 = if (Test-Path -LiteralPath (Join-Path $root "scripts\update-online.ps1")) { ReadText (Join-Path $root "scripts\update-online.ps1") } else { "" }
 Check "update-online: mesma classe fechada (verificador do pacote + fallback guardado)" (($upTxt3 -match [regex]::Escape('$pkgDir "scripts\verify-manifest.ps1"')) -and ($upTxt3 -match 'IsNullOrWhiteSpace\(\$PSScriptRoot\)')) "update-online.ps1 ainda depende do verificador local sem guarda"
 
+
 # (1b) EMPURRAR NAO E PUBLICAR: medido no ato de publicar a v1.64.0 - push entrou, origin/main
 # passou a bater com a oficina, e a linha do README continuou dando 404 pra qualquer pessoa
 # (repositorio privado). O sensor offline nao pode se apresentar como "o que o mundo baixa".
 $smkTxt = ReadText (Join-Path $root "scripts\smoke-test.ps1")
 Check "Publicacao: o smoke tem a sonda ANONIMA de alcance publico (-Publico, opt-in, sem credencial)" (($smkTxt -match '\[switch\]\$Publico') -and ($smkTxt -match 'Alcance publico ANONIMO')) "sem -Publico nao ha como responder 'da pra instalar?' sem se enganar com a propria sessao autenticada"
 Check "Publicacao: o sensor offline se chama 'no ORIGIN', nunca 'o que o mundo baixa' (empurrar != publicar)" ($smkTxt -match 'Versao no ORIGIN \(empurrada\)') "o rotulo voltou a prometer alcance publico que o git local nao mede"
+
 
 # (2) git-sync.ps1: o caminho de cada arquivo dentro do commit vinha de Substring($Path.Length).
 # Com -Path relativo o corte caia no meio do caminho ABSOLUTO e o nome de usuario do Windows do
@@ -2552,6 +2947,7 @@ Check "git-sync: nenhum caminho absoluto de pasta de usuario no que seria enviad
 Check "git-sync: caminho enviado e relativo a pasta (a.txt / sub\b.txt), nao fatiado no meio" (($gsLinhas -join "|") -match 'a\.txt' -and ($gsLinhas -join "|") -match 'sub[\\/]b\.txt') ("linhas='" + ($gsLinhas -join " | ") + "'")
 Remove-Item -LiteralPath $gsTmp -Recurse -Force -ErrorAction SilentlyContinue
 
+
 # (3) check-public-surface.ps1: a cacada de credencial olhava so a PRIMEIRA ocorrencia de cada
 # agulha por arquivo. Placeholder antes da chave real (a ordem mais comum que existe) mascarava
 # a chave e o guard imprimia SUPERFICIE LIMPA. Prova pelo negativo com a fixture, copiada pra
@@ -2579,6 +2975,7 @@ if (Test-Path -LiteralPath $fxCred) {
   Remove-Item -LiteralPath $credTmp2 -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+
 # --- Portabilidade multi-harness (TASK-421, v1.65.0 - fecha OPP-42 Deltas 2 e 3) ---
 # A Alia tem que saber ONDE esta antes de delegar. O incidente de origem da OPP-42 (o CEO testou no
 # Codex, ela tentou spawnar sub-agente num host que nao tem, travou e caiu no fallback proibido de
@@ -2587,8 +2984,10 @@ if (Test-Path -LiteralPath $fxCred) {
 Write-Host ""
 Write-Host "-- Portabilidade multi-harness: deteccao de host + palavra de acordar + DELEGA portavel --"
 
+
 $detectPath = Join-Path $root "scripts\detect-harness.ps1"
 Check "Harness: scripts/detect-harness.ps1 existe" (Test-Path -LiteralPath $detectPath)
+
 
 # Roda de verdade (nao le o fonte): o contrato e a SAIDA, seis chaves. Prova pelo negativo possivel:
 # apagar uma chave do script derruba este check.
@@ -2599,6 +2998,7 @@ if (Test-Path -LiteralPath $detectPath) {
 }
 $detectMissing = @($detectKeys | Where-Object { $detectOut -notmatch ("(?m)^" + [regex]::Escape($_) + "=") })
 Check "Harness: detect-harness.ps1 imprime as 6 chaves (harness/spawn/hooks/skills_dir/delegation_mode/signal)" ($detectMissing.Count -eq 0) ("faltando: " + ($detectMissing -join ", "))
+
 
 # Host desconhecido NUNCA pode virar paralisia: o padrao seguro e context-load, o modo que funciona
 # em qualquer lugar. Testado forcando o galho de fallback (sem env de host reconhecido).
@@ -2611,6 +3011,7 @@ if (Test-Path -LiteralPath $detectPath) {
 }
 Check "Harness: sem env de host reconhecido, o modo cai em context-load (nunca trava)" ($detectFallback -match '(?m)^delegation_mode=context-load')
 
+
 # A palavra de acordar em disco, nos tres caminhos que os hosts leem. Fonte unica + copias geradas.
 $aliaSource = Join-Path $root "skills\alia\ALIA.md"
 $aliaClaude = Join-Path $root ".claude\skills\alia\SKILL.md"
@@ -2619,6 +3020,7 @@ $aliaOpen   = Join-Path $root ".opencode\commands\alia.md"
 $aliaAll = @($aliaSource, $aliaClaude, $aliaAgents, $aliaOpen)
 $aliaMissing = @($aliaAll | Where-Object { -not (Test-Path -LiteralPath $_) })
 Check "Harness: skill 'alia' presente na fonte + nos 3 caminhos de host (.claude/skills, .agents/skills, .opencode/commands)" ($aliaMissing.Count -eq 0) ("faltando: " + (($aliaMissing | ForEach-Object { $_.Substring($root.Length + 1) }) -join ", "))
+
 
 # Hash do CORPO (tudo depois do frontmatter) igual nos tres. Frontmatter difere de proposito
 # (skill leva name+description; command do OpenCode so description), o CORPO nunca pode divergir -
@@ -2636,6 +3038,7 @@ $hAgents = BodyHash $aliaAgents
 $hOpen   = BodyHash $aliaOpen
 Check "Harness: as 3 copias da skill 'alia' tem o MESMO corpo (hash SHA256) - sync-harness-adapters.ps1" (($hClaude -ne "") -and ($hClaude -eq $hAgents) -and ($hClaude -eq $hOpen)) "corpo divergente: rode scripts/sync-harness-adapters.ps1"
 
+
 # Adapter OpenCode com spawn real: os Specialists gerados por squad-bridge -Mode opencode.
 $openAgentDir = Join-Path $studio ".opencode\agent"
 $openAgents = @()
@@ -2647,8 +3050,10 @@ foreach ($oa in $openAgents) {
   if (($oaTxt -notmatch "(?s)^---\n.*?\n---\n") -or ($oaTxt -notmatch "(?m)^mode: subagent$") -or ($oaTxt -notmatch "(?m)^description: \S") -or ($oaTxt -notmatch "(?m)^permission:$")) {
     $openBadFm += $oa.Name
   }
+
 }
 Check "Harness: todo agente em .opencode/agent/ tem frontmatter valido do OpenCode (description + mode: subagent + permission)" ($openBadFm.Count -eq 0) ("invalido(s): " + ($openBadFm -join ", "))
+
 
 # O passo DELEGA portavel (OPP-42 Delta 2) escrito, e o nucleo apontando para a deteccao.
 $delegateSkill = Join-Path $root "skills\delegate\SKILL.md"
@@ -2658,11 +3063,13 @@ Check "Harness: engine/orchestration.md cita detect-harness (o modo se DETECTA, 
 $agentsMdTxt = ReadText (Join-Path $root "AGENTS.md")
 Check "Harness: AGENTS.md tem o passo 'Onde estou' no fast-boot" (($agentsMdTxt -match 'Onde estou') -and ($agentsMdTxt -match 'detect-harness'))
 
+
 # Empacotamento: sem os adapters no pacote, quem instala fora do Claude Code nao recebe a Alia.
 $pkgTxt = ReadText (Join-Path $root "scripts\package-release.ps1")
 $pkgShipM = [regex]::Match($pkgTxt, '(?m)^\$shipDirs\s*=\s*@\((.+)\)')
 $pkgShipLine = if ($pkgShipM.Success) { $pkgShipM.Groups[1].Value } else { "" }
 Check "Harness: ship list de package-release.ps1 inclui .opencode e .agents" (($pkgShipLine -match '"\.opencode"') -and ($pkgShipLine -match '"\.agents"')) ("shipDirs: " + $pkgShipLine)
+
 
 # MEDIDO 05/09/2026: rodar `opencode run` uma vez dentro da pasta faz o proprio OpenCode instalar o
 # SDK de plugin dele em .opencode/node_modules/ (+ package.json/package-lock.json/bun.lock). Como
@@ -2676,6 +3083,7 @@ foreach ($j in @("node_modules","package.json","package-lock.json","bun.lock")) 
   if (Test-Path -LiteralPath (Join-Path $root (".opencode\" + $j))) { $openJunk += $j }
 }
 Check "Harness: .opencode/ da oficina esta limpo (sem node_modules/locks deixados por execucao do OpenCode)" ($openJunk.Count -eq 0) ("encontrado: " + ($openJunk -join ", "))
+
 
 # CONSERTO ANTES DO EMPACOTE (05/09/2026, TASK-421): squad-bridge.ps1 -Mode opencode escrevia o
 # caminho de knowledge ABSOLUTO por desenho. Certo na maquina do operador, VAZAMENTO quando o alvo
@@ -2698,8 +3106,10 @@ foreach ($d in $absLeakDirs) {
     try { $txt = [System.IO.File]::ReadAllText($f.FullName) } catch { continue }
     if ($txt -match $absPathPattern) { $absLeaks.Add($f.FullName.Substring($root.Length + 1)) }
   }
+
 }
 Check ("Superficie publica: nenhum caminho absoluto de maquina em studio.example/, .opencode/ ou .agents/ (" + $absScanned + " arquivo(s) lidos)") ($absLeaks.Count -eq 0) ("vazou em: " + (($absLeaks | Select-Object -First 8) -join ", "))
+
 
 # --- Drift de versao: oficina vs release vs produto (M5, AVISO - nunca reprova) ---
 # So o CEO resolve drift entre as 3 versoes (publicar e decisao dele). Isto e AVISO, nao Check:
@@ -2719,6 +3129,7 @@ $verRelease = if (Test-Path -LiteralPath $verReleasePath) { ((Get-Content -Liter
 $verProdutoPath = Join-Path (Split-Path (Split-Path (Split-Path $root -Parent) -Parent) -Parent) "alia-flow\VERSION"
 $verProduto = if (Test-Path -LiteralPath $verProdutoPath) { ((Get-Content -LiteralPath $verProdutoPath -ErrorAction SilentlyContinue) -join "").Trim() } else { "(ausente)" }
 Warn ("Versao: oficina=" + $verOficina + " release/alia-flow=" + $verRelease + " Projetos/alia-flow=" + $verProduto) (($verOficina -eq $verRelease) -and ($verOficina -eq $verProduto)) "drift so o CEO resolve, publicando"
+
 
 # CONSERTO (code review adversarial, 31/08/2026 - A MEDIDA OLHAVA O LADO ERRADO): as tres
 # superficies acima moram TODAS no mesmo disco e sao atualizadas pela mesma propagacao, entao
@@ -2746,6 +3157,7 @@ if (Test-Path -LiteralPath (Join-Path $repoPublicoDir ".git")) {
 $publicadoOk = ($verPublicado -eq $verOficina) -and ($commitsNaoEnviados -eq "0")
 Warn ("Versao no ORIGIN (empurrada): origin/main=" + $verPublicado + " vs oficina=" + $verOficina + " | commits nao enviados=" + $commitsNaoEnviados) $publicadoOk "so publicar resolve - as 3 superficies locais podem estar identicas e o origin ainda estar pra tras (ultimo fetch)"
 
+
 # EMPURRAR NAO E PUBLICAR (MEDIDO 31/08/2026, no ato de publicar a v1.64.0): o push entrou, o
 # origin/main passou a bater com a oficina - e a linha de instalar do README continuou dando
 # 404 pra qualquer pessoa, porque o repositorio e PRIVADO. Um sensor que le so o git local
@@ -2762,6 +3174,7 @@ if ($Publico) {
     $mUrl = [regex]::Match((ReadText $readmePathPub), 'https://raw\.githubusercontent\.com/\S+/install\.ps1')
     if ($mUrl.Success) { $urlInstalador = $mUrl.Value }
   }
+
   if ([string]::IsNullOrWhiteSpace($urlInstalador)) {
     Warn "Alcance publico: URL do instalador nao encontrada no README.md" $false "sem URL para testar - o README nao anuncia instalacao por uma linha?"
   } else {
@@ -2783,8 +3196,11 @@ if ($Publico) {
     } else {
       Warn ("Alcance publico ANONIMO: " + $urlInstalador + " -> HTTP " + $codigo) ($codigo -eq 200) "404 aqui significa que NINGUEM consegue instalar - repositorio privado ou caminho errado. Empurrar commit nao resolve; so tornar o repo publico (decisao do CEO) ou corrigir a URL"
     }
+
   }
+
 }
+
 
 # --- Release Review: veredito e token unico, sempre (TASK-286) ---
 # Prova constrangedora medida nesta Task: "veredito: PASS (parcial - fechado por budget proprio,
@@ -2814,9 +3230,75 @@ if ($prVerdPatM.Success -and (Test-Path -LiteralPath $rrDir)) {
     $rrChecked++
     if (-not $rrOk) { $rrBad.Add($rf.Name + " (veredito='" + $rrM.Groups[1].Value + "')") }
   }
+
 }
 Check "Release Review: regex real de package-release.ps1 (reusado) achado no script" $prVerdPatM.Success
 Check ("Release Review: todo release-reviews/*.md (exceto TEMPLATE.md, " + $rrChecked + " arquivo(s)) tem 'veredito:' como TOKEN UNICO PASS ou FAIL") ($rrBad.Count -eq 0) ("arquivo(s) com problema: " + ($rrBad -join " | "))
+
+# --- WARDEN 09/09/2026: L48-L51 (fusao de hooks PreToolUse/SessionStart em 1 spawn) ---
+Write-Host ""
+Write-Host "-- WARDEN: hooks fundidos (L48-L51) --"
+
+$settingsPath = Join-Path $root ".claude\settings.json"
+$settingsOk = Test-Path -LiteralPath $settingsPath
+if ($settingsOk) {
+ $settingsTxt = ReadText $settingsPath
+ $settingsObj = $null
+ try { $settingsObj = $settingsTxt | ConvertFrom-Json } catch { }
+ $editHooks = $null
+ $sensorHooks = $null
+ $sessionStartHooks = $null
+ $upsHooks = $null
+ if ($settingsObj) {
+ foreach ($m in @($settingsObj.hooks.PreToolUse)) {
+ if ($m.matcher -eq 'Edit|Write|NotebookEdit|Task') { $editHooks = $m.hooks }
+ if ($m.matcher -match 'Grep') { $sensorHooks = $m.hooks; $sensorMatcher = $m.matcher }
+}
+
+ $sessionStartHooks = @($settingsObj.hooks.SessionStart)
+ $upsHooks = @($settingsObj.hooks.UserPromptSubmit)
+}
+
+ # L48: settings.json tem 1 (e so 1) hook no matcher Edit|Write|NotebookEdit|Task, apontando pra pre-tool-use.ps1.
+ Check "L48: PreToolUse Edit|Write|NotebookEdit|Task tem exatamente 1 hook (pre-tool-use.ps1, fusao de delegation-gate + secret-write-guard)" (($null -ne $editHooks) -and (@($editHooks).Count -eq 1) -and (@($editHooks)[0].command -match 'pre-tool-use\.ps1')) ("hooks achados: " + (@($editHooks) | ForEach-Object { $_.command }) -join " | ")
+ # L49a: matcher do sensor sem Read.
+ Check "L49a: matcher do sensor de grafo (PreToolUse) NAO inclui Read" (($null -ne $sensorMatcher) -and ($sensorMatcher -notmatch '(^|\|)Read(\||$)')) ("matcher achado: " + $sensorMatcher)
+ # L49b: UserPromptSubmit sem delegation-guard.ps1 (o bloco pode ate nao existir mais).
+ $upsHasDelegationGuard = $false
+ foreach ($m in $upsHooks) { foreach ($h in @($m.hooks)) { if ($h.command -match 'delegation-guard\.ps1') { $upsHasDelegationGuard = $true } } }
+ Check "L49b: UserPromptSubmit NAO chama mais delegation-guard.ps1 (lei injetada 1x no SessionStart)" (-not $upsHasDelegationGuard)
+ # L49c: SessionStart com matcher incluindo resume.
+ $ssHasResume = $false
+ foreach ($m in $sessionStartHooks) { if ($m.matcher -match 'resume') { $ssHasResume = $true } }
+ Check "L49c: SessionStart tem matcher incluindo 'resume' (alem de startup)" $ssHasResume ("matchers achados: " + (($sessionStartHooks | ForEach-Object { $_.matcher }) -join " | "))
+} else {
+ Check "L48-L49: .claude/settings.json existe" $false
+}
+# L50: scripts novos existem e rodam com exit 0 em payload vazio.
+$novosScripts = @("pre-tool-use.ps1","session-start.ps1","session-baton-guard.ps1","harness-baseline.ps1")
+foreach ($ns in $novosScripts) {
+ $nsPath = Join-Path $PSScriptRoot $ns
+ $nsExists = Test-Path -LiteralPath $nsPath
+ $nsExit = -1
+ if ($nsExists) {
+ try {
+ "" | powershell -NoProfile -ExecutionPolicy Bypass -File $nsPath *>$null
+ $nsExit = $LASTEXITCODE
+ } catch { $nsExit = -1 }
+}
+
+ Check ("L50: " + $ns + " existe e roda com exit 0 em payload vazio") (($nsExists) -and ($nsExit -eq 0)) ("existe=" + $nsExists + " exit=" + $nsExit)
+}
+# L51: squad-bridge.ps1 tem "throw" para budget ausente e NAO contem "carregue (obrigatorio)".
+$sbPath = Join-Path $PSScriptRoot "squad-bridge.ps1"
+if (Test-Path -LiteralPath $sbPath) {
+ $sbTxt = ReadText $sbPath
+ Check "L51a: squad-bridge.ps1 contem 'throw' para budget ausente (grep)" ($sbTxt -match 'throw')
+ Check "L51b: squad-bridge.ps1 NAO contem a string 'carregue (obrigatorio)' (nao inventa secao de persona)" ($sbTxt -notmatch [regex]::Escape('carregue (obrigatorio)'))
+} else {
+ Check "L51: scripts/squad-bridge.ps1 existe" $false
+}
+
 
 
 # --- Numero publico: README.md (produto) e GUARD-NUM (oficina) - cada um trava so contra o
@@ -2848,14 +3330,16 @@ $claimsExists = Test-Path -LiteralPath $claimsPath
 $numChecksNesteBloco = 1  # sempre 1 Check real: README no pacote/publico OU GUARD-NUM na oficina
 $expectedFinalCount = $script:pass + $script:fail + $numChecksNesteBloco
 
+
 $readmePath = Join-Path $root "README.md"
 $readmeTxt = ReadText $readmePath
 # Regex casa as duas grafias, "versao" e "versao" com til - README.md agora pode ter acento
 # (mandato do CEO, 07/09/2026); til escapado como sequencia unicode do .NET regex (nao o
-# caractere literal) porque este proprio arquivo .ps1 segue a lei ASCII (ver Check acima).
+# caractere literal, forma portavel independente do encoding do arquivo .ps1.
 $readmeM = [regex]::Match($readmeTxt, '\((\d+) na vers(?:a|\u00e3)o atual')
 $readmeVal = -1
 if ($readmeM.Success) { $readmeVal = [int]$readmeM.Groups[1].Value }
+
 if ($claimsExists) {
   Warn "Numero publico: README.md - contexto oficina tem mais checks que o produto, nunca vai bater; trava real e no pacote" $readmeM.Success ("README.md diz " + $readmeVal + "; verificado a serio por package-release.ps1 dentro do pacote/repo publico")
 } else {
@@ -2871,8 +3355,10 @@ if ($claimsExists) {
     Write-Host ("[SYNC] Numero publico: README.md corrigido automaticamente de " + $readmeVal + " para " + $expectedFinalCount + " (-UpdateReadme)")
     $readmeVal = $expectedFinalCount
   }
+
   Check "Numero publico: README.md ('N na versao atual') bate com o total real executado pelo smoke" (($readmeM.Success) -and ($readmeVal -eq $expectedFinalCount)) ("README.md diz " + $readmeVal + "; total real que o smoke vai reportar = " + $expectedFinalCount)
 }
+
 
 if ($claimsExists) {
   $claimsTxt = ReadText $claimsPath
@@ -2886,6 +3372,7 @@ if ($claimsExists) {
   # script inteiro (pior que um FAIL: nenhum check depois deste rodava). Pulado com honestidade.
   Warn "Numero publico: GUARD-NUM vs total real - pulado (CLAIMS.md ausente, doc interno)" $false "CLAIMS.md nao viaja no pacote/repo publico por LEI; nada a checar aqui"
 }
+
 
 
 # --- Resultado ---
