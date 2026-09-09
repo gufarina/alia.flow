@@ -136,7 +136,7 @@ $scriptsAllow = @(
   "session-search.py","smoke-test.ps1","squad-bridge.ps1","squad-report.ps1","stale-tasks.ps1",
   "task-context.ps1","update-engine.ps1","update-online.ps1","validate-workflow.ps1","verify-manifest.ps1",
   "secret.ps1","secret-write-guard.ps1","pre-tool-use.ps1","session-start.ps1","session-baton.ps1","session-baton-guard.ps1",
-  "harness-baseline.ps1","ensure-graphify.ps1","rsi-apply.ps1","rsi-heldout.ps1","_rsi-lib.ps1","sync-harness-adapters.ps1"
+  "harness-baseline.ps1","ensure-graphify.ps1","rsi-apply.ps1","rsi-heldout.ps1","_rsi-lib.ps1","sync-harness-adapters.ps1","rsi-promote-pattern.ps1"
 )
 $scriptsSrc = Join-Path $root "scripts"
 if (Test-Path $scriptsSrc) {

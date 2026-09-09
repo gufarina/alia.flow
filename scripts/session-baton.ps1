@@ -52,7 +52,15 @@ try {
  $candA = Join-Path $root "studio\state.json"
  $StateFile = if (Test-Path -LiteralPath $candA) { $candA } else { Join-Path $root "state.json" }
  }
- if ([string]::IsNullOrWhiteSpace($OutDir)) { $OutDir = Join-Path (Split-Path -Parent $StateFile) "baton" }
+ if ([string]::IsNullOrWhiteSpace($OutDir)) {
+ # TASK-509: so grava quando existe um STUDIO de verdade (studio/state.json). Sem studio nao ha
+ # sessao real para registrar - e sair criando baton/ na raiz suja o pacote. Medido: o smoke que
+ # roda contra release/alia-flow criava uma pasta baton/ na raiz do pacote, que viajou pro produto.
+ $studioDir = Split-Path -Parent $StateFile
+ if (-not (Test-Path -LiteralPath (Join-Path $studioDir "state.json"))) { return }
+ if ((Split-Path -Leaf $studioDir) -ne "studio") { return }
+ $OutDir = Join-Path $studioDir "baton"
+ }
  if (-not (Test-Path -LiteralPath $OutDir)) { New-Item -ItemType Directory -Path $OutDir -Force | Out-Null }
  $outFile = Join-Path $OutDir ($sessionId + ".md")
  $now = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")

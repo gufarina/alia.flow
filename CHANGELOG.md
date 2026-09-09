@@ -80,6 +80,14 @@ DE LINHAGEM (L55), JANELA FRIA MENOR.
 - **Regra ASCII revogada: ultimos resquicios.** A frase "Sem acentos, sem emojis" saiu de 7
   `client.md` do parque e da epigrafe da regra do grafo - a regra caiu em 09/09 (1.70.0) e esses
   textos ainda a afirmavam.
+- **Dois furos achados na propria propagacao (fechados antes de publicar).** (1)
+  `rsi-promote-pattern.ps1` nascia fora da allowlist de `package-release.ps1`: o script existia na
+  oficina e na instancia, mas NAO viajava para o produto - instalacao nova nao teria o elo novo do
+  RSI. Acrescentado a allowlist (59 scripts, sem duplicata). (2) `session-baton.ps1` criava uma
+  pasta `baton/` na RAIZ quando rodava sem um studio de verdade - foi o que aconteceu no passo 3/3
+  do empacotamento (o smoke roda contra o pacote), e a pasta viajou para o repo do produto. Agora
+  o bastao so grava quando existe `studio/state.json` e o diretorio se chama `studio`; sem isso,
+  sai calado. Provado nos dois sentidos: sem studio nao cria nada, com studio grava normalmente.
 - **Law ledger.** L52-L55 registradas (54 no total); 7 ponteiros de linha corrigidos apos as
   edicoes em `orchestration.md` e `smoke-test-studio.ps1` - `law-ledger-check.ps1` volta a
   CONFERIR COM O DISCO.
