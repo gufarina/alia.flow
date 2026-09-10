@@ -77,6 +77,7 @@
 | L53 | Ficha de Project e magra e herda por referencia: `clients/<id>/projects/<slug>.md` tem 6 campos e NUNCA repete identidade, restricoes, squad ou `codePath` (moram no `client.md`). Project novo nasce com ficha no IDENTIFICA; Client de um projeto so pode manter a ficha como secao do `client.md`. Migracao do acervo historico nunca e em massa | engine/features/project-ficha.md + engine/orchestration.md (IDENTIFICA) | scripts/smoke-test.ps1 (WARDEN) | SEM TESTE ate o smoke da v1.71.0 ligar |
 | L54 | Custo obrigatorio no FECHA: Task DELEGADA (specialist diferente de `alia`) nao fecha como done/review sem `-Tokens`/`-ToolUses`. Sem esse numero o RSI promove melhoria sem evidencia. Task de ordem do Operator executada pela propria Alia fica isenta (nao ha notificacao de subagente); as Tasks ja fechadas nunca viram erro retroativo | scripts/register-task.ps1 (cabecalho) | scripts/smoke-test.ps1 (WARDEN) | SEM TESTE ate o smoke da v1.71.0 ligar |
 | L55 | Ratchet de linhagem orfa: `ORFAS` (entregou Artifact sem declarar `-BaseArtifact`) tem baseline datado que SO ENCOLHE - Task nova sem base reprova na hora. Divida historica nao se fecha inventando a base de Task antiga; fabricar linhagem e pior que registrar a divida | scripts/smoke-test-studio.ps1 (bloco $ORFAS_BASELINE) | scripts/smoke-test-studio.ps1 (o proprio check) | COBERTA (check proprio) |
+| L56 | Ciclo de vida da Task: ponta solta nao acumula. `task-sweep.ps1` e o ATUADOR (classifica Task aberta por evidencia objetiva: entrega em disco, progresso do Client, idade) e o smoke da instancia e o SENSOR que reprova quando sobra trabalho de arquivamento. Varredura NUNCA apaga Task - `retired` preserva registro e linhagem, e todo arquivamento grava motivo e data. Protecao de Task viva mora no campo `sweep_protect`, nao num parametro que alguem precisa lembrar | scripts/task-sweep.ps1 (cabecalho) | scripts/smoke-test-studio.ps1 (secao l2) | COBERTA (check proprio) |
 | Q01 | QUARENTENA (nao e lei): `engine/constitution.yaml` esta fora da lista branca de manifestos (MAP.md, secao Manifestos) e seu unico leitor e o smoke conferindo que ele aponta para alia.yaml - arquivo mantido vivo pelo proprio teste. Reavaliar em 2026-09-23: sem consumidor novo ate la, retirar para engine/_retired/ e apagar o check do smoke | engine/constitution.yaml | scripts/smoke-test.ps1:1758 (o unico leitor) | QUARENTENA ate 2026-09-23 |
 
 Nota sobre L29 (OPP-78): nasce `COBERTA` pela mesma regra de formacao - os 5 checks foram escritos na
@@ -188,7 +189,7 @@ ponteiros linha-a-linha e que nenhuma LEI nova (marcador `> LEI:`/`## LEI`/`# LE
   L55 nasce COBERTA (check proprio); L52-L54 entram SEM TESTE ate o smoke da v1.71.0 ligar.
 - Conferencia (09/09/2026): 25 + 8 + 7 + 1 + 1 + 2 = **44** nas linhas acima, mais L42-L47 (6,
  todas COBERTA por maquina propria, ver tabela) = **50** = 51 registradas menos L15 (saiu; L16 e L22
- seguem contadas em VIRA ORIENTACAO); com L52-L55, **54** registradas. Divida registrada: contagem manual apodrece (2x provado) -
+ seguem contadas em VIRA ORIENTACAO); com L52-L56, **55** registradas. Divida registrada: contagem manual apodrece (2x provado) -
  law-ledger-check.ps1 deve somar sozinho.
 
 ---

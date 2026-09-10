@@ -20,6 +20,41 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.71.1] - 2026-09-09
+
+CICLO DE VIDA DA TASK: A VARREDURA (ATUADOR) E O SENSOR QUE OBRIGA ELA A RODAR (L56). PONTA SOLTA
+DEIXA DE VIRAR BOLA DE NEVE.
+
+Mandato do CEO, no ato: "tem tarefas que eu nao vou fechar, voce sempre tem que fechar evitando
+ficar com ponta solta, se nao faz bola de neve, pensa em como gerir isso". Medido no dia: 117 Tasks
+abertas no ledger da instancia, a mais velha com 67 dias.
+
+- **`scripts/task-sweep.ps1` (NOVO, o atuador).** Classifica Task aberta por EVIDENCIA OBJETIVA,
+  nunca por julgamento de conteudo: ENTREGUE (artifact existe em disco -> fecha `done` com veredito
+  retroativo, reusando o texto que a casa ja usava desde 25/08, que diz explicitamente que NAO e
+  reabertura dos 6 criterios do Gate); SUPERADA POR PROGRESSO (o Client fechou N Tasks depois desta
+  sem que ela fosse retomada -> `retired`); ABANDONADA (sem entrega, parada acima do teto ->
+  `retired`); PARADA (21 a 45 dias -> so avisa); VIVA (nao toca). DRY-RUN e o default; `-Apply`
+  grava. NUNCA apaga Task: `retired` preserva registro e linhagem, e desfazer e
+  `register-task.ps1 -Id <id> -Status open`.
+- **Protecao mora NA TASK.** Campo `sweep_protect` no proprio registro, com motivo: decisao do
+  Operator sobre uma Task especifica nao pode depender de alguem lembrar de uma flag na proxima
+  varredura.
+- **Sensor no smoke da instancia (L56).** `smoke-test-studio.ps1` roda o sweep em DRY-RUN e REPROVA
+  se sobrou trabalho de arquivamento (entregue + superada + abandonada > 0), com o comando exato na
+  mensagem de falha. Task parada entre 21 e 45 dias sai como AVISO - o alerta antes de virar
+  divida. Sem o sensor, o atuador dependia de alguem lembrar de rodar, que e como a divida nasceu.
+- **Tres defeitos achados pelo proprio uso, consertados na raiz.** (1) O sweep contava como feito o
+  que apenas TENTOU: agora rele o ledger e so conta o que conferiu em disco, e sai com codigo de
+  erro listando o que nao mudou. (2) `register-task.ps1 -Id` quebrava em Task de schema antigo
+  ("The property 'type' cannot be found on this object") - 4 Tasks de 67 dias falhavam em silencio;
+  agora garante a existencia do campo antes de atribuir. (3) O sweep so passava `-OperatorOrder`
+  quando o specialist era `alia`, e Tasks de squad falhavam sem mensagem util - a varredura E ordem
+  do Operator, entao sempre passa.
+- **Resultado medido na instancia:** 117 abertas -> 43. Nenhuma Task apagada (506 antes, 506
+  depois), 79 em `retired` e 373 em `done`, cada mudanca com motivo e data gravados em
+  `sweep_reason`. Smoke da instancia: 77 PASS, 0 FAIL.
+
 ## [1.71.0] - 2026-09-09
 
 EXECUCAO DA AUDITORIA DE HARNESS v3: 3 BUGS DE HOOK CONSERTADOS (P0), CONTRATO DO ESPECIALISTA

@@ -205,6 +205,14 @@ if (-not [string]::IsNullOrWhiteSpace($Id)) {
     if ($titleHistory.Count -gt 5) { $titleHistory = @($titleHistory | Select-Object -Last 5) }
   }
 
+  # TASK-510: Task ANTIGA (anterior ao contrato tipado da 1.39.0) nao tem todos os campos, e
+  # atribuir direto quebra com "The property 'type' cannot be found on this object". Medido na
+  # varredura: 4 Tasks de 67 dias falharam em virar retired por isso. Garante a existencia ANTES
+  # de atribuir - mesmo padrao que o bloco de custo abaixo ja usava.
+  foreach ($pn in @("title","status","specialist","agent_id","type","artifact","base_artifact","session","gate_verdict","operator_order")) {
+    if (-not ($task.PSObject.Properties.Name -contains $pn)) { $task | Add-Member -NotePropertyName $pn -NotePropertyValue $null }
+  }
+
   $task.title          = $effTitle
   $task.status         = $effStatus
   $task.specialist     = $effSpecialist
