@@ -23,7 +23,8 @@
 [CmdletBinding()]
 param(
     [string]$LedgerPath = "",
-    [string]$EngineDir = ""
+    [string]$EngineDir = "",
+    [string]$SemTesteBaselinePath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -403,6 +404,41 @@ if (Test-Path -LiteralPath $personaLabPath) {
     Check $personaLabLabel ($personaLabTxt.Contains($l31Marcador) -and $personaLabTxt.Contains($l31AntiPadrao))
 } else {
     Bad ("persona.md (oficina) nao encontrado em " + $personaLabPath + " - L31 sem como conferir formato")
+}
+
+# ---------------------------------------------------------------------------
+# (D) RATCHET: LEI "SEM TESTE" nao pode dormir (TASK-511, WARDEN - o defeito que gerou esta Task:
+# o ledger permite "SEM TESTE ate o smoke da vX ligar" e nada cobrava o teste chegar de verdade;
+# L54 ficou assim desde a 1.71.0 sem o smoke ligar). Conta linhas de TABELA cujo veredito (ultimo
+# campo) COMECA com "SEM TESTE" - a regex exige o "|" da coluna anterior imediatamente antes de
+# "SEM TESTE", entao um caveat no MEIO de um veredito COBERTA (ex.: L38, L41, L42, que so MENCIONAM
+# "SEM TESTE" numa ressalva) nunca infla a contagem; so a classificacao PRIMARIA conta. Baseline
+# datado num sidecar (NUNCA escreve no ledger nem no sidecar - mesma regra de so-leitura deste
+# script inteiro): contagem de hoje > baseline reprova (LEI nova sem teste, ou teste que existia
+# saiu do smoke); contagem <= baseline passa sempre - encolher nunca reprova, so quem atualiza o
+# sidecar a mao vira o novo piso.
+Write-Host ""
+Write-Host "--- (D) Ratchet: LEIs SEM TESTE (baseline datado, so encolhe) ---"
+if ([string]::IsNullOrWhiteSpace($SemTesteBaselinePath)) {
+    $SemTesteBaselinePath = Join-Path (Split-Path -Parent $LedgerPath) "law-ledger-sem-teste-baseline.txt"
+}
+$semTesteRows = @()
+foreach ($ln in ($ledgerTxt -split "`r?`n")) {
+    if ($ln -match '^\|\s*([A-Z]\d+)\s*\|.*\|\s*(SEM TESTE[^|]*)\|\s*$') {
+        $semTesteRows += $Matches[1]
+    }
+}
+$semTesteCount = $semTesteRows.Count
+if (-not (Test-Path -LiteralPath $SemTesteBaselinePath)) {
+    Bad ("Ratchet SEM TESTE: baseline ausente (" + $SemTesteBaselinePath + ") - grave o numero de hoje antes de confiar neste ratchet")
+} else {
+    $semTesteBaseline = 0
+    [void][int]::TryParse(([System.IO.File]::ReadAllText($SemTesteBaselinePath).Trim()), [ref]$semTesteBaseline)
+    if ($semTesteCount -gt $semTesteBaseline) {
+        Bad ("Ratchet SEM TESTE: " + $semTesteCount + " LEI(s) sem teste (" + ($semTesteRows -join ", ") + ") > baseline " + $semTesteBaseline + " - LEI nova sem teste, ou teste que existia saiu do smoke")
+    } else {
+        Ok ("Ratchet SEM TESTE: " + $semTesteCount + " LEI(s) sem teste (" + ($semTesteRows -join ", ") + ") <= baseline " + $semTesteBaseline)
+    }
 }
 
 Write-Host ""

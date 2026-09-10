@@ -46,7 +46,7 @@ Tres numeros, cada um com a prova ao lado - nenhum e projecao.
 
 ![Verificacoes deterministicas](docs/assets/chart-verificacoes.svg)
 
-**Verificacoes automaticas que nao gastam nenhum token de modelo** (325 na versao atual; o
+**Verificacoes automaticas que nao gastam nenhum token de modelo** (336 na versao atual; o
 numero exato aparece no fim do smoke) cobrem o motor inteiro: formato do que e entregue, a
 conferencia de qualidade, o mapa de conhecimento, a integridade do nucleo, e mais. Nenhuma chama
 IA; qualquer pessoa com acesso ao codigo pode rodar de novo e conferir.
@@ -106,11 +106,17 @@ pular uma etapa - a unica excecao e a escrita no nucleo do sistema, que uma prot
 
 ## Instalacao
 
-Pre-requisito: um coding agent instalado. A Alia mora dentro dele, nao roda sozinha.
+Pre-requisito: um coding agent instalado, com assinatura ativa. A Alia mora dentro dele, nao roda
+sozinha - e o coding agent e de outra empresa e cobrado a parte.
 
-> Repositorio em beta fechado hoje - a linha de instalacao abaixo passa a responder quando a
-> visibilidade abrir, sem data prometida. Sistema operacional: so Windows (PowerShell 5.1+) foi
-> provado; Mac/Linux ainda nao validados (OPP-22).
+> **Nao e desenvolvedor?** Comece por **[PRIMEIROS-PASSOS.md](PRIMEIROS-PASSOS.md)**: o mesmo
+> caminho explicado clique a clique, sem `git`. Um dos passos passa por uma janela de comando, e
+> o guia avisa isso em vez de esconder.
+
+> Sistema operacional: so Windows (PowerShell 5.1+) foi provado; Mac/Linux ainda nao validados
+> (OPP-22). A linha abaixo baixa o motor do que esta publicado no repositorio, que pode estar uma
+> versao atras da mais recente - o numero servido esta em
+> [VERSION](https://raw.githubusercontent.com/gufarina/alia.flow/main/VERSION).
 
 **[Claude Code](https://claude.com/claude-code)** - fluxo completo validado ponta a ponta:
 
@@ -170,8 +176,10 @@ mao certa por trabalho, e um loop de qualidade que confere e refina antes de o r
 Todo engenheiro acaba montando o seu, ad hoc - este e o que ja vem pronto e auditado por teste.
 
 **O repositorio esta aberto para clonar agora?**
-Nao. Esta em beta fechado hoje; a URL de instalacao publica responde 404 nesta data. A linha de
-instalacao deste README passa a funcionar quando a visibilidade abrir, sem data prometida.
+Sim - o repositorio responde publicamente e a linha de instalacao deste README busca um arquivo
+que existe. Duas ressalvas honestas: ainda NAO ha Release publicado (nao existe um ZIP oficial
+para baixar em auto-servico, so o clone ou a linha de instalacao), e o que esta publicado pode
+estar uma versao atras do motor mais recente.
 
 **Funciona no Mac ou Linux?**
 Ainda nao foi validado. O trilho de verificacao (CI incluso) roda hoje so em Windows com

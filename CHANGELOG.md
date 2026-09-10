@@ -20,6 +20,67 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.72.0] - 2026-09-09
+
+CAPABILITY LEDGER (L57): A PROMESSA PASSA A TER PROVA COM DATA. AS 42 CAPACIDADES RE-MEDIDAS
+CONTRA A 1.71.1. AS 4 PROVAS QUE FALTAVAM, CONSTRUIDAS.
+
+O incidente: `docs/CAPACIDADE-REAL.md` - a fonte que diz o que o produto REALMENTE faz, e da qual
+`docs/CLAIMS.md` depende para liberar claim publico - foi medido em 10/08/2026 na v1.46.0. O motor
+andou 43 versoes ate a v1.71.1 e NADA avisou que a medicao tinha vencido. A coordenadora leu os
+selos velhos e os afirmou ao Operator como estado de hoje. A casa tinha catraca para grafo, acervo,
+linhagem, leis e harness - e nenhuma para a propria promessa. Os 5 porques estao em
+`engine/governance/capability-ledger.md`.
+
+- **L57, a lei.** Nenhuma capacidade pode ser AFIRMADA com selo mais velho que o teto (14 dias ou
+  mudanca de MINOR). Vocabulario de selo FECHADO em quatro: FUNCIONA, FUNCIONA PARCIAL, SO CONTRATO,
+  NAO EXISTE. "existe mas nao provado" deixa de ser selo - foi essa ambiguidade que deixou a divida
+  dormir um mes. Capacidade FUNCIONA exige comando de prova executavel: prosa nao e selo.
+- **A maquina.** `scripts/capability-check.ps1` le o registro maquinal, confere vencimento (idade e
+  versao), integridade (selo fora do vocabulario, id repetido, FUNCIONA sem prova) e, com `-Run`,
+  executa as provas. Provado pelo negativo com 3 defeitos plantados: selo invalido, medicao de 30
+  dias e FUNCIONA sem comando - os 3 pegos, exit 1; restaurado, exit 0.
+- **O sensor.** `smoke-test.ps1` chama a maquina e REPROVA quando o registro vence. Mesmo par
+  atuador/sensor da L56: mecanismo sozinho depende de alguem lembrar de rodar, e foi assim que a
+  divida nasceu.
+- **As 42 capacidades re-medidas** por 4 Specialists do lab, cada um re-rodando o comando citado em
+  vez de herdar o selo: 24 FUNCIONA, 9 FUNCIONA PARCIAL, 5 SO CONTRATO, 4 NAO EXISTE. Cada linha
+  agora carrega selo, versao, data, comando de prova e a lacuna que falta fechar.
+- **As 4 provas que faltavam, construidas (WARDEN).** (1) L54 custo obrigatorio: tinha codigo real e
+  ZERO prova - fixture isolada, sem `-Tokens` reprova com exit 1, com `-Tokens` fecha. (2) L52
+  contrato do especialista: o throw de `authority.decides` era provado a mao - virou fixture, a
+  persona sem o campo gera zero arquivo e as irmas geram normal. (3) Cap de profundidade: era
+  "forte por acidente" (B/C nascem sem a ferramenta Task) e virou catraca com persona envenenada.
+  (4) Ratchet de LEI SEM TESTE: a casa permitia registrar lei com "SEM TESTE ate o smoke ligar" e
+  nada cobrava que o teste chegasse - agora o numero tem baseline datado que so encolhe. Medido:
+  10 antes, 8 depois (L52 e L54 ganharam maquina nesta versao).
+- **Achados novos que a re-medicao expos.** Um grafo classificado como FAKE (22.363 nos sem
+  `graph.html`). Investigado no mesmo dia: e um run REAL do graphify em modo AST-only cujo html
+  nunca foi gerado, nao um mapa forjado - o defeito e do CLASSIFICADOR, que nao distingue os dois
+  casos. O mapa foi devolvido intacto ao lugar de origem depois de eu ter mandado arquiva-lo por
+  diagnostico incompleto. Os 4 loops de evento nunca
+  sairam de `pending_install` em 5 Clients desde 14/06 - nao e "existe mas nao disparou", e
+  infraestrutura nunca instalada, e por isso o selo virou NAO EXISTE. A adocao real do mapa subiu
+  para 56% com o denominador corrigido (o veredito oficial do script ainda imprime 27,4% pelo
+  calculo antigo - divergencia registrada como lacuna).
+- **Porta publica consertada.** O README dizia "beta fechado" e "404" enquanto o repositorio ja
+  respondia publicamente; a FAQ afirmava o oposto do medido. Corrigido, com as duas ressalvas
+  honestas (nao ha Release publicado, e o publicado pode estar uma versao atras). `PRIMEIROS-PASSOS.md`
+  prometia "sem terminal" no titulo e entregava terminal no passo 3: o titulo passou a dizer a
+  verdade, o passo ganhou explicacao clique a clique e o pre-requisito pago virou aviso de topo, nao
+  rodape. O README passou a apontar o guia para quem nao e desenvolvedor.
+- **O proprio gate reprovou a primeira tentativa desta release, e estava certo.** As 42 linhas do
+  registro foram carimbadas com 1.71.1 e o bump para 1.72.0 veio depois; como o teto de validade
+  inclui mudanca de MINOR, o bump invalidou o registro que a release acabou de medir. O sensor
+  pegou (`registro VENCIDO por versao: 42 capacidade(s) medidas em 1.71.1`), a revisao saiu FAIL e
+  a propagacao nao rodou. Conserto: recarimbar as 42 linhas com a versao nova (mesma medicao, mesmo
+  dia) e documentar a ORDEM na propria lei - medir, bumpar, recarimbar, so entao rodar o gate.
+- **O guarda da superficie publica barrou a propagacao, e estava certo.** O manifesto do candidato
+  de RSI gerado nesta versao gravava o caminho absoluto da maquina do operador, e candidato de RSI
+  viaja para o produto. `rsi-promote-pattern.ps1` passa a gravar caminho RELATIVO a raiz do repo
+  (ou so o nome do arquivo, quando a fonte esta fora dela); o candidato foi regenerado limpo.
+- Smoke da oficina: 357 checks (era 344), ALL GREEN. `docs/CLAIMS.md` GUARD-NUM=357.
+
 ## [1.71.1] - 2026-09-09
 
 CICLO DE VIDA DA TASK: A VARREDURA (ATUADOR) E O SENSOR QUE OBRIGA ELA A RODAR (L56). PONTA SOLTA

@@ -2383,6 +2383,33 @@ $llcOut = if (Test-Path -LiteralPath $llcScript) { (& $llcScript 6>&1) -join "`n
 Check "Docs-gate: law-ledger-check.ps1 casa 'FAIL: 0' e NUNCA 'LEDGER PODRE' (ponteiros do ledger batem com o disco)" (($llcOut -match 'FAIL:\s*0') -and ($llcOut -notmatch 'LEDGER PODRE'))
 
 
+# --- Capability Ledger: a PROMESSA tem validade (LEI L57, TASK-511, 09/09/2026).
+# INCIDENTE que motivou: docs/CAPACIDADE-REAL.md - a fonte que diz o que o produto REALMENTE faz,
+# e da qual docs/CLAIMS.md depende para liberar claim publico - foi medido em 10/08/2026 na
+# v1.46.0. O motor andou 43 versoes ate a v1.71.1 e NADA avisou que a medicao tinha vencido. A
+# coordenadora leu os selos velhos e os afirmou ao Operator como estado de hoje. A casa tinha
+# catraca para grafo, acervo, linhagem, leis e harness - e nenhuma para a propria promessa.
+# Mesmo par atuador/sensor da L56: capability-check.ps1 mede, este check obriga a medir.
+Write-Host ""
+Write-Host "-- Capability Ledger: a promessa tem prova com data (L57) --"
+$capScript = Join-Path $root "scripts\capability-check.ps1"
+# TASK-511: o REGISTRO (docs/CAPACIDADE-REAL.md) e material INTERNO e nao viaja no pacote publico,
+# por desenho (check-public-surface o barra). Entao no PACOTE a maquina existe e nao tem o que ler:
+# isso e SKIP honesto, nunca FAIL. Na OFICINA, onde o registro mora, ausencia de qualquer um dos
+# dois e falha de verdade.
+$capLedger = Join-Path $root "docs\CAPACIDADE-REAL.md"
+if (-not (Test-Path -LiteralPath $capLedger)) {
+    Write-Host "[SKIP] Capability: registro de capacidade nao viaja no pacote publico (material interno, barrado por check-public-surface) - a maquina existe, nao ha o que conferir aqui"
+    $script:skip++
+} else {
+Check "Capability: capability-check.ps1 presente (a maquina do registro de capacidade)" (Test-Path -LiteralPath $capScript)
+if (Test-Path -LiteralPath $capScript) {
+    $capOut = (& $capScript -Quiet 6>&1) -join "`n"
+    $capOk = ($capOut -notmatch '\[FAIL\]')
+    Check "Capability: registro integro e no prazo (selo vencido nao e fonte, e historico)" $capOk (($capOut -split "`n" | Where-Object { $_ -match '\[FAIL\]' } | Select-Object -First 2) -join " | ")
+}
+}
+
 # --- Identidade de Client vazada no CHANGELOG, CEDO (TASK-285, ultima volta): a 1.61.0 vazou
 # o nome real de um Client na propria entrada nova do CHANGELOG.md, e o unico guard que pegou isso rodava
 # so no estagio de propagacao (release/alia-flow, secao (h) de smoke-test-studio.ps1) - tarde
@@ -3322,6 +3349,85 @@ if (Test-Path -LiteralPath $ssPath52) {
  Check "L52b: scripts/session-start.ps1 existe" $false
 }
 
+# --- L54: custo obrigatorio no FECHA (register-task.ps1, TASK-511 WARDEN - fixture isolada,
+# NUNCA o state.json real). Task delegada (specialist != alia) fechando done/review SEM
+# -Tokens/-ToolUses reprova (exit 1, mensagem "custo e obrigatorio no fecha"); a MESMA Task com
+# -Tokens/-ToolUses passa (exit 0). Fixture criada e apagada aqui mesmo, faxina confirmada por
+# Test-Path.
+Write-Host ""
+Write-Host "-- L54: custo obrigatorio no FECHA (register-task.ps1, fixture isolada) --"
+$l54State = Join-Path ([System.IO.Path]::GetTempPath()) ("l54-cost-" + $PID + ".json")
+[System.IO.File]::WriteAllText($l54State, '{"studio":"fx","updated":"2026-01-01","clients":[],"tasks":[]}', $utf8NoBom76)
+$l54FailOut = (& $rtScript -Client "wardenfx-l54" -Title "sem custo" -Project "p" -Specialist "wardenfx-especialista" -Status done -StateFile $l54State 6>&1) -join "`n"
+$l54FailExit = $LASTEXITCODE
+Check "L54 (negativo): Task done de specialist != alia SEM -Tokens/-ToolUses REPROVA (exit 1)" (($l54FailExit -ne 0) -and ($l54FailOut -match 'custo e obrigatorio no fecha')) ("exit: " + $l54FailExit)
+$l54PassOut = (& $rtScript -Client "wardenfx-l54" -Title "com custo" -Project "p" -Specialist "wardenfx-especialista" -Status done -Tokens 1200 -ToolUses 4 -StateFile $l54State 6>&1) -join "`n"
+$l54PassExit = $LASTEXITCODE
+Check "L54 (positivo/desfaz): mesma Task COM -Tokens/-ToolUses fecha done (exit 0)" ($l54PassExit -eq 0) ("exit: " + $l54PassExit)
+Remove-Item -LiteralPath $l54State -Force -ErrorAction SilentlyContinue
+Check "L54: fixture removida (faxina)" (-not (Test-Path -LiteralPath $l54State))
+
+
+# --- L52 (authority.decides) + Cap de profundidade (capacidade 6): mesma fixture de squad,
+# TASK-511 WARDEN. squad-bridge.ps1 real, sem modificacao - RepoRoot isolado em temp, 3 personas
+# camada B: fx-good (contrato completo), fx-bad (SEM authority.decides - throw esperado), fx-poison
+# (contrato completo mas tools:[Read,Task,Agent] no yaml - prova que o gerador filtra Task/Agent
+# pra camada B/C com catraca testada, nao so por ausencia de ferramenta).
+Write-Host ""
+Write-Host "-- L52 + Cap de profundidade: squad-bridge.ps1 fixture isolada (RepoRoot temp) --"
+$sbFxRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("sb-fx-" + $PID)
+$sbFxAgentsDir = Join-Path $sbFxRoot "clients\fx-squad\squad\agents"
+New-Item -ItemType Directory -Force -Path $sbFxAgentsDir | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $sbFxRoot "clients\fx-squad\squad\squad.yaml"), "squad:`n  client: fx-squad`n  name: Fixture Squad (WARDEN TASK-511)`n  domain: fixture temporaria de prova pelo negativo`n  status: active`n", $utf8NoBom76)
+function New-SbFixtureAgent([string]$Id, [string]$YamlBody) {
+    [System.IO.File]::WriteAllText((Join-Path $sbFxAgentsDir "$Id.yaml"), $YamlBody, $utf8NoBom76)
+    [System.IO.File]::WriteAllText((Join-Path $sbFxAgentsDir "$Id.md"), "# $Id`n`nFixture persona para prova WARDEN (TASK-511).`n", $utf8NoBom76)
+}
+New-SbFixtureAgent "fx-good" "id: fx-good`ncamada: B`ndomain: fixture`ntools: [Read, Grep]`nbudget:`n  tool_calls: 20`noutput_contract:`n  max_lines: 60`n  evidence_tags: [MEDIDO, LIDO, INFERIDO]`ngrounding: client.md`nauthority:`n  decides: teste`n  escalates_to: teste`n"
+New-SbFixtureAgent "fx-bad" "id: fx-bad`ncamada: B`ndomain: fixture`ntools: [Read, Grep]`nbudget:`n  tool_calls: 20`noutput_contract:`n  max_lines: 60`n  evidence_tags: [MEDIDO, LIDO, INFERIDO]`ngrounding: client.md`nauthority:`n  escalates_to: teste`n"
+New-SbFixtureAgent "fx-poison" "id: fx-poison`ncamada: B`ndomain: fixture`ntools: [Read, Task, Agent]`nbudget:`n  tool_calls: 20`noutput_contract:`n  max_lines: 60`n  evidence_tags: [MEDIDO, LIDO, INFERIDO]`ngrounding: client.md`nauthority:`n  decides: teste`n  escalates_to: teste`n"
+
+$sbFxOut = (& $sbPath -RepoRoot $sbFxRoot -Client "fx-squad" *>&1) -join "`n"
+$sbFxGoodPath = Join-Path $sbFxRoot ".claude\agents\fx-squad-fx-good.md"
+$sbFxBadPath = Join-Path $sbFxRoot ".claude\agents\fx-squad-fx-bad.md"
+$sbFxPoisonPath = Join-Path $sbFxRoot ".claude\agents\fx-squad-fx-poison.md"
+
+Check "L52 (negativo): persona SEM authority.decides NAO gera bundle (throw, sem flag de bypass)" (($sbFxOut -match [regex]::Escape("falta 'authority.decides'")) -and (-not (Test-Path -LiteralPath $sbFxBadPath)))
+Check "L52 (positivo/desfaz): os OUTROS agentes do squad continuam gerando (fx-good + fx-poison, isolamento por try/catch)" ((Test-Path -LiteralPath $sbFxGoodPath) -and (Test-Path -LiteralPath $sbFxPoisonPath))
+
+$sbFxPoisonToolsLine = if (Test-Path -LiteralPath $sbFxPoisonPath) { ((Get-Content -LiteralPath $sbFxPoisonPath) | Where-Object { $_ -match '^tools:' } | Select-Object -First 1) } else { "" }
+Check "Cap de profundidade (capacidade 6): persona camada B com Task/Agent no yaml sai SEM Task/Agent no tools: gerado (catraca, nao so ausencia de ferramenta)" (($sbFxPoisonToolsLine) -and ($sbFxPoisonToolsLine -notmatch '\bTask\b') -and ($sbFxPoisonToolsLine -notmatch '\bAgent\b')) ("tools gerado: " + $sbFxPoisonToolsLine)
+
+Remove-Item -LiteralPath $sbFxRoot -Recurse -Force -ErrorAction SilentlyContinue
+Check "L52 + Cap de profundidade: fixture removida (faxina)" (-not (Test-Path -LiteralPath $sbFxRoot))
+
+
+# --- Ratchet LEI SEM TESTE (law-ledger-check.ps1 secao D, TASK-511 WARDEN) - fixture isolada com
+# ledger + baseline proprios, nunca o law-ledger.md real. 2 LEIs SEM TESTE na fixture: baseline 1
+# reprova (contagem > baseline), baseline 2 passa (contagem <= baseline); a 3a linha da fixture so
+# MENCIONA "SEM TESTE" dentro de um veredito COBERTA (mesmo padrao de L38/L41/L42 no ledger real) e
+# nunca pode contar.
+Write-Host ""
+Write-Host "-- Ratchet LEI SEM TESTE: law-ledger-check.ps1 secao D (fixture isolada) --"
+$llcRatchetRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("llc-ratchet-" + $PID)
+New-Item -ItemType Directory -Force -Path (Join-Path $llcRatchetRoot "engine\governance") | Out-Null
+$ratchetLedgerTxt = "# fixture`r`n`r`n| id | lei (resumo) | onde vive | teste que a reprova | veredito |`r`n|----|---|---|---|---|`r`n| L90 | fixture a | x:1 | y:1 | SEM TESTE ate o smoke ligar |`r`n| L91 | fixture b | x:2 | y:2 | SEM TESTE ate o smoke ligar |`r`n| L92 | fixture c (formato) | x:3 | y:3 | COBERTA (formato) - comportamento SEM TESTE, so caveat |`r`n"
+$ratchetLedgerPath = Join-Path $llcRatchetRoot "law-ledger.md"
+[System.IO.File]::WriteAllText($ratchetLedgerPath, $ratchetLedgerTxt, $utf8NoBom76)
+$ratchetBaselinePath = Join-Path $llcRatchetRoot "baseline.txt"
+$ratchetEngineDir = Join-Path $llcRatchetRoot "engine"
+
+[System.IO.File]::WriteAllText($ratchetBaselinePath, "1", $utf8NoBom76)
+$ratchetNegOut = (& $llcScript -LedgerPath $ratchetLedgerPath -EngineDir $ratchetEngineDir -SemTesteBaselinePath $ratchetBaselinePath 6>&1) -join "`n"
+Check "Ratchet SEM TESTE (negativo): 2 LEIs (L90,L91) > baseline 1 -> REPROVA citando os ids, ignora o caveat de L92" (($ratchetNegOut -match '\[FAIL\][^\n]*Ratchet SEM TESTE') -and ($ratchetNegOut -match 'L90') -and ($ratchetNegOut -match 'L91') -and ($ratchetNegOut -notmatch 'L92'))
+
+[System.IO.File]::WriteAllText($ratchetBaselinePath, "2", $utf8NoBom76)
+$ratchetPosOut = (& $llcScript -LedgerPath $ratchetLedgerPath -EngineDir $ratchetEngineDir -SemTesteBaselinePath $ratchetBaselinePath 6>&1) -join "`n"
+Check "Ratchet SEM TESTE (positivo/desfaz): 2 LEIs <= baseline 2 -> PASSA" ($ratchetPosOut -match '\[PASS\][^\n]*Ratchet SEM TESTE')
+
+Remove-Item -LiteralPath $llcRatchetRoot -Recurse -Force -ErrorAction SilentlyContinue
+Check "Ratchet SEM TESTE: fixture removida (faxina)" (-not (Test-Path -LiteralPath $llcRatchetRoot))
+Check "Ratchet SEM TESTE: ledger REAL desta oficina <= baseline gravado hoje (engine/governance/law-ledger-sem-teste-baseline.txt)" ($llcOut -match '\[PASS\][^\n]*Ratchet SEM TESTE')
 
 
 # --- Numero publico: README.md (produto) e GUARD-NUM (oficina) - cada um trava so contra o

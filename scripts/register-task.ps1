@@ -43,6 +43,12 @@
  grava budget_exceeded:true. Task done/review de Specialist != alia sem -Tokens/-ToolUses so AVISA
  (nao trava - falta baseline historico pra virar exigencia dura).
 
+ EXECUTED_BY (M6, TASK-511): -Executor grava "executed_by" (lista) na Task - quem de fato EXECUTOU,
+ distinto de -Specialist (quem a Task foi aberta para/por). O ledger antes so guardava quem ABRIU
+ a Task (specialist), nunca quem rodou - custo por especialista nao existia. Aceita lista separada
+ por virgula ("id1,id2" - uma Task pode acionar mais de um Specialist). Task sem -Executor nao
+ grava nada de novo (campo nasce so quando informado, nunca inventado, nunca retroativo).
+
   Adiciona uma entrada ao array "tasks" (preservando clients/ e o resto do estado intactos) e
   carimba "updated". Le e grava JSON UTF-8 sem BOM. Forca "tasks" a permanecer um ARRAY mesmo
   com um unico item (contorna o bug do ConvertTo-Json no PowerShell 5.1). -DryRun so mostra. exit 0.
@@ -53,6 +59,7 @@ param(
   [string]$Id = "",
   [string]$Project = "",
   [string]$Specialist = "",
+  [string]$Executor = "",
   [string]$Artifact = "",
   [string]$BaseArtifact = "",
   [string]$SessionId = "",
@@ -93,6 +100,14 @@ function Get-SquadMemberIds {
   }
 
   return $ids
+}
+
+# EXECUTED_BY (M6, TASK-511): "id1,id2" -> array de ids, trim, sem vazio. String vazia -> array
+# vazio (nunca inventa quem executou).
+function Get-ExecutedByList {
+  param([string]$Raw)
+  if ([string]::IsNullOrWhiteSpace($Raw)) { return @() }
+  return @($Raw -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })
 }
 # studioRoot = a pasta que contem o -StateFile de verdade (nao mais via alia.config.json/
 # Get-StudioRoot). clients/<id>/squad/squad.yaml sempre vive irmao do state.json em que a Task
@@ -165,6 +180,7 @@ if (-not [string]::IsNullOrWhiteSpace($Id)) {
   $effTokens      = if ($PSBoundParameters.ContainsKey('Tokens'))       { $Tokens }        else { $(if ($null -ne $task.tokens) { [int]$task.tokens } else { -1 }) }
   $effToolUses    = if ($PSBoundParameters.ContainsKey('ToolUses'))     { $ToolUses }      else { $(if ($null -ne $task.tool_uses) { [int]$task.tool_uses } else { -1 }) }
   $effBudget      = if ($PSBoundParameters.ContainsKey('Budget'))       { $Budget }        else { $(if ($null -ne $task.budget) { [int]$task.budget } else { -1 }) }
+  $effExecutedBy  = if ($PSBoundParameters.ContainsKey('Executor'))     { Get-ExecutedByList $Executor } else { $(if ($task.PSObject.Properties.Name -contains "executed_by") { @($task.executed_by) } else { @() }) }
 
   if ([string]::IsNullOrWhiteSpace($effSpecialist)) {
     Write-Host "[ERRO] Task sem -Specialist (nem na Task existente, nem no update): quem executou tem que estar declarado."
@@ -223,13 +239,14 @@ if (-not [string]::IsNullOrWhiteSpace($Id)) {
   $task.session        = $effSession
   $task.gate_verdict   = $effGate
   $task.operator_order = $effOpOrder
-  foreach ($propName in @("tokens","tool_uses","budget","budget_exceeded","title_history","updated")) {
+  foreach ($propName in @("tokens","tool_uses","budget","budget_exceeded","title_history","updated","executed_by")) {
     if (-not ($task.PSObject.Properties.Name -contains $propName)) { $task | Add-Member -NotePropertyName $propName -NotePropertyValue $null -Force }
   }
   $task.tokens          = $(if ($effTokens -ge 0) { $effTokens } else { $null })
   $task.tool_uses       = $(if ($effToolUses -ge 0) { $effToolUses } else { $null })
   $task.budget          = $(if ($effBudget -ge 0) { $effBudget } else { $null })
   $task.budget_exceeded = $budgetExceeded
+  $task.executed_by     = @($effExecutedBy)
   $task.title_history   = @($titleHistory)
   $task.updated         = $now
 
@@ -357,6 +374,7 @@ $task = [PSCustomObject][ordered]@{
   session        = $SessionId
   gate_verdict   = $GateVerdict
   operator_order = $OperatorOrder.IsPresent
+ executed_by = @(Get-ExecutedByList $Executor)
  tokens = $(if ($Tokens -ge 0) { $Tokens } else { $null })
  tool_uses = $(if ($ToolUses -ge 0) { $ToolUses } else { $null })
  budget = $(if ($Budget -ge 0) { $Budget } else { $null })

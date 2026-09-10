@@ -36,6 +36,22 @@ if (-not (Test-Path -LiteralPath $ReportPath)) {
   Write-Host ("[ERRO] relatorio de padrao nao encontrado: " + $ReportPath)
   exit 1
 }
+# TASK-511: o manifesto NUNCA grava caminho absoluto de maquina. Medido: o candidato gerado hoje
+# citava o caminho completo da pasta do operador e o guarda da superficie publica REPROVOU o pacote
+# inteiro no passo 3/3 - candidato de RSI viaja para o produto. Aqui o caminho vira relativo a raiz
+# do repo (ou so o nome do arquivo, se estiver fora dela).
+$repoRootLocal = Split-Path -Parent $PSScriptRoot
+$reportRel = $ReportPath
+try {
+  $full = (Resolve-Path -LiteralPath $ReportPath -ErrorAction Stop).Path
+  $rootFull = (Resolve-Path -LiteralPath $repoRootLocal -ErrorAction Stop).Path
+  if ($full.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+    $reportRel = $full.Substring($rootFull.Length).TrimStart('\\', '/').Replace('\\', '/')
+  } else {
+    $reportRel = Split-Path -Leaf $full
+  }
+} catch { $reportRel = Split-Path -Leaf $ReportPath }
+
 $reportLines = [System.IO.File]::ReadAllLines($ReportPath)
 $bucketLine = $null
 foreach ($ln in $reportLines) {
@@ -65,7 +81,7 @@ $sb = New-Object System.Text.StringBuilder
 [void]$sb.AppendLine("target: " + $targetOut)
 [void]$sb.AppendLine("what: " + $whatOut)
 [void]$sb.AppendLine("why: " + $whyOut)
-[void]$sb.AppendLine("motivated_by: " + $ReportPath + " | " + $bucketLine)
+[void]$sb.AppendLine("motivated_by: " + $reportRel + " | " + $bucketLine)
 [void]$sb.AppendLine("promoted_on: " + $today)
 [void]$sb.AppendLine("status: staged")
 [void]$sb.AppendLine("---")
@@ -78,7 +94,7 @@ $sb = New-Object System.Text.StringBuilder
 [void]$sb.AppendLine("")
 [void]$sb.AppendLine("## Padrao que originou")
 [void]$sb.AppendLine("")
-[void]$sb.AppendLine("- relatorio: " + $ReportPath)
+[void]$sb.AppendLine("- relatorio: " + $reportRel)
 [void]$sb.AppendLine("- bucket: " + $bucketLine)
 [void]$sb.AppendLine("")
 [void]$sb.AppendLine("## Como reverter")

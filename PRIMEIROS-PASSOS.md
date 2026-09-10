@@ -1,7 +1,11 @@
 # Alia - Primeiros passos (versao beta)
 
 > Voce recebeu este pacote porque esta testando a Alia antes de todo mundo. Obrigada.
-> Este guia leva uns 10 minutos. Nada aqui exige saber programar.
+> Este guia leva uns 10 minutos. Nada aqui exige saber programar - mas um dos passos passa por
+> uma janela de comando, e ele esta explicado clique a clique.
+>
+> **Antes de comecar voce precisa ter o Claude Code instalado e com assinatura ativa.** Ele e de
+> outra empresa (a Anthropic), e pago, e a Alia roda em cima dele. Sem isso, nada aqui funciona.
 
 ## O que e a Alia, em uma frase
 
@@ -19,7 +23,7 @@ A Alia mora dentro do **Claude Code** (um programa da Anthropic, criadora do Cla
 
 Ja tem o Claude Code? Pula direto pro passo 1.
 
-## Instalar (3 passos, sem terminal)
+## Instalar (3 passos; o ultimo passa por uma janela de comando)
 
 1. **Descompacte** este pacote numa pasta sua. Sugestao: crie a pasta
  `Documentos\meu-estudio` e extraia tudo la dentro.
@@ -28,8 +32,14 @@ Ja tem o Claude Code? Pula direto pro passo 1.
  confirmar: e so um atalho que abre uma pagina local, nada e instalado.)
 3. **Abra a pasta no Claude Code.** O jeito mais facil no Windows:
  - abra a pasta no Explorador de Arquivos;
- - clique na barra de endereco (onde aparece o caminho), digite `cmd` e aperte Enter;
- - na janela preta que abrir, digite `claude` e aperte Enter.
+ - clique na barra de endereco (onde aparece o caminho da pasta, no alto da janela);
+ - apague o que estiver escrito la, digite `cmd` e aperte Enter;
+ - abre uma janela preta ja apontando pra sua pasta. Digite `claude` e aperte Enter.
+
+ Sim, essa parte passa por uma janela de comando. E o unico momento do guia que passa, e voce
+ nao precisa entender nada do que aparece nela - so digitar essa palavra. Estamos construindo um
+ aplicativo que dispensa esse passo; enquanto ele nao chega, o guia prefere te avisar a fingir
+ que o passo nao existe.
 
  O Claude Code abre ja dentro da pasta - e nesse momento ele vira a Alia. Se por algum motivo
  ela nao se apresentar sozinha (a tela ficar generica, sem ela falar), digite `/alia` e
