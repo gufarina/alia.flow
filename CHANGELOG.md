@@ -20,6 +20,20 @@ ALL GREEN -> tag.
 
 ---
 
+## [1.73.0] - 2026-09-10
+
+MEMORIA 100% AUTOMATICA (mandato do CEO, 10/09/2026): morte do cartao S/N para promocao de
+memoria. O CONFERE (instancia != autor) aplica os 4 crivos e resolve sozinho para um dos 4
+desfechos automaticos - `safe_auto` (passou nos 4), `auto_promote_probation` (duvida, 30 dias),
+`auto_discard` (reprova, arquiva com `discard_reason`, nunca deleta), `route_to_rsi` (crivo 3
+reprovado, vira candidato em `engine/rsi/_candidates/`). Proposta sem classificacao vira
+`auto_discard` com `discard_reason: nao_classificada`. Fronteira dura preservada: nucleo/engine/Gate
+continuam exigindo humano. Atualizados: `scripts/reflect-check.ps1`, `skills/session-reflection/SKILL.md`
+(linhas 24-28, texto antigo de "cartao S/N" trocado pelos 4 desfechos), `engine/governance/law-ledger.md`
+(L58), `docs/CLAIMS.md` (claims de memoria do Alia Flow e do Alia Desktop), `docs/CAPACIDADE-REAL.md`
+(item 15). Provado pelo negativo nos 5 casos (safe_auto, probation, discard, route_to_rsi, sem
+classificacao). Smoke ALL GREEN.
+
 ## [1.72.0] - 2026-09-09
 
 CAPABILITY LEDGER (L57): A PROMESSA PASSA A TER PROVA COM DATA. AS 42 CAPACIDADES RE-MEDIDAS

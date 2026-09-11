@@ -21,11 +21,12 @@ cru de uma sessao e transformar o que aconteceu em PROPOSTAS de memoria. Spec do
   via `scripts/session-reflection.ps1`; o JULGAMENTO (passo do agente) e disparado no SessionStart
   pelo hook `scripts/reflect-check.ps1`, que detecta inboxes pendentes e lembra a Alia de fechar o
   loop. (Antes este disparo era PLACEHOLDER; desde 1.1.0 esta plugado e testado.)
-- NAO promove sem aprovacao independente: a promocao para `memory/` (canonico) so ocorre com
+- NAO promove sem classificacao independente: a promocao para `memory/` (canonico) so ocorre com
   `approved_by` carimbado por uma instancia != quem propos, executada por
-  `scripts/promote-memory.ps1`. O CONFERE (AUTONOMIA COM FREIO) auto-aprova o que passa nos 4 crivos
-  (SEGURA_AUTO) e ESCALA para o cartao S/N do operador o que falha ou gera duvida. Autonomia SO na
-  promocao de memoria; nucleo/engine/Gate continuam exigindo humano.
+  `scripts/promote-memory.ps1`. O CONFERE (AUTONOMIA COM FREIO, decisao do CEO 10/09/2026) classifica
+  cada proposta pelos 4 crivos e resolve sozinho, sem cartao S/N: passou nos 4 -> `safe_auto`; duvida
+  -> `auto_promote_probation` (30 dias); reprova -> `auto_discard` (arquiva); crivo 3 reprovado ->
+  `route_to_rsi`. Autonomia SO na promocao de memoria; nucleo/engine/Gate continuam exigindo humano.
 
 ## Divisao de trabalho: script (frugal) + agente (julgamento)
 
@@ -75,11 +76,13 @@ duravel (ex: "sempre checar se o path existe antes de escrever"), o que se regis
 (feedback), nunca o incidente. Incidente isolado nao e padrao (RSI estagio 2: padrao, nao
 incidente).
 
-### 4. SEMPRE so PROPOE
+### 4. A REFLEXAO so PROPOE; a PROMOCAO fecha sozinha
 
-Toda saida vai para `memory/_proposals/` como proposta. Nada e escrito na memoria real do
-operador. O operador le as propostas e aprova (ou nao). O sistema propoe; quem aplica e gente
-(provenance.md: agent-authored sai como diff; quem aprova e o operador).
+Toda saida vai para `memory/_proposals/` como proposta. Nada e escrito direto na memoria real
+do operador por este passo. Mas o ciclo nao para esperando gente: o CONFERE independente
+(AUTONOMIA COM FREIO, abaixo) classifica cada proposta e a promocao fecha no mesmo ciclo, sem
+cartao S/N ao operador (provenance.md: agent-authored sai como diff; quem aprova e o CONFERE,
+uma instancia != quem propos - nunca o operador item-a-item).
 
 ## Formato da proposta
 
@@ -127,11 +130,15 @@ e um resumo do que foi proposto e por que - o ponto de entrada que o operador re
 1. SessionEnd -> `session-reflection.ps1` gera o `reflection-inbox-{data}-{id8}.md` (digest frugal).
 2. SessionStart -> `reflect-check.ps1` detecta inboxes pendentes e lembra a Alia (o gatilho).
 3. A Alia julga (heuristicas Hermes abaixo) e escreve `prop-*.md` em `_proposals/`.
-4. CONFERE independente (AUTONOMIA COM FREIO, abaixo): uma instancia != quem propos triagem
-   cada proposta pelos 4 crivos -> SEGURA_AUTO carimba `approved_by` e auto-promove; ESCALA_HUMANO
-   mostra o cartao S/N ao operador so no que ficou arriscado ou duvidoso.
-5. `promote-memory.ps1 -ArchiveInbox`: move as aprovadas (as carimbadas com `approved_by`) para
-   `memory/` e arquiva os inboxes julgados.
+4. CONFERE independente (AUTONOMIA SEM ESPERA HUMANA, abaixo): uma instancia != quem propos
+   triagem cada proposta pelos 4 crivos e resolve para um dos quatro destinos, todos automaticos:
+   `safe_auto` carimba `approved_by` e promove; `auto_promote_probation` promove com
+   `confidence: low` e `valid_until` de 30 dias (o tempo retira, via `memory-curator.ps1
+   -Validade`); `auto_discard` arquiva a proposta em `_archive/` com `discard_reason` (nunca
+   deleta); `route_to_rsi` manda o candidato para `engine/rsi/_candidates/` quando o crivo 3
+   (Aditiva/SEGURA) reprova - vira pauta de motor, nao memoria.
+5. `promote-memory.ps1 -ArchiveInbox`: move as aprovadas (`safe_auto` e `auto_promote_probation`,
+   ambas com `approved_by`) para `memory/` e arquiva os inboxes julgados.
 
 ## Protocolo de dialogo (teste da mae - decisao do CEO, 02/jul)
 
@@ -143,19 +150,20 @@ para o usuario; o loop fica nos bastidores) manda aqui tambem - e o gatilho nao 
   Adiar dentro da sessao pode; pular nao - o processamento continua obrigatorio na sessao,
   e a prova da instancia FALHA se aprendizado ficar parado > 3 dias (a trava de maquina).
 - COMO SE FALA: nao se anuncia ("vou fechar o loop de RSI" e violacao), nao se narra, nao se
-  usa RSI/digest/inbox/promocao/cartao na conversa. Se TUDO passou no CONFERE (SEGURA_AUTO),
-  o operador nem fica sabendo - a evidencia e a memoria melhor.
-- ESCALA_HUMANO vira UMA pergunta simples em linguagem de negocio, encaixada no fim de uma
-  resposta: "Da ultima vez anotei que [licao em palavras do dia a dia]. Guardo isso pra valer
-  daqui pra frente?" Nunca um bloco tecnico de aprovacao.
+  usa RSI/digest/inbox/promocao/probation/candidato na conversa. O CONFERE resolve tudo sozinho
+  (safe_auto, probation, descarte ou roteamento para RSI) - o operador nunca fica sabendo do
+  mecanismo, e nunca e interrompido por memoria (decisao do CEO, 10/09/2026: sem cartao S/N).
 - Teste da mae: se a mae do operador nao entenderia a frase, a frase nao sai.
 
-## AUTONOMIA COM FREIO (o CONFERE que fecha o loop sem pedir OK item-a-item)
+## AUTONOMIA SEM ESPERA HUMANA (o classificador e o tempo sao o freio)
 
-Decisao do CEO (30/jun): no fechamento do loop, a Alia NAO deve pedir cartao S/N item-a-item ao
-operador. Pedir aprovacao em bloco vira ruido, o operador ignora, e o loop apodrece (era o furo do
-OPP-53). O freio nao e o operador clicar em tudo - o freio e um CONFERE INDEPENDENTE que separa o
-que promove sozinho do que sobe pro humano.
+Decisao do CEO (10/09/2026): a Alia aprende sozinha, sem eu ter que aprovar nada. O desfecho
+ESCALA_HUMANO (cartao S/N ao operador) morreu - pedir aprovacao em bloco virava ruido, o
+operador ignorava, e o loop apodrecia (era o furo do OPP-53). O freio nao e mais o operador
+clicar em algo - o freio e um CONFERE INDEPENDENTE que classifica automaticamente CADA proposta
+em um dos quatro desfechos (`safe_auto`, `auto_promote_probation`, `auto_discard`,
+`route_to_rsi`), e o TEMPO, que retira sozinho o que entrou em probation (30 dias, sem confirmar
+com ninguem).
 
 Quem confere: uma instancia SEPARADA de quem propos (a Alia num passo dedicado ou um sub-agente
 CONFERE), nunca o mesmo agente que escreveu a proposta - e o guardrail `independent_verification`
@@ -171,23 +179,30 @@ O CONFERE classifica CADA `prop-*.md` pelos 4 crivos (todos tem que passar):
 4. **Duravel**: e regra/fato que vale pra frente, nao desabafo nem incidente transitorio (mesma
    regra da lista anti-captura e do estagio 2 do RSI: padrao, nao incidente).
 
-Desfecho:
+Desfecho (os quatro, todos automaticos - nenhum espera humano):
 
-- Passou nos 4 -> **SEGURA_AUTO**: o CONFERE carimba `approved_by:` no frontmatter com a SUA
+- Passou nos 4 -> **safe_auto**: o CONFERE carimba `approved_by:` no frontmatter com a SUA
   identidade (a instancia que conferiu, != autor) e a proposta e auto-promovida por
-  `promote-memory.ps1`. O operador nao e interrompido pelo seguro.
-- Falhou QUALQUER crivo, OU o CONFERE ficou em duvida -> **ESCALA_HUMANO**: a proposta NAO recebe
-  `approved_by` (o script a mantem BLOQUEADA em staging) e entra no cartao S/N que a Alia mostra ao
-  operador. So o arriscado/duvidoso rouba a atencao dele.
+  `promote-memory.ps1`.
+- Duvida nos crivos 1, 2 ou 4 -> **auto_promote_probation**: promove com `confidence: low` e
+  `valid_until` de 30 dias. Quem retira e o TEMPO (`memory-curator.ps1 -Validade`), nunca um
+  humano.
+- Reprova clara nos crivos 1, 2 ou 4 -> **auto_discard**: NAO promove; arquiva o `prop-*.md` em
+  `memory/_proposals/_archive/` com `status: discarded` e `discard_reason:`. Nunca deleta.
+- Crivo 3 (Aditiva/SEGURA) reprovado -> **route_to_rsi**: NAO vira memoria; vira candidato em
+  `engine/rsi/_candidates/`, o cano proprio de mudanca de MOTOR.
 
-### Fronteira dura (nao afrouxar)
+### Fronteira dura (nao afrouxar) - agora e roteamento, nao pergunta
 
 Esta autonomia vale SO para promocao de MEMORIA (`prop-*.md` -> `memory/`, notas
 `user|feedback|project|reference`). Qualquer mudanca em engine/nucleo/constituicao/Gate continua
 exigindo humano: e `provenance: nucleo` (bloqueio duro, provenance.yaml `block_when`) e, para o
-Gate, `human_approval_for: [gate]` no `rsi.yaml`. O crivo 3 (Aditiva/SEGURA) ja reprova para
-ESCALA_HUMANO qualquer proposta que tente tocar essa fronteira - o CONFERE nunca a atravessa
-sozinho. A politica machine-checkable esta em `engine/rsi/rsi.yaml` -> `memory_promotion_policy`.
+Gate, `human_approval_for: [gate]` no `rsi.yaml`. O crivo 3 (Aditiva/SEGURA) e essa fronteira: uma
+proposta que tenta tocar nucleo/engine/constituicao/Gate, ou envolve gasto/credencial/acao
+destrutiva, nunca vira memoria - o CONFERE a desvia (`route_to_rsi`) para
+`engine/rsi/_candidates/`, mantendo L04 / `-AllowCore` como o unico cano de mudanca de motor.
+Nao e mais uma pergunta ao operador, e roteamento automatico para o lugar certo. A politica
+machine-checkable esta em `engine/rsi/rsi.yaml` -> `memory_promotion_policy`.
 
 ## Procedimento do agente (passo a passo)
 
@@ -198,21 +213,31 @@ sozinho. A politica machine-checkable esta em `engine/rsi/rsi.yaml` -> `memory_p
    (heuristica 2), escrever a proposta no formato acima como novo `.md` em `memory/_proposals/`.
 5. Atualizar o resumo do inbox com o que foi proposto e por que.
 6. Atualizar o resumo do inbox. NUNCA tocar nucleo ou engine/.
-7. CONFERE (AUTONOMIA COM FREIO, instancia != autor): para cada `prop-*.md`, aplicar os 4 crivos
-   (Fundamentada, Nao-duplicata, Aditiva/SEGURA, Duravel). Passou nos 4 -> SEGURA_AUTO: carimbar
-   `approved_by: <identidade do CONFERE>` no frontmatter. Falhou algum crivo OU duvida ->
-   ESCALA_HUMANO: NAO carimbar; juntar no cartao S/N e mostrar ao operador so essas.
-8. Rodar `scripts/promote-memory.ps1 -ArchiveInbox` - promove as que tem `approved_by` (SEGURA_AUTO
-   + as que o operador aprovou no cartao), move os `prop-*.md` para `memory/` (status: active) e
-   arquiva os `reflection-inbox-*.md` ja julgados em `_archive/`. As sem `approved_by` ficam
-   BLOQUEADAS em staging (o script sinaliza). Nunca deleta: promover preserva, arquivar move.
+7. CONFERE (AUTONOMIA SEM ESPERA HUMANA, instancia != autor): para cada `prop-*.md`, aplicar os
+   4 crivos (Fundamentada, Nao-duplicata, Aditiva/SEGURA, Duravel) e resolver para um dos quatro
+   outcomes: passou nos 4 -> `safe_auto` (carimbar `approved_by: <identidade do CONFERE>`);
+   duvida nos crivos 1/2/4 -> `auto_promote_probation` (carimbar `approved_by`, `confidence: low`,
+   `valid_until` +30 dias); reprova clara nos crivos 1/2/4 -> `auto_discard` (arquivar com
+   `discard_reason`, nunca deletar); reprova no crivo 3 -> `route_to_rsi` (mover o candidato para
+   `engine/rsi/_candidates/`). Nenhum desfecho espera confirmacao do operador.
+8. Rodar `scripts/promote-memory.ps1 -ArchiveInbox` - promove as que tem `approved_by`
+   (`safe_auto` e `auto_promote_probation`), move os `prop-*.md` para `memory/` (status: active,
+   ou `confidence: low` + `valid_until` na probation) e arquiva os `reflection-inbox-*.md` ja
+   julgados em `_archive/`. As `auto_discard` ja foram arquivadas no passo 7. Nunca deleta:
+   promover preserva, arquivar move.
 
 ## Invariante
 
 - O passo de REFLEXAO so propoe (status: proposed); nunca aplica; nunca deleta; nunca toca nucleo.
   A promocao e outro passo (CONFERE independente + promote-memory.ps1), nunca o mesmo agente.
-- Autonomia SO na promocao de memoria (SEGURA_AUTO nos 4 crivos). Nucleo/engine/Gate = humano.
+- Autonomia total na promocao de memoria, sem espera humana: os 4 crivos resolvem sempre para
+  `safe_auto`, `auto_promote_probation`, `auto_discard` ou `route_to_rsi`. Nucleo/engine/Gate
+  continuam exigindo humano (`human_approval_for: [gate]`, `provenance: nucleo`) - e e por isso
+  que o crivo 3 reprovado vira `route_to_rsi`, nunca memoria.
+- Invariante novo (10/09/2026): nenhuma proposta termina a sessao parada esperando humano. O
+  `human_card` deixou de existir para memoria.
 - Captura o conserto, nao a reclamacao. Padrao duravel, nao incidente transitorio.
 - Toda escrita: UTF-8 sem BOM,
 - Disparo plugado (desde 1.1.0): digest no SessionEnd; julgamento lembrado no SessionStart
-  (reflect-check.ps1); promocao apos CONFERE (promote-memory.ps1, approved_by). O loop fecha.
+  (reflect-check.ps1); promocao apos CONFERE (promote-memory.ps1, approved_by). O loop fecha
+  sozinho, nos quatro destinos.

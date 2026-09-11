@@ -1,29 +1,51 @@
 <#
-  promote-memory.ps1 - Promove notas de memoria APROVADAS de _proposals/ (staging)
-  para memory/ (canonico). E o passo mecanico do "cartao de aprovacao S/N": o agente
-  julga (skills/session-reflection), o operador aprova, este script materializa a promocao.
+  promote-memory.ps1 - Promove notas de memoria de _proposals/ (staging) para memory/
+  (canonico) ou roteia para outro destino. Passo mecanico do CONFERE: o agente propoe
+  (skills/session-reflection), o CONFERE classifica, este script materializa o destino.
   Fecha o elo que faltava no loop de RSI (Orient: o digest vira memoria de verdade).
 
   Spec: skills/session-reflection/SKILL.md. Governanca: engine/governance/provenance.md
   (so agent-authored; staging e temporario; a memoria canonica nunca e deletada por automacao).
 
-  CONFERE (guardrail independente, rsi.md:95-99 / provenance.md:26): quem propoe NAO aprova.
-  Este script so promove a prop-*.md que carrega o SINAL de aprovacao independente no
-  frontmatter (campo approved_by, com valor != do autor da proposta). Esse campo NUNCA e escrito
-  pelo passo de reflexao (session-reflection so emite status: proposed); ele e carimbado pela
-  instancia que aprova (o cartao S/N do operador, ou um sub-agente CONFERE). Sem approved_by =
-  promocao BLOQUEADA: o arquivo fica em staging e e reportado como pendente, nao apodrece silencioso.
+  DECISAO DO CEO (10/09/2026): "a alia deve aprender sozinha, sem eu ter que aprovar nada".
+  O desfecho ESCALA_HUMANO (cartao S/N ao operador) MORREU para memoria. Nao existe mais saida
+  "fica em staging esperando o operador" - toda prop-*.md termina a passada com um dos QUATRO
+  destinos abaixo, todos automaticos. O CONFERE (guardrail independente, quem propoe nao aprova)
+  continua vivo, mas como CLASSIFICADOR, nunca como fila.
+
+  Contrato de classificacao (frontmatter da prop-*.md, escrito pelo CONFERE):
+   - approved_by: <instancia != autor>            -> exige-se para promover (SEMPRE).
+   - confidence: low  (+ valid_until: YYYY-MM-DD)  -> promove em PROBATION (nao precisa dos 4
+     crivos completos; duvida no crivo 1/2/4). Quem retira e o TEMPO (memory-curator.ps1
+     -Validade), nunca o humano.
+   - discard: true  (+ discard_reason: <motivo>)   -> AUTO_DISCARD. Nao promove; move o
+     prop-*.md para memory/_proposals/_archive/ com status: discarded. Nunca deleta.
+   - route_to_rsi: true (+ route_reason opcional)  -> ROUTE_TO_RSI. Crivo 3 (Aditiva/SEGURA)
+     reprovado (toca nucleo/engine/constituicao/Gate, ou envolve gasto/credencial/acao
+     destrutiva). Nao vira memoria; vira candidato em engine/rsi/_candidates/. Isso NAO e
+     aprovacao de memoria, e roteamento para o cano de mudanca de MOTOR (L04 / -AllowCore).
+
+  Os QUATRO destinos, todos automaticos:
+   - safe_auto: approved_by presente, sem discard/route/probation -> promove, status: active.
+   - auto_promote_probation: approved_by presente + confidence: low -> promove, status: active,
+     confidence: low, valid_until preservado (30 dias, retirado por memory-curator.ps1).
+   - auto_discard: discard: true -> arquiva com discard_reason, nunca promove, nunca deleta.
+   - route_to_rsi: route_to_rsi: true -> vira candidato em engine/rsi/_candidates/, nunca memoria.
+   - SEM classificacao nenhuma (sem approved_by, sem discard, sem route_to_rsi): e ERRO do ciclo,
+     nao espera - tratado como auto_discard com discard_reason: nao_classificada.
 
   O que faz (passo mecanico, custo zero de token de modelo):
    - pega os prop-*.md em -ProposalsDir (default memory/_proposals).
    - valida o frontmatter (campo name); pula e avisa se faltar.
-   - CONFERE: exige approved_by no frontmatter; sem ele, BLOQUEIA (nao promove) e avisa.
-   - escreve cada aprovado em -MemoryDir/<name>.md (canonico), trocando status: proposed -> active
+   - classifica pelo contrato acima e resolve um dos 4 destinos - NUNCA fica esperando humano.
+   - escreve cada promovido em -MemoryDir/<name>.md (canonico), trocando status: proposed -> active
      e carimbando promoted_on.
-   - remove o prop-*.md do staging (o CONTEUDO fica preservado em memory/, nao e deletado).
+   - remove o prop-*.md do staging (o CONTEUDO fica preservado em memory/ ou nos destinos acima,
+     nao e deletado).
    - -ArchiveInbox: move os digests brutos ja julgados (reflection-inbox-*.md) para
      _proposals/_archive/, para o gatilho do SessionStart nao re-disparar (move, nunca deleta).
-   - NUNCA toca _retired/, engine/, nucleo. NUNCA escreve fora de -MemoryDir / _archive.
+   - NUNCA toca _retired/, engine/, nucleo (exceto engine/rsi/_candidates/, destino explicito do
+     route_to_rsi). NUNCA escreve fora de -MemoryDir / _archive / _candidates.
    - -DryRun: so lista o que faria, nao move nada.
 
   Escrita .NET UTF-8 sem BOM. exit 0.
@@ -35,12 +57,14 @@ param(
   # -AllowUnverified: ESCAPE explicito para casos sem revisor independente disponivel (rompe o
   # CONFERE de proposito; so com sinal humano no terminal). Default OFF: a promocao exige approved_by.
   [switch]$AllowUnverified,
+  [string]$CandidatesDir = "",
   [switch]$DryRun
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-if ([string]::IsNullOrWhiteSpace($ProposalsDir)) { $ProposalsDir = Join-Path $root "memory\_proposals" }
-if ([string]::IsNullOrWhiteSpace($MemoryDir))    { $MemoryDir    = Join-Path $root "memory" }
+if ([string]::IsNullOrWhiteSpace($ProposalsDir))  { $ProposalsDir  = Join-Path $root "memory\_proposals" }
+if ([string]::IsNullOrWhiteSpace($MemoryDir))     { $MemoryDir     = Join-Path $root "memory" }
+if ([string]::IsNullOrWhiteSpace($CandidatesDir)) { $CandidatesDir = Join-Path $root "engine\rsi\_candidates" }
 
 $utf8  = New-Object System.Text.UTF8Encoding($false)
 $today = (Get-Date).ToString("yyyy-MM-dd")
@@ -94,9 +118,13 @@ foreach ($orf in $orphans) {
 
 if (-not $DryRun -and $props.Count -gt 0) { New-Item -ItemType Directory -Force -Path $MemoryDir | Out-Null }
 
-$promoted = 0
-$skipped  = 0
-$blocked  = 0
+$promoted   = 0
+$probation  = 0
+$discarded  = 0
+$routedRsi  = 0
+$skipped    = 0
+$archiveDirEarly = Join-Path $ProposalsDir "_archive"
+
 foreach ($p in $props) {
   $content = [System.IO.File]::ReadAllText($p.FullName)
   $m = [regex]::Match($content, '(?m)^\s*name:\s*(.+?)\s*$')
@@ -111,29 +139,89 @@ foreach ($p in $props) {
     $skipped++
     continue
   }
-  # CONFERE (rsi.md:95-99 / provenance.md:26): quem propoe nao aprova. So promove com sinal de
-  # aprovacao INDEPENDENTE (approved_by) - carimbado pelo cartao S/N do operador ou sub-agente
-  # CONFERE, nunca pelo passo de reflexao. Sem ele = BLOQUEADO (nao apodrece silencioso).
-  $a = [regex]::Match($content, '(?im)^\s*approved_by:\s*(\S.*?)\s*$')
+
+  # DESFECHO ESCALA_HUMANO MORTO (decisao do CEO, 10/09/2026): nenhuma prop-*.md termina a
+  # passada esperando humano. O CONFERE classifica com estes campos de frontmatter; este script
+  # so resolve o destino - sempre um dos 4, nunca fila.
+  $a         = [regex]::Match($content, '(?im)^\s*approved_by:\s*(\S.*?)\s*$')
   $approvedBy = if ($a.Success) { $a.Groups[1].Value.Trim() } else { "" }
-  if ([string]::IsNullOrWhiteSpace($approvedBy) -and -not $AllowUnverified) {
-    Write-Host ("[BLOQUEADO] " + $p.Name + " - sem approved_by no frontmatter (CONFERE: quem propoe nao aprova). Aguardando aprovacao independente.")
-    $blocked++
+  $conf      = [regex]::Match($content, '(?im)^\s*confidence:\s*(\S.*?)\s*$')
+  $confidence = if ($conf.Success) { $conf.Groups[1].Value.Trim().ToLowerInvariant() } else { "" }
+  $vu        = [regex]::Match($content, '(?im)^\s*valid_until:\s*(\S.*?)\s*$')
+  $validUntil = if ($vu.Success) { $vu.Groups[1].Value.Trim() } else { "" }
+  $disc      = [regex]::Match($content, '(?im)^\s*discard:\s*(true|sim)\s*$')
+  $discReason = [regex]::Match($content, '(?im)^\s*discard_reason:\s*(\S.*?)\s*$')
+  $isDiscard = $disc.Success
+  $rte       = [regex]::Match($content, '(?im)^\s*route_to_rsi:\s*(true|sim)\s*$')
+  $isRoute   = $rte.Success
+
+  # ERRO do ciclo (nenhuma classificacao) vira auto_discard com motivo explicito - nunca espera.
+  $unclassified = [string]::IsNullOrWhiteSpace($approvedBy) -and -not $isDiscard -and -not $isRoute -and -not $AllowUnverified
+
+  if ($isRoute) {
+    # ROUTE_TO_RSI: crivo 3 (Aditiva/SEGURA) reprovado - toca nucleo/engine/gate, ou envolve
+    # gasto/credencial/acao destrutiva. NAO vira memoria; vira candidato pro cano de mudanca de
+    # MOTOR (L04 / -AllowCore em rsi-apply.ps1). Move (nunca deleta).
+    $reasonMatch = [regex]::Match($content, '(?im)^\s*route_reason:\s*(\S.*?)\s*$')
+    $reason = if ($reasonMatch.Success) { $reasonMatch.Groups[1].Value.Trim() } else { "aditiva_safe_reprovado" }
+    if ($DryRun) {
+      Write-Host ("[DRY] rotearia p/ RSI: " + $p.Name + " -> engine/rsi/_candidates/  (motivo: " + $reason + ")")
+    } else {
+      New-Item -ItemType Directory -Force -Path $CandidatesDir | Out-Null
+      $rsiOut = $content -replace '(?m)^\s*status:\s*proposed\s*$', ("  status: rsi_candidate`r`n  routed_on: " + $today + "`r`n  route_reason: " + $reason)
+      [System.IO.File]::WriteAllText((Join-Path $CandidatesDir $p.Name), $rsiOut, $utf8)
+      Remove-Item -LiteralPath $p.FullName -Force
+      Write-Host ("[ROUTE_TO_RSI] " + $p.Name + " -> engine/rsi/_candidates/" + $p.Name + "  (nao e memoria, motivo: " + $reason + ")")
+    }
+    $routedRsi++
     continue
   }
+
+  if ($isDiscard -or $unclassified) {
+    # AUTO_DISCARD: reprova clara (nao fundamentada / duplicata / nao duravel) OU proposta sem
+    # classificacao (erro do ciclo, tratado como discard com motivo explicito). Nunca promove,
+    # nunca deleta - arquiva em _archive/ com discard_reason.
+    $reason = if ($discReason.Success) { $discReason.Groups[1].Value.Trim() } `
+              elseif ($unclassified) { "nao_classificada" } else { "sem_motivo_informado" }
+    if ($DryRun) {
+      Write-Host ("[DRY] descartaria: " + $p.Name + " -> _archive/  (discard_reason: " + $reason + ")")
+    } else {
+      New-Item -ItemType Directory -Force -Path $archiveDirEarly | Out-Null
+      $discOut = $content -replace '(?m)^\s*status:\s*proposed\s*$', ("  status: discarded`r`n  discarded_on: " + $today + "`r`n  discard_reason: " + $reason)
+      [System.IO.File]::WriteAllText((Join-Path $archiveDirEarly $p.Name), $discOut, $utf8)
+      Remove-Item -LiteralPath $p.FullName -Force
+      Write-Host ("[AUTO_DISCARD] " + $p.Name + " -> _archive/" + $p.Name + "  (discard_reason: " + $reason + ")")
+    }
+    $discarded++
+    continue
+  }
+
+  # SAFE_AUTO ou AUTO_PROMOTE_PROBATION: passou (ou entrou em duvida controlada) com approved_by
+  # presente. Probation = confidence: low (duvida no crivo 1/2/4); o TEMPO retira via
+  # memory-curator.ps1 -Validade, nunca o humano.
   $dest = Join-Path $MemoryDir ($name + ".md")
-  # Prova extraivel (OPP-44): carimba quem aprovou + quando, ao lado de status: active.
   $approvalStamp = if ([string]::IsNullOrWhiteSpace($approvedBy)) { "OVERRIDE:AllowUnverified" } else { $approvedBy }
-  $out  = $content -replace '(?m)^\s*status:\s*proposed\s*$', ("  status: active`r`n  promoted_on: " + $today + "`r`n  promoted_by: " + $approvalStamp)
+  $isProbation = ($confidence -eq "low")
+  $extraFields = "  status: active`r`n  promoted_on: " + $today + "`r`n  promoted_by: " + $approvalStamp
+  if ($isProbation) {
+    $vuFinal = if ([string]::IsNullOrWhiteSpace($validUntil)) { (Get-Date).AddDays(30).ToString("yyyy-MM-dd") } else { $validUntil }
+    $extraFields += "`r`n  confidence: low`r`n  valid_until: " + $vuFinal
+  }
+  $out = $content -replace '(?m)^\s*status:\s*proposed\s*$', $extraFields
 
   if ($DryRun) {
-    Write-Host ("[DRY] promoveria: " + $p.Name + " -> memory/" + $name + ".md  (aprovado por: " + $approvalStamp + ")")
+    $label = if ($isProbation) { "PROBATION" } else { "SAFE_AUTO" }
+    Write-Host ("[DRY] promoveria (" + $label + "): " + $p.Name + " -> memory/" + $name + ".md  (aprovado por: " + $approvalStamp + ")")
   } else {
     [System.IO.File]::WriteAllText($dest, $out, $utf8)
     Remove-Item -LiteralPath $p.FullName -Force
-    Write-Host ("[OK] promovido: " + $name + ".md  (aprovado por: " + $approvalStamp + "; staging removido; conteudo preservado em memory/)")
+    if ($isProbation) {
+      Write-Host ("[AUTO_PROMOTE_PROBATION] " + $name + ".md  (aprovado por: " + $approvalStamp + "; confidence: low; valid_until: " + $vuFinal + "; retirada e por tempo, memory-curator.ps1 -Validade)")
+    } else {
+      Write-Host ("[OK] promovido: " + $name + ".md  (aprovado por: " + $approvalStamp + "; staging removido; conteudo preservado em memory/)")
+    }
   }
-  $promoted++
+  if ($isProbation) { $probation++ } else { $promoted++ }
 }
 
 # Arquivar os digests brutos ja julgados (reflection-inbox-*.md) para o gatilho do
@@ -242,13 +330,12 @@ if ($ArchiveInbox) {
 }
 
 Write-Host ""
-Write-Host ("Resumo: " + $promoted + " promovida(s) | " + $blocked + " BLOQUEADA(S) sem aprovacao | " +
-  $skipped + " pulada(s) | " + $archived + " inbox(es) arquivado(s) | " + $archivedFriction +
+Write-Host ("Resumo: " + $promoted + " safe_auto | " + $probation + " auto_promote_probation | " +
+  $discarded + " auto_discard | " + $routedRsi + " route_to_rsi | " + $skipped + " pulada(s) sem name | " +
+  $archived + " inbox(es) arquivado(s) | " + $archivedFriction +
   " friction(s) arquivado(s) (ja consumido por rsi-patterns) | " +
   $rsiFriction.Count + " friction(s) + " + $rsiPatterns.Count + " pattern(s) roteados pro STAGING (nao promovidos, nao orfaos) | " +
   $orphans.Count + " orfao(s) de verdade | " +
   $(if ($DryRun) { "DRY-RUN (nada movido)" } else { "aplicado" }))
-if ($blocked -gt 0) {
-  Write-Host ("[CONFERE] " + $blocked + " proposta(s) aguardando approved_by (instancia independente). NAO promovidas - o loop SINALIZA, nao apodrece.")
-}
+Write-Host ("[INVARIANTE] nenhuma prop-*.md termina a sessao esperando humano - todo item recebeu um dos 4 destinos automaticos (safe_auto / auto_promote_probation / auto_discard / route_to_rsi).")
 exit 0

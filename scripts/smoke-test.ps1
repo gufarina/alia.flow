@@ -910,19 +910,34 @@ $confereOk = ($rsiMd -match '(?i)Verificacao independente') -and ($rsiYml -match
 Check "RSI: CONFERE (verificacao independente) pareado em rsi.md + rsi.yaml" $confereOk "falta o guardrail de verificacao independente na prosa e/ou no yaml"
 
 
-# --- AUTONOMIA COM FREIO: promocao de memoria autonoma pelo CONFERE, nucleo/gate no humano ---
-# Decisao do CEO 30/jun: no fechamento do loop, o CONFERE independente auto-promove a nota que passa
-# nos 4 crivos (SEGURA_AUTO) e escala pro humano so a duvidosa/arriscada. A politica machine-checkable
-# vive em rsi.yaml (memory_promotion_policy, scope memory_only + os dois desfechos) pareada com a prosa
-# do protocolo em session-reflection/SKILL.md. A fronteira dura (autonomia SO em memoria) tem que
-# aparecer nos dois lados; sem isso, a regra apodrece como texto solto.
+# --- AUTONOMIA COM FREIO: promocao de memoria 100% automatica, ESCALA_HUMANO morta (CEO 10/09) ---
+# Decisao do CEO 10/09/2026: "a alia deve aprender sozinha, sem eu ter que aprovar nada". O
+# desfecho ESCALA_HUMANO (cartao S/N ao operador) MORREU para memoria - vira 4 destinos, todos
+# automaticos (safe_auto / auto_promote_probation / auto_discard / route_to_rsi). O CONFERE
+# continua vivo como CLASSIFICADOR, nunca como fila. A politica machine-checkable vive em
+# rsi.yaml (memory_promotion_policy) pareada com a prosa do protocolo em session-reflection/SKILL.md.
+# A fronteira dura (autonomia SO em memoria; nucleo/gate seguem no humano) tem que aparecer nos
+# dois lados; sem isso, a regra apodrece como texto solto.
 $reflectMd = ReadText (Join-Path $root "skills\session-reflection\SKILL.md")
 $freioYaml = ($rsiYml -match '(?im)^\s*memory_promotion_policy:') -and
              ($rsiYml -match '(?im)^\s*scope:\s*memory_only') -and
-             ($rsiYml -match '(?im)\bsafe_auto:') -and ($rsiYml -match '(?im)\bescalate_human:')
-$freioMd = ($reflectMd -match '(?i)AUTONOMIA COM FREIO') -and ($reflectMd -match '(?i)SEGURA_AUTO') -and
-           ($reflectMd -match '(?i)ESCALA_HUMANO') -and ($reflectMd -match '(?i)Fronteira dura')
-Check "RSI: AUTONOMIA COM FREIO (promocao de memoria autonoma) pareada em rsi.yaml + SKILL.md" ($freioYaml -and $freioMd) "falta memory_promotion_policy no yaml e/ou o protocolo (SEGURA_AUTO/ESCALA_HUMANO/fronteira dura) na skill"
+             ($rsiYml -match '(?im)\bsafe_auto:') -and ($rsiYml -match '(?im)\bauto_promote_probation:') -and
+             ($rsiYml -match '(?im)\bauto_discard:') -and ($rsiYml -match '(?im)\broute_to_rsi:')
+$freioMd = ($reflectMd -match '(?i)AUTONOMIA COM FREIO') -and ($reflectMd -match '(?i)SEGURA_AUTO|safe_auto') -and
+           ($reflectMd -match '(?i)Fronteira dura')
+Check "RSI: AUTONOMIA COM FREIO (promocao de memoria 100% automatica) pareada em rsi.yaml + SKILL.md" ($freioYaml -and $freioMd) "falta memory_promotion_policy (4 destinos) no yaml e/ou o protocolo (safe_auto/Fronteira dura) na skill"
+
+# --- LEI NOVA (CEO 10/09/2026): ESCALA_HUMANO / cartao S/N MORTO para memoria, sem excecao ---
+# Nenhuma prosa do mecanismo nem o script podem oferecer cartao S/N / escalate_human para
+# memoria, e nenhuma prop-*.md pode terminar a passada sem destino. PROVADO pelo negativo
+# (quebrar o script de proposito, conferir FAIL, restaurar, conferir GREEN) na sessao TASK-519.
+$pmContent = ReadText (Join-Path $root "scripts\promote-memory.ps1")
+$noHumanQueueYaml = -not ($rsiYml -match '(?im)\bescalate_human:')
+$noHumanQueuePm   = ($pmContent -notmatch '(?i)\bBLOQUEAD') -and
+                    ($pmContent -match '(?i)ESCALA_HUMANO.{0,400}MORREU|MORREU.{0,400}ESCALA_HUMANO' -or $pmContent -match '(?i)nenhuma prop-\*\.md termina') -and
+                    ($pmContent -match '(?i)safe_auto') -and ($pmContent -match '(?i)auto_promote_probation') -and
+                    ($pmContent -match '(?i)auto_discard') -and ($pmContent -match '(?i)route_to_rsi')
+Check "LEI NOVA: ESCALA_HUMANO/cartao S/N morto para memoria (rsi.yaml sem escalate_human, promote-memory.ps1 com os 4 destinos automaticos e sem BLOQUEADO)" ($noHumanQueueYaml -and $noHumanQueuePm) "achou escalate_human em rsi.yaml e/ou vestigio de fila humana (BLOQUEADO) / falta dos 4 destinos em promote-memory.ps1"
 
 
 # --- Contrato de 6 elementos por loop (OPP-57): prosa <-> catalogo pareados ---

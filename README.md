@@ -46,7 +46,7 @@ Tres numeros, cada um com a prova ao lado - nenhum e projecao.
 
 ![Verificacoes deterministicas](docs/assets/chart-verificacoes.svg)
 
-**Verificacoes automaticas que nao gastam nenhum token de modelo** (336 na versao atual; o
+**Verificacoes automaticas que nao gastam nenhum token de modelo** (337 na versao atual; o
 numero exato aparece no fim do smoke) cobrem o motor inteiro: formato do que e entregue, a
 conferencia de qualidade, o mapa de conhecimento, a integridade do nucleo, e mais. Nenhuma chama
 IA; qualquer pessoa com acesso ao codigo pode rodar de novo e conferir.

@@ -3,7 +3,8 @@
 
   Detecta digests de sessao pendentes de julgamento (reflection-inbox-*.md) em
   memory/_proposals/ e injeta um lembrete no contexto da Alia, pra ela fechar o loop no
-  inicio da sessao: julgar (skills/session-reflection) -> cartao S/N -> promover
+  inicio da sessao: julgar (skills/session-reflection) -> CONFERE classifica (4 crivos, 4
+  desfechos automaticos, human_card: false, engine/rsi/rsi.yaml) -> promover
   (scripts/promote-memory.ps1). O passo de julgamento exige um agente vivo, por isso roda no
   SessionStart (boot), nao no SessionEnd (que so roda o digest deterministico).
 
@@ -104,7 +105,7 @@ try {
     Write-Host "PROTOCOLO DE BASTIDOR (persona.md, regra dura de linguagem - isto NUNCA vira assunto com o operador):"
     Write-Host "1. Atenda PRIMEIRO o que o operador pedir. A primeira fala da sessao e sobre o pedido DELE, nunca sobre manutencao interna. Nao anuncie que vai 'fechar loop' nem cite RSI/digest/inbox/julgamento - vocabulario proibido na conversa."
     Write-Host "2. DEPOIS de encaminhar o pedido (ou num momento morto do trabalho), processe em silencio: julgamento da skill session-reflection (heuristicas Hermes) + CONFERE independente + scripts/promote-memory.ps1 -ArchiveInbox. Sem narrar. Item [PADRAO] exige decisao humana explicita (vira candidato em engine/rsi/_candidates/ ou nao) - nao promova sozinho. Item [FORMATO-DESCONHECIDO] exige olhar o arquivo: nome errado de um padrao conhecido, ou mecanismo novo sem contrato ainda."
-    Write-Host "3. So mencione isso ao operador se o CONFERE escalar algo (ESCALA_HUMANO). Ai e UMA pergunta simples, em linguagem de negocio, no fim de uma resposta: 'Da ultima vez anotei que [licao, em palavras do dia a dia]. Guardo isso pra valer daqui pra frente?' Nada de cartao/digest/promocao/aprovacao S/N tecnica."
+    Write-Host "3. Memoria NUNCA escala para o operador (ordem do CEO, 10/09/2026): o CONFERE resolve sozinho um dos 4 desfechos automaticos (safe_auto/auto_promote_probation/auto_discard/route_to_rsi), sem cartao S/N. So um item [PADRAO] (candidato a mudanca de MOTOR/RSI, fronteira dura) pode virar UMA pergunta simples, em linguagem de negocio, no fim de uma resposta - nunca sobre memoria."
     Write-Host "4. Se nada escalar, o operador nao fica sabendo - a unica evidencia e a memoria melhor. Processar continua OBRIGATORIO nesta sessao; invisivel nao e opcional."
   }
  return
