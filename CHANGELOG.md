@@ -2,7 +2,7 @@
 
 Todas as mudancas relevantes do motor (engine) sao registradas aqui.
 Formato baseado em Keep a Changelog. Versionamento semantico adaptado ao produto.
-Sem acentos, sem emojis (regra do CEO).
+Portugues correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o unico erro e caractere corrompido. Emoji continua fora de peca publica.
 
 ## Esquema de versao (o contrato de update)
 
@@ -19,6 +19,23 @@ reversivel. Fluxo: alterar engine -> bump VERSION -> entrada no CHANGELOG -> smo
 ALL GREEN -> tag.
 
 ---
+
+## [1.74.0] - 2026-09-10
+
+REVOGAÇÃO DEFINITIVA DA REGRA ASCII (mandato do CEO, 10/09/2026, terceira cobrança): o guard
+"regra revogada idioma-sem-acentuação" (scripts/smoke-test.ps1) media 29-30 violações vivas -
+arquivo de engine/scripts/skills/squad/docs ainda instruindo a antiga restrição de acentuação
+como regra viva. Texto canônico fixado: "Português correto, com acentos. Arquivo salvo em UTF-8
+sem BOM; o único erro é caractere corrompido." (mais a cláusula de emoji onde o texto antigo
+também falava dele). 30 arquivos migrados por substituição de frase exata (nunca regex genérica),
+incluindo scripts/squad-bridge.ps1 (linhas 46 e 76), a epígrafe do topo deste CHANGELOG, e a
+remoção do teste de ablação "sem-acento-em-arquivo-de-maquina" em scripts/rsi-heldout.ps1 (medida
+comportamental da lei já derrubada). 12 arquivos .ps1 alterados validados com
+[System.Management.Automation.Language.Parser]::ParseFile (0 erro de sintaxe). Guard "Guard: regra
+revogada idioma-sem-acentuacao ausente de engine/scripts/skills/squad/docs/agentes gerados" fica
+[PASS] com 0 violações (era [FAIL] com 29-30). docs/decisoes/memoria-automatica-2026-09-10.html
+reescrito com acentuação portuguesa correta (67 caracteres acentuados), zero travessão, UTF-8 sem
+BOM. Smoke: 359 PASS / 0 FAIL.
 
 ## [1.73.0] - 2026-09-10
 

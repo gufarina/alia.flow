@@ -148,7 +148,7 @@ function Get-Assertions {
     },
     [PSCustomObject]@{
       Id     = "sem-emoji-em-arquivo-de-motor"
-      Fonte  = "LEI repetida em engine/governance/*.md ('Sem acentos, sem emojis') + CLAUDE.md raiz"
+      Fonte  = "engine/governance/*.md: 'Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido.'"
       Detail = "nenhum arquivo .md/.ps1/.yaml de engine/scripts/skills (instancia ou oficina) tem emoji"
       Test   = {
         param($root)
@@ -158,22 +158,6 @@ function Get-Assertions {
           if (Test-HasEmoji $txt) { return $false }
         }
 
-        return $true
-      }
-    },
-    [PSCustomObject]@{
-      Id     = "sem-acento-em-arquivo-de-maquina"
-      Fonte  = "AGENTS.md raiz: 'este arquivo (e o motor) e ASCII sem acento nem emoji'"
-      Detail = "nenhum arquivo .md/.ps1/.yaml de engine/scripts/skills tem caractere fora de ASCII"
-      Test   = {
-        param($root)
-        foreach ($f in (Get-MachineFiles $root)) {
-          $txt = Read-Text $f
-          if ($null -eq $txt) { continue }
-          foreach ($ch in $txt.ToCharArray()) {
-            if ([int]$ch -gt 127) { return $false }
-          }
-        }
         return $true
       }
     },

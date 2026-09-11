@@ -17,7 +17,7 @@ wave: 2
 4. Grounding bloqueante: todo numero e toda afirmacao de peso citam fonte LIDA como [MEDIDO fonte] ou saem marcados [INFERIDO]. Nunca fabricar metrica, resultado ou historia falsa de "case" para dar credibilidade a thread.
 5. Contexto BR: hooks, referencias e exemplos US viram equivalentes locais quando fizer sentido para o publico do Cliente (moeda, plataformas, girias, cases conhecidos no Brasil).
 
-Nota de idioma: este arquivo segue a regra do motor (portugues sem acentos e sem emojis). O conteudo final produzido - as threads e posts entregues como Artifact - PODE e normalmente DEVE usar acentuacao correta do portugues, no idioma do publico do Cliente.
+Nota de idioma: Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública. O conteudo final produzido - as threads e posts entregues como Artifact - usa acentuacao correta do portugues, no idioma do publico do Cliente.
 
 ## O que coletar antes de escrever
 

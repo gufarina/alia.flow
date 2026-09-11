@@ -28,7 +28,7 @@
   Exit 0 = tudo passou. Exit 1 = pelo menos um FAIL. Erro num item nao derruba o resto (try/catch
   por item/agente). -Verbose lista cada checagem individual, nao so o resumo.
 
-  Sem acentos, sem emojis (regra da casa - arquivo de maquina). UTF-8 sem BOM.
+  Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública.
 #>
 
 [CmdletBinding()]

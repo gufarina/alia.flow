@@ -10,7 +10,7 @@
 # Saida:
 #   permitido (allow)      -> [PASS] exit 0
 #   bloqueado/reprovado    -> [FAIL] exit 1, com o desvio exato apontado (deviation)
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública.
 
 param(
   [Parameter(Mandatory = $true)][string]$Path,

@@ -7,7 +7,7 @@
   O que faz:
     - cria studio/clients/{Id}/squad/agents/ e studio/clients/{Id}/squad/knowledge/ VAZIAS
       (para o Squad Creator preencher depois).
-    - cria um client.md minimo (id, name, sector, source) em UTF-8 sem BOM, sem acentos/emojis.
+    - cria um client.md minimo (id, name, sector, source). Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública.
     - registra o cliente em studio/state.json com status "proposed", SEM apagar nada do que ja existe
       (le, adiciona, grava; preserva os clientes e as tasks existentes).
     - em -DryRun: so mostra o que faria, nada e escrito.

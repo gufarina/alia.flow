@@ -8,7 +8,7 @@
 #                   +-5 events around each hit + bookends (first/last event of
 #                   that session). --scroll <id> pages more context for one hit.
 #
-# Stdlib only (sqlite3, json, glob, argparse). No pip. ASCII only in this file.
+# Stdlib only (sqlite3, json, glob, argparse). No pip. Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido.
 # The DB lives in memory/_index/ which is operator data (gitignored), so the
 # transcript content (which may be non-ASCII) never lands in versioned code.
 #

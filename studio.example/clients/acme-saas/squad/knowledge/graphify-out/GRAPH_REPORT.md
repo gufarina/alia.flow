@@ -1,7 +1,7 @@
 # Graph Report - Acme SaaS
 
 > Resumo do grafo de conhecimento gerado a partir do segundo cerebro do squad.
-> Sem acentos, sem emojis.
+> Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública.
 
 ## Resumo
 - Nodes: 6

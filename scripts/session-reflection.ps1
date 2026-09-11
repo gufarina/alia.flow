@@ -193,7 +193,7 @@ function Get-TextFromContent {
 }
 
 # Mandato do CEO (09/09/2026): a lei ASCII saiu do produto. Acento/aspas curvas/em-dash passam
-# direto; so normalizamos espacos. Substitui o antigo To-Ascii (fold para ASCII puro).
+# direto; so normalizamos espacos. Substitui o antigo To-Ascii (revogado; Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido.)
 
 function Clean-Line {
   param([string]$s)

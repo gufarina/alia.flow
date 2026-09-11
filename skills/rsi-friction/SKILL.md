@@ -12,9 +12,7 @@ unico ponto que o RSI ainda nao tinha: o atrito do proprio operador, ao vivo, vi
 para a engine se melhorar. Spec do motor: `engine/rsi/rsi.md`. Politica: `engine/rsi/rsi.yaml`
 (`triggers -> operator-friction-pattern`). Guardrails de proposta: `engine/governance/provenance.md`.
 
-Toda escrita: UTF-8 sem BOM. Arquivo de produto (skills/, engine/, scripts/) e SEMPRE ASCII puro,
-sem acento e sem emoji (lei do CEO; o smoke-test trava). Os itens do backlog vivem no `studio/`
-privado (dado do operador) - ali o texto pode ter acento, pois nao e produto.
+Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública. Vale para todo arquivo, inclusive o backlog em `studio/`.
 
 ## Nao confundir com session-reflection
 
@@ -166,5 +164,5 @@ ficam como aprendizado. Nada de ficar girando a toa: backlog limpo = loop dorme.
 - Captura a OPORTUNIDADE, nao a reclamacao. Na duvida, nao registra.
 - So toca camada `evolvable` do RSI; nunca o nucleo / constituicao / engine_core.
 - Teste antes de aplicar; rollback se piorar; mantem so se reduz atrito sem complicar.
-- Arquivo de produto = ASCII puro, UTF-8 sem BOM. Backlog (studio/) pode ter acento.
+- Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública.
 - Se a propria skill virar burocracia, ela falhou (menos atrito sempre).

@@ -1,6 +1,6 @@
 # Alia Flow - Studio (exemplo neutro)
 # Studio-modelo para um clone limpo nascer com ponto de partida.
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública. UTF-8 sem BOM.
 
 studio:
   name: Studio Exemplo

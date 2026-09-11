@@ -27,7 +27,7 @@
     [-StateFile <caminho>] [-Depth 4]
 
   SOMENTE LEITURA do state.json - este script nunca escreve no ledger.
-  Sem acentos, sem emojis nos arquivos de script. exit 0 (leitura vazia tambem e informacao).
+  Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública. exit 0 (leitura vazia tambem e informacao).
 #>
 param(
   [string]$Impact = "",

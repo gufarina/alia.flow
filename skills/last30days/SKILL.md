@@ -89,5 +89,4 @@ nao aconteceu).
 - Frugal: busca nativa primeiro, Perplexity so quando agrega; parar na saturacao.
 - Todo item do brief tem fonte; sinal de fonte unica vai marcado como nao confirmado.
 - Brief enxuto e acionavel: ranqueado, com TL;DR e proximos passos - nunca um despejo bruto.
-- Toda escrita de arquivo (se o operador pedir o brief salvo): UTF-8 sem BOM, sem acentos,
-  sem emojis.
+- Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública.

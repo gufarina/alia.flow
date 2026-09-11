@@ -1,5 +1,5 @@
 # Squad do Client acme-saas (exemplo neutro)
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública. UTF-8 sem BOM.
 
 squad:
   client: acme-saas

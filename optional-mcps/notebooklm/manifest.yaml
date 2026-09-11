@@ -2,7 +2,7 @@
 # Convencao: optional-mcps/{nome}/manifest.yaml. Ver optional-mcps/README.md.
 # Presenca neste diretorio = aprovado para uso (presenca = aprovacao).
 # Gerencia de MCP e exclusiva do DevOps (engine/tools.md, Governanca de MCP).
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública. UTF-8 sem BOM.
 
 nome: notebooklm
 

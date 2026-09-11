@@ -5,7 +5,7 @@
 #   - arquivo ausente no disco         -> [FAIL]    exit 1
 #   - existe, fora do git              -> [CONCERN] exit 0 (ou [FAIL] exit 1 com -RequireCommitted)
 #   - existe e versionado no git       -> [PASS]    exit 0, reporta o hash do ultimo commit
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública.
 
 param(
   [Parameter(Mandatory = $true)][string]$Path,

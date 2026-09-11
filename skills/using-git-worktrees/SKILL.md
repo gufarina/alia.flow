@@ -41,7 +41,7 @@ git worktree add ../<repo>-<frente> -b frente/<descricao-curta>
 
 - O caminho (`../<repo>-<frente>`) e o diretorio novo no disco.
 - `-b frente/<descricao-curta>` cria a branch isolada ja apontada por esse worktree.
-- Nome de branch por convencao: prefixo da frente + descricao em kebab-case, sem acento
+- Nome de branch por convencao: prefixo da frente + descricao em kebab-case, apenas ASCII (restricao tecnica de nome de branch, nao da regra de idioma da casa)
   (ex: `frente/copy-landing`, `frente/fix-checkout`). Um nome por Task.
 
 Se a branch ja existe, omita `-b`:

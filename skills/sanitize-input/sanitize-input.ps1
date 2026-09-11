@@ -15,7 +15,7 @@
 #   - escreve o texto neutralizado (stdout, util pra pipe) OU em -OutPath se dado.
 #   - imprime um relatorio [sanitize-input] com a contagem por categoria.
 #   - exit 0 sempre (e sanitizador, nao gate; nunca bloqueia - so desarma).
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública.
 
 param(
   [string]$Path = "",

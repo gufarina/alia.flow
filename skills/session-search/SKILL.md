@@ -98,7 +98,7 @@ sustenta a janela de contexto, os bookends e o scroll.
   ter acentos/non-ASCII, mas vive so no DB - nunca no codigo nem na skill.
 - Esta capacidade so LE transcripts e ESCREVE no indice local. Nao toca nucleo,
   nao toca a memoria real do operador, nao deleta nada.
-- Codigo e skill: UTF-8 sem BOM, ASCII puro, sem emojis.
+- Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública.
 
 ## Invariante
 

@@ -2,8 +2,7 @@
 
 > Feature do motor. O bastao e o handoff compacto (<=500 tokens) que carrega uma Task de um
 > agente/estacao para o proximo, sem despejar a conversa inteira. Detalha o que forja.md ja
-> resume na secao "O bastao (o fio entre as estacoes)" - nao contradiz, aprofunda. Sem acentos,
-> sem emojis. UTF-8 sem BOM.
+> resume na secao "O bastao (o fio entre as estacoes)" - nao contradiz, aprofunda. Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública.
 
 ---
 

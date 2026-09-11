@@ -10,8 +10,7 @@
 ## Como usar
 
 Preencha as seis secoes NA ORDEM abaixo, sem pular nenhuma. Cada secao tem um proposito unico; a
-ordem leva de "quem e" ate "quando soltar a bola". Mantenha enxuto - prosa curta, sem inflar. Sem
-acentos, sem emojis (regra do CEO). O metadado estruturado (id, role, domain, tools, brain) vive no
+ordem leva de "quem e" ate "quando soltar a bola". Mantenha enxuto - prosa curta, sem inflar. Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública. O metadado estruturado (id, role, domain, tools, brain) vive no
 `.yaml` par, NUNCA como frontmatter neste `.md` (ver [Sistema de Squads](../squad-system.md)).
 
 A ordem canonica: **Tempero -> Identidade -> Escopo -> Regras de tool -> Comunicacao -> Qualidade ->

@@ -1,7 +1,7 @@
 # Loops instanciados do Client acme-saas.
 # Molde: engine/governance/loops.catalog.yaml. Contrato de 6 elementos (OPP-57): todo loop declara
 # discovery_source, state_file, evaluator, isolation, token_cap e human_review_point.
-# Sem acentos, sem emojis.
+# Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública.
 
 client: acme-saas
 

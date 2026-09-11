@@ -17,7 +17,7 @@ wave: 2
 4. Grounding bloqueante: todo numero e afirmacao de peso cita fonte LIDA como [MEDIDO fonte] ou sai marcado [INFERIDO]. Nunca fabricar metrica de benchmark ou de performance.
 5. Contexto BR: a LGPD e o marco legal primario aqui, substituindo as referencias a CAN-SPAM/GDPR do material original; integracao de envio (Resend etc.) e opcional e a skill roda completa sem ela.
 
-Nota de idioma: este arquivo segue a regra do motor (portugues sem acentos, sem emojis). O CONTEUDO final produzido - os emails em si - PODE e DEVE usar acentuacao normal do portugues.
+Nota de idioma: Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública. O CONTEUDO final produzido - os emails em si - usa acentuacao normal do portugues, como este proprio arquivo.
 
 ## Proposito
 

@@ -503,7 +503,7 @@ foreach ($file in $allMd) {
 Check "Encoding: nenhum arquivo corrompido (0xFFFD)" ($corrupt.Count -eq 0) ("corrompidos: " + ($corrupt -join ", "))
 
 
-# --- Encoding do README.md (mandato do CEO, 07/09/2026): sem acento nao vale mais aqui, porque
+# --- Encoding do README.md (mandato do CEO, 07/09/2026): a restricao antiga nao vale mais aqui, porque
 # README.md e lido por GENTE, nao e arquivo de maquina. O que a lei ASCII protegia de verdade era
 # encoding sao, entao o README ganha check proprio, dedicado, que reprova por: UTF-8 invalido, BOM,
 # caractere de substituicao (0xFFFD, sinal de acento ja corrompido), travessao em/en dash (o CEO
@@ -1345,6 +1345,42 @@ if ($guards -and $guards.Count -gt 0) {
   }
 
 }
+
+
+# --- Guard de regra revogada: idioma-sem-acentuacao nunca vive como REGRA (CEO, 10/set) ---
+# A LEI foi derrubada e voltou a contaminar entrega. Este guard reprova qualquer arquivo de
+# engine/, scripts/, skills/, squad/, docs/ da oficina, ou qualquer agente gerado (.claude/agents),
+# que ainda instrua a antiga restricao de idioma como regra viva. Allowlist cobre caminho HISTORICO
+# (CHANGELOG, research/, _archive/, docs com "historico" no nome) - citacao de fato passado fica.
+Write-Host ""
+Write-Host "-- Guard de regra revogada: idioma-sem-acentuacao nao vive como REGRA --"
+$asciiRulePatterns = @(
+  '(?i)sem\s+acentos?\b',
+  '(?i)sem\s+acentua(c|ç)(a|ã)o',
+  '(?i)ascii[\s-]*puro',
+  '(?i)ascii[\s-]*only',
+  '(?i)caracteres?\s+ascii\b.*\bregra'
+)
+$asciiRuleDirs = @("engine", "scripts", "skills", "squad", "docs", ".claude\agents")
+# docs/decisoes/ e registro DATADO de decisao (mesma natureza de CHANGELOG/research): citar a lei revogada ali e historico, nao reincidencia
+$asciiRuleAllow = '(?i)(CHANGELOG\.md$|[\\/]research[\\/]|_archive[\\/]|_retired[\\/]|_backups[\\/]|[\\/]docs[\\/][^\\/]*historico|[\\/]docs[\\/]decisoes[\\/]|CAPACIDADE-REAL\.md$|PRD\.md$)'
+$asciiHits = @()
+foreach ($d in $asciiRuleDirs) {
+  $full = Join-Path $root $d
+  if (-not (Test-Path $full)) { continue }
+  $files = Get-ChildItem -LiteralPath $full -Recurse -File -Include *.md,*.ps1,*.yaml,*.yml,*.py -ErrorAction SilentlyContinue
+  foreach ($f in $files) {
+    if ($f.FullName -match $asciiRuleAllow) { continue }
+    $txt = [System.IO.File]::ReadAllText($f.FullName)
+    foreach ($p in $asciiRulePatterns) {
+      if ($txt -match $p) {
+        $asciiHits += $f.FullName.Substring($root.Length + 1)
+        break
+      }
+    }
+  }
+}
+Check "Guard: regra revogada idioma-sem-acentuacao ausente de engine/scripts/skills/squad/docs/agentes gerados" ($asciiHits.Count -eq 0) ("vazou em: " + ($asciiHits -join ", "))
 
 
 # --- Guard de vetos: SCRIPTS QUE GERAM DADO NOVO (achado H5) ---

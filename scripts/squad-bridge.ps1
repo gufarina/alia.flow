@@ -42,8 +42,7 @@
     Artifact, DESCARREGAR o bloco e voltar a coordenar (o Gate roda depois, fora do chapeu). O
     coordenador em host sem spawn le este arquivo inteiro e "veste" a persona nele descrita.
 
-  Requisitos duros: idempotente (2a rodada nao duplica - so regrava se o conteudo mudou), UTF-8
-  sem BOM, sem acentos e sem emojis nos arquivos que escreve, -DryRun so mostra, -Client filtra,
+  Requisitos duros: idempotente (2a rodada nao duplica - so regrava se o conteudo mudou). Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública. -DryRun so mostra, -Client filtra,
   erro em um agente nao derruba o resto (try/catch por arquivo), resumo final com contagem.
 
   Validacao de knowledge: cada entrada de knowledge[] no yaml e conferida contra o disco antes de
@@ -73,7 +72,7 @@
   precisar do especialista AGORA, use o modo -Mode context-load (o briefing portavel, sem depender
   de sub-agente nativo) em vez de esperar reabrir a sessao.
 
-  Sem acentos, sem emojis (regra da casa) - inclusive neste proprio script.
+  Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública. Inclusive neste proprio script.
 #>
 
 [CmdletBinding()]

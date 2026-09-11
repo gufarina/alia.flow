@@ -1,6 +1,6 @@
 # Teste de Ablacao de Conhecimento - Acme SaaS
 # Compara uma saida sem segundo cerebro (blind) com uma saida com segundo cerebro (informed).
-# Sem acentos, sem emojis.
+# Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública.
 
 test:
   id: knowledge-ablation-001

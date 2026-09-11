@@ -183,7 +183,7 @@ POST https://api.brand.dev/v1/monitors
 }
 ```
 
-Nota BR: para Clientes com publico brasileiro, incluir `"pt"` em `languages` e variacoes do nome como os brasileiros escrevem (com e sem acento, abreviacoes comuns).
+Nota BR: para Clientes com publico brasileiro, incluir `"pt"` em `languages` e variacoes do nome como os brasileiros escrevem (grafia acentuada ou nao, abreviacoes comuns).
 
 ### Exemplo curl
 

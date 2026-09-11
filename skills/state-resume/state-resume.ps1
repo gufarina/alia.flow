@@ -13,7 +13,7 @@
 #   contrato cumprido  -> [PASS] exit 0
 #   contrato violado   -> [FAIL] exit 1 com o desvio exato apontado (deviation)
 # Molde: scripts/memory-curator.ps1 e skills/validate-artifact/validate-artifact.ps1.
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública.
 
 param(
   [string]$StatePath = "",

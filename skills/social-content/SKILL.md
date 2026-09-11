@@ -17,7 +17,7 @@ wave: 2
 4. Grounding bloqueante: todo numero e afirmacao de peso citam fonte LIDA como [MEDIDO fonte] ou saem marcados como [INFERIDO]. Nunca fabricar metrica de engajamento, alcance ou benchmark.
 5. Contexto BR: plataformas e horarios sugeridos no original assumem publico dos EUA; ajustar ao publico e fuso do Cliente da Task antes de recomendar.
 
-Nota de idioma: este arquivo de skill segue a regra do motor (portugues sem acentos, sem emojis). O conteudo final produzido para as redes PODE e DEVE usar acentuacao normal do portugues - a restricao vale para o arquivo da skill, nao para o entregavel.
+Nota de idioma: Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública. O conteudo final produzido para as redes usa acentuacao normal do portugues, como este proprio arquivo.
 
 ## A skill
 

@@ -17,7 +17,7 @@ wave: 2
 4. Grounding bloqueante: todo numero e afirmacao de peso cita fonte LIDA como [MEDIDO fonte] ou sai marcado [INFERIDO]. Nunca fabricar metrica, estatistica ou citacao no post.
 5. Contexto BR: escrever para o publico do Cliente da Task; referencias US viram equivalentes locais quando existirem.
 
-Nota de idioma: este arquivo de skill segue a regra do motor (portugues sem acentos, sem emojis). O CONTEUDO FINAL que a skill produz - o post de blog entregue ao Cliente - PODE e DEVE usar acentuacao normal do portugues do Brasil.
+Nota de idioma: Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública. O CONTEUDO FINAL que a skill produz - o post de blog entregue ao Cliente - usa acentuacao normal do portugues do Brasil.
 
 ## Papel
 

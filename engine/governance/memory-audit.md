@@ -6,8 +6,7 @@
 > nota vencida, nota que contradiz outra, nota duplicada, termo fora do glossario custam token e
 > enganam o agente (Memory Before Reprocessing falha se a Memory mente). Consumido pelo loop
 > agendado `memory-curator` ([loops.md](loops.md), [loops.catalog.yaml](loops.catalog.yaml)) e por
-> qualquer handoff grande que precise confiar no segundo cerebro antes de reprocessar. Sem acentos,
-> sem emojis. UTF-8 sem BOM.
+> qualquer handoff grande que precise confiar no segundo cerebro antes de reprocessar. Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública.
 
 ---
 

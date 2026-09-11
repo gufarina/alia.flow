@@ -36,7 +36,7 @@ problema aparece, nao quando o operador reclama.
 
 ## Regras do Studio (invariantes)
 
-- **Sem acentos e sem emojis** em qualquer arquivo (regra do operador).
+- **Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública.**
 - **UTF-8 sem BOM.** Nunca corromper texto (0xFFFD). No Windows, usar Edit/Write ou
   `[System.IO.File]::WriteAllText` em UTF-8 - nunca Set-Content sem encoding.
 - **Linguagem ubiqua do Alia Flow.** Os termos sao Studio, Client, Project, Task, Artifact,

@@ -10,7 +10,7 @@
 # Politica de uso (operador): modelo PADRAO = Claude Sonnet 4.6 com thinking (pplx_claude_sonnet_think).
 # JAMAIS Sonar (regra dura do operador - liberado o Sonnet 4.6 no Pro). Deep research so a pedido.
 # NotebookLM e a escalada quando a Perplexity nao der conta.
-# Sem acentos, sem emojis. UTF-8 sem BOM.
+# Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública. UTF-8 sem BOM.
 
 nome: perplexity
 

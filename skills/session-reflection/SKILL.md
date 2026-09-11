@@ -102,7 +102,7 @@ metadata:
   status: proposed
 ---
 
-<corpo da nota: a licao em ASCII puro>
+<corpo da nota: a licao em portugues correto, com acentos>
 
 **Why:** por que isso importa (a evidencia/o efeito).
 
