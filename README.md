@@ -1,4 +1,4 @@
-![Alia Flow](docs/assets/alia-post.gif)
+<p align="center"><img src="docs/assets/alia-olho.gif" width="320" alt="Alia"></p>
 
 # Alia Flow
 
