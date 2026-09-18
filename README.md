@@ -238,7 +238,7 @@ não foi repetida. Isso não é promessa de compatibilidade.
 
 ## Verificações
 
-433 verificações determinísticas passam hoje, sem chamar IA
+482 verificações determinísticas passam hoje, sem chamar IA
 (`scripts/smoke-test.ps1`).
 
 ## Licença

@@ -108,6 +108,25 @@ valvula precisa achar). `response-guard.ps1` agora so aceita como inicio de turn
 "user" que carrega TEXTO genuino (string ou bloco `type='text'`) - mensagem que so tem
 `tool_result` nao conta mais.
 
+**Conserto 2 - texto genuino tambem exclui o que o HARNESS injeta (TASK-681, WARDEN,
+18/09/2026, law-ledger L45/L46):** "texto genuino" nao bastava - o harness injeta mensagens
+role=`"user"` com texto que o Operador nunca digitou: `<task-notification>` (chega toda vez que
+um sub-agente Task termina), `"Stop hook feedback: ..."` (o proprio guard, realimentado),
+`"Another Claude session sent a message: <cross-session-message ...>"`,
+`"[Request interrupted by user for tool use]"` e `<system-reminder>...`. Medido em sessao
+`08efa66c-ad54-455c-8b2f-3a78244548b3` (5 dos 11 falso-positivo do achado, 18/09/2026): assim que
+o turno dispara UM `Task`, a `<task-notification>` de conclusao virava o novo `$turnStart` - a
+ordem do Operador, o `register-task.ps1 -OperatorOrder` e a propria delegacao ficavam FORA da
+janela, e o guard reprovava um turno que tinha registro auditavel valido
+(`ordem_registrada=true`, `ordem_detectada=false`, valvula elegivel mas fechada por falta de
+janela). `Test-IsHarnessInjectedText` + `Get-OperatorTextsOnly` (`response-guard.ps1`) filtram
+esse texto nos DOIS lugares que decidem "o que o Operador disse": a ancora de `$turnStart` e a
+coleta de `$operatorText` da valvula. Isto so torna o guard MAIS rigoroso (texto injetado nunca
+mais abre a valvula por engano) - nunca mais frouxo. `$ordemPatterns` tambem ganhou as frases
+REAIS que o Operador usa (`resolve isso`/`resolva tudo`, `garanta isso`/`apenas garanta que`,
+`quero somente que`), cada uma citando a sessao real que a justificou no header do script -
+nenhuma generica (`resolve`/`faz` soltos ficam de fora, pra nao abrir a valvula em pedido comum).
+
 ## A limitacao aceita e declarada
 
 Isto e um CHECK SINTATICO, no mesmo molde honesto do criterio 6 do Quality Gate: a REGRA 1 olha se

@@ -52,3 +52,22 @@ _backups/
 _candidatas/
 PRODUCT.md
 DESIGN-*.md
+
+# TASK-691: vazamento medido no repo publico (13 caminhos nao rastreados e nao ignorados -
+# git add -A publicaria tudo, check-public-surface.ps1 nao acusa porque so olha o ja versionado).
+# Todos material interno (nenhum e produto); docs/assets/olho-alia.gif segue FORA desta lista de
+# proposito - e o unico asset que o README publico referencia (allowlist $docsAssetsAllow em
+# package-release.ps1).
+docs/decisoes/
+docs/brand/
+docs/provas/
+docs/RELEASE-STATUS.md
+docs/DESIGN.md
+docs/assets/banner.svg
+docs/assets/chart-freio.svg
+docs/assets/chart-memoria.svg
+docs/assets/chart-verificacoes.svg
+engine/governance/edges.json
+scripts/extract-secrets.ps1
+scripts/migrate-to-studio.ps1
+scripts/smoke-test-studio.ps1

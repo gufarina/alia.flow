@@ -82,7 +82,7 @@
   o default (studio/response-guard-log.jsonl e engine/governance/response-guard.yaml relativos a
   $root) e o comportamento de sempre, sem mudanca de contrato. Escrita .NET UTF-8 sem BOM.
 #>
-param([string]$LogPath = "", [string]$ConfigPath = "")
+param([string]$LogPath = "", [string]$ConfigPath = "", [string]$BudgetLedgerPath = "")
 
 function Get-TextFromContent {
   param($content)
@@ -131,6 +131,43 @@ function Get-ToolResultsFromContent {
     if ($rc -is [string]) { $rtext = $rc }
     else { $rtext = ((Get-TextFromContent $rc) -join "`n") }
     $out.Add([pscustomobject]@{ tool_use_id = $tuid; text = $rtext })
+  }
+  return $out.ToArray()
+}
+
+function Test-IsHarnessInjectedText {
+  # Filtra bloco de texto que o HARNESS injeta em mensagens role='user' mas que o Operador nunca
+  # digitou (TASK-681, WARDEN, 18/09/2026). Sem isto, o passo (2) - que acha $turnStart varrendo a
+  # ULTIMA mensagem 'user' com texto - ancorava a janela do turno numa notificacao de sub-agente em
+  # vez da ordem real do Operador. MEDIDO em sessao 08efa66c-ad54-455c-8b2f-3a78244548b3 (5 dos 11
+  # falso-positivo do achado): <task-notification> chega como role='user' assim que um Agent/Task
+  # termina (linha 621 do transcript, 2026-09-18T04:01:54Z) - a ordem do Operador, o
+  # register-task.ps1 -OperatorOrder e a delegacao que a cobre ficavam FORA da janela, e o guard
+  # reprovava violacao que nao existia (ordem_registrada=true, ordem_detectada=false, mesmo com a
+  # valvula tecnicamente elegivel). Marcadores medidos no proprio contrato do harness (nao e lista
+  # especulativa - cada um ja apareceu em transcript real desta instancia).
+  param([string]$Text)
+  if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
+  $t = $Text.TrimStart()
+  if ($t.StartsWith('<task-notification')) { return $true }
+  if ($t.StartsWith('Stop hook feedback:')) { return $true }
+  if ($t.StartsWith('Another Claude session sent a message:')) { return $true }
+  if ($t.Contains('<cross-session-message')) { return $true }
+  if ($t.StartsWith('[Request interrupted by user for tool use]')) { return $true }
+  if ($t.StartsWith('<system-reminder>')) { return $true }
+  return $false
+}
+
+function Get-OperatorTextsOnly {
+  # Mesmo contrato de Get-TextFromContent, mas descarta todo bloco injetado pelo harness (ver
+  # Test-IsHarnessInjectedText acima). Usado nos DOIS lugares que decidem "o que o Operador disse
+  # de fato": a ancora de $turnStart (passo 2) e a coleta de $operatorText pra VALVULA (passo 3) -
+  # um bloco injetado nunca pode ancorar o turno nem abrir a valvula. Isto so DEIXA o guard mais
+  # rigoroso na perna da valvula (menos texto elegivel pra casar ordemRegex), nunca mais frouxo.
+  param($content)
+  $out = New-Object System.Collections.Generic.List[string]
+  foreach ($t in (Get-TextFromContent $content)) {
+    if (-not (Test-IsHarnessInjectedText $t)) { $out.Add($t) }
   }
   return $out.ToArray()
 }
@@ -201,6 +238,60 @@ function Get-SubagentActualUsage {
     }
   } catch { }
   return [pscustomobject]@{ tools = $toolCount; images = $imageCount; found = $true }
+}
+
+function Get-SubagentMetaInfo {
+  # REGRA 5 (L64 CUMULATIVO, TASK-682). Igual a Find-SubagentTranscript (mesmo elo via
+  # toolUseId == meta.json.toolUseId), mas devolve o agentType (a IDENTIDADE do especialista,
+  # ex. "alia-flow-lab-gauge") em vez do caminho do .jsonl - e o agentType que define "agente
+  # vivo" pra somar reaberturas no mesmo saldo.
+  param([string]$TranscriptPath, [string]$ToolUseId)
+  try {
+    if ([string]::IsNullOrWhiteSpace($ToolUseId)) { return $null }
+    $sessDir = Split-Path -Parent $TranscriptPath
+    $sid = [System.IO.Path]::GetFileNameWithoutExtension($TranscriptPath)
+    $subDir = Join-Path $sessDir (Join-Path $sid "subagents")
+    if (-not (Test-Path -LiteralPath $subDir)) { return $null }
+    $metaFiles = Get-ChildItem -LiteralPath $subDir -Filter "*.meta.json" -File -ErrorAction SilentlyContinue
+    foreach ($mf in $metaFiles) {
+      $mo = $null
+      try { $mo = (Get-Content -LiteralPath $mf.FullName -Raw -Encoding UTF8) | ConvertFrom-Json } catch { continue }
+      $tuid = $null
+      try { $tuid = [string]$mo.toolUseId } catch { }
+      if ($tuid -eq $ToolUseId) {
+        $agentType = $null
+        try { $agentType = [string]$mo.agentType } catch { }
+        return [pscustomobject]@{ SubDir = $subDir; AgentType = $agentType }
+      }
+    }
+  } catch { }
+  return $null
+}
+
+function Get-CumulativeAgentTypeUsage {
+  # REGRA 5 (L64 CUMULATIVO, TASK-682). Soma "type":"tool_use" (via Get-SubagentActualUsage,
+  # reuse-first) de TODOS os .jsonl em $SubDir cujo meta.json.agentType bate $AgentType -
+  # reabrir o MESMO especialista (novo Task, novo agent-<hash>.jsonl, mesmo agentType) SOMA no
+  # mesmo saldo, nunca zera. Isto e o conserto do furo medido: "8 reaberturas de 25 viraram 198
+  # turnos e nenhum guarda reclamou" - cada reabertura sozinha ficava sob o teto; o SALDO
+  # acumulado nunca era olhado.
+  param([string]$SubDir, [string]$AgentType)
+  $total = 0
+  if ([string]::IsNullOrWhiteSpace($AgentType) -or -not (Test-Path -LiteralPath $SubDir)) { return 0 }
+  try {
+    $metaFiles = Get-ChildItem -LiteralPath $SubDir -Filter "*.meta.json" -File -ErrorAction SilentlyContinue
+    foreach ($mf in $metaFiles) {
+      $mo = $null
+      try { $mo = (Get-Content -LiteralPath $mf.FullName -Raw -Encoding UTF8) | ConvertFrom-Json } catch { continue }
+      $at = $null
+      try { $at = [string]$mo.agentType } catch { }
+      if ($at -ne $AgentType) { continue }
+      $jsonlPath = Join-Path $SubDir ($mf.Name -replace '\.meta\.json$', '.jsonl')
+      $usage = Get-SubagentActualUsage -AgentJsonlPath $jsonlPath
+      if ($usage.found) { $total += $usage.tools }
+    }
+  } catch { }
+  return $total
 }
 
 function Get-ResponseGuardConfig {
@@ -293,6 +384,11 @@ try {
   # - inclusive o Write/Edit que a REGRA 1 (DELEGA) existe para pegar. So conta como inicio de
   # turno uma mensagem "user" que carrega TEXTO genuino (string ou bloco type='text'); mensagem
   # "user" que so tem tool_result nao conta.
+  # CONSERTO 2 (TASK-681, WARDEN, 18/09/2026): "texto genuino" tambem precisava excluir o que o
+  # HARNESS injeta como role='user' (<task-notification>, "Stop hook feedback:", cross-session,
+  # <system-reminder> - ver Get-OperatorTextsOnly). Sem isto, um turno que dispara UM Task ancorava
+  # $turnStart na notificacao de conclusao (que chega DEPOIS da ordem real do Operador), deixando a
+  # ordem, o register-task.ps1 -OperatorOrder e a propria delegacao fora da janela.
   $turnStart = 0
   for ($i = $objects.Count - 1; $i -ge 0; $i--) {
     $t = $null
@@ -302,7 +398,7 @@ try {
     try { $m = $objects[$i].message } catch { }
     $c = $null
     try { $c = $m.content } catch { }
-    if (@(Get-TextFromContent $c).Count -eq 0) { continue }
+    if (@(Get-OperatorTextsOnly $c).Count -eq 0) { continue }
     $turnStart = $i
     break
   }
@@ -324,10 +420,12 @@ try {
     $content = $null
     try { $content = $msg.content } catch { }
     if ($etype -eq 'user') {
-      # Get-TextFromContent so devolve blocos type='text' (ou content string) - blocos
-      # type='tool_result' ficam de fora daqui, entao isto pega SO texto de fato digitado pelo
-      # Operator, nunca saida de tool disfarcada de "user" (contrato da API).
-      foreach ($t in (Get-TextFromContent $content)) { $operatorTexts.Add($t) }
+      # Get-OperatorTextsOnly so devolve blocos type='text' (ou content string) e ja descarta
+      # texto injetado pelo harness (<task-notification>, "Stop hook feedback:", cross-session,
+      # <system-reminder> - TASK-681) - blocos type='tool_result' ficam de fora daqui tambem,
+      # entao isto pega SO texto de fato digitado pelo Operator, nunca saida de tool ou eco do
+      # proprio harness disfarcados de "user" (contrato da API).
+      foreach ($t in (Get-OperatorTextsOnly $content)) { $operatorTexts.Add($t) }
       foreach ($tr in (Get-ToolResultsFromContent $content)) { $allToolResults.Add($tr) }
       continue
     }
@@ -406,6 +504,12 @@ try {
   # CONSERTO: cada elemento precisa de parenteses proprios - "," tem precedencia MENOR que "+" no
   # PowerShell ('a' + 'b', 'c' vira 'a' + ('b','c'), nao ('a'+'b'), 'c') - sem isolar cada
   # concatenacao, o array virava 1 elemento so (os demais absorvidos e colados com espaco).
+  # AMPLIACAO (TASK-681, WARDEN, 18/09/2026): a lista original exigia vocabulario que o Operador
+  # raramente usa ("resolve DIRETO", "execute VOCE MESMA") - medido nos 11 turnos com
+  # ordem_registrada=true + ordem_detectada=false que a lista antiga nunca casava. Cada padrao
+  # novo abaixo cita a sessao/turno real que o justificou (nunca frase generica tipo "resolve"/
+  # "faz" soltos, que abririam a valvula em pedido comum - a auditabilidade da perna 2, o
+  # register-task.ps1 -OperatorOrder com sucesso, continua sendo o freio real).
   $ordemPatterns = @(
     ('fa[' + $cCed + 'c]a?\s+(voc[' + $eCir + ']|vc)\s+mesm[ao]'),
     ('resolv\w*\s+direto'),
@@ -416,7 +520,19 @@ try {
     ('sem\s+especialista'),
     ('sem\s+agente'),
     ('voc[' + $eCir + ']\s+mesma\s+resolve'),
-    ('n[' + $aTil + 'a]o\s+precisa\s+delegar')
+    ('n[' + $aTil + 'a]o\s+precisa\s+delegar'),
+    # "resolve isso" / "resolver isso" / "tem que resolver isso" / "resolva tudo" / "resolver
+    # tudo" - medido em sessao 4e8e4935-16cd-41f7-9453-402c38573a2f (2026-08-24, "resolver tudo,
+    # propagar para...") e e87620af-3083-47cd-8469-4365fa953f9b (2026-09-11, "100% funcional,
+    # resolva tudo que aparecer").
+    ('resolv\w*\s+(isso|tudo)\b'),
+    # "garanta isso" / "apenas garanta que" - medido em sessao 61bbb55b-2421-4cd8-aa0e-
+    # d258936b2812 (2026-08-31, "...apenas garanta que voce nao quebrou balanceamento").
+    ('garant\w*\s+isso\b'),
+    ('apenas\s+garant\w*\s+que'),
+    # "quero somente que" - medido em sessao c7d83100-11fb-4f00-9ff9-52e33e00af0a (2026-08-31,
+    # "quero somente que substitua a imagem que ta sendo editada").
+    ('quero\s+somente\s+que')
   )
   $ordemRegex = '(' + ($ordemPatterns -join '|') + ')'
   $ordemDetectada = [bool]([regex]::IsMatch($operatorText, $ordemRegex, 'IgnoreCase'))
@@ -554,6 +670,66 @@ try {
   $violacaoBudget = ($budgetEstouros.Count -gt 0)
   $budgetOk = (-not $violacaoBudget)
 
+  # (4e) REGRA 5 - TETO CUMULATIVO POR AGENTE VIVO (L64, TASK-682, conserto do plano TASK-680).
+  # MEDIDO (GAUGE, 18/09/2026): a hipotese do plano se confirmou - scripts/budget-gate.ps1
+  # (PreToolUse) so age quando transcript_path do payload contem "/subagents/"; em TODA a
+  # historia desta instancia isso nunca bateu (studio/budget-log.jsonl nunca existiu, apesar de
+  # dezenas de subagents/*.jsonl reais gerados por sessoes anteriores) - o payload que o
+  # PreToolUse recebe DENTRO de um sub-agente carrega o MESMO session_id/transcript_path do
+  # turno PAI (mesmo achado ja documentado em delegation-gate.ps1, 07/09/2026, mesmo metodo).
+  # Nao ha campo no payload de PreToolUse que separe "isto e um Specialist" de "isto e o loop
+  # principal" - por isso ESTE teto NAO BLOQUEIA EM TEMPO REAL neste host. E acusacao de FIM DE
+  # TURNO (mesmo lugar/padrao da REGRA 3 acima): para cada Task/Agent NOVO do turno, acha o
+  # agentType via Get-SubagentMetaInfo e soma o uso REAL de TODOS os agent-<hash>.jsonl daquele
+  # agentType na sessao (Get-CumulativeAgentTypeUsage) - reabrir o MESMO especialista soma no
+  # MESMO saldo, nunca zera. Grava cada verificacao em studio/budget-log.jsonl (dot-source de
+  # budget-gate.ps1, reuse-first de Write-BudgetLedgerLine) - o UNICO jeito hoje desse ledger
+  # receber linha de verdade, ja que o gate de PreToolUse nunca fecha a condicao sozinho.
+  $tetoCumulativo = 40
+  $tetoCumulativoRaw = $env:ALIA_SUBAGENT_MAX_CALLS
+  if (-not [string]::IsNullOrWhiteSpace($tetoCumulativoRaw)) {
+    $parsedTetoCum = 0
+    if ([int]::TryParse($tetoCumulativoRaw, [ref]$parsedTetoCum)) { $tetoCumulativo = $parsedTetoCum }
+  }
+  # dot-source clobra $Root/$LedgerPath na nossa propria scope (PowerShell e case-insensitive:
+  # $Root == $root) - mesmo padrao de preservar/restaurar ja usado em pre-tool-use.ps1 e
+  # graph-usage-sensor.ps1 pro mesmo motivo.
+  $rgPreservedRoot = $root
+  try {
+    . (Join-Path $PSScriptRoot "budget-gate.ps1")
+  } catch { }
+  $root = $rgPreservedRoot
+  # -BudgetLedgerPath e SO override de fixture de smoke test (mesmo padrao de -LogPath/-ConfigPath
+  # acima) - o hook de producao nunca passa esse param, entao o default e sempre o ledger real.
+  $budgetLedgerFileCum = if (-not [string]::IsNullOrWhiteSpace($BudgetLedgerPath)) { $BudgetLedgerPath } else { Join-Path (Join-Path $root "studio") "budget-log.jsonl" }
+  $cumulativoEstouros = New-Object System.Collections.Generic.List[string]
+  $agentTypesVistos = New-Object System.Collections.Generic.HashSet[string]
+  foreach ($tu in $allToolUses) {
+    $tname = $null
+    try { $tname = [string]$tu.name } catch { }
+    if ($tname -ne 'Agent' -and $tname -ne 'Task') { continue }
+    $tuid = $null
+    try { $tuid = [string]$tu.id } catch { }
+    $metaInfo = Get-SubagentMetaInfo -TranscriptPath $transcriptPath -ToolUseId $tuid
+    if ($null -eq $metaInfo -or [string]::IsNullOrWhiteSpace($metaInfo.AgentType)) { continue }
+    if (-not $agentTypesVistos.Add($metaInfo.AgentType)) { continue }
+    $usoCum = Get-CumulativeAgentTypeUsage -SubDir $metaInfo.SubDir -AgentType $metaInfo.AgentType
+    $decisaoCum = if ($usoCum -gt $tetoCumulativo) { "deny" } else { "allow" }
+    try {
+      Write-BudgetLedgerLine -LedgerFile $budgetLedgerFileCum -Entry ([ordered]@{
+        ts = (Get-Date).ToUniversalTime().ToString("o"); session = $sessionId
+        transcript = $transcriptPath; tool = "Task(" + $metaInfo.AgentType + ")"
+        n = $usoCum; teto = $tetoCumulativo; decision = $decisaoCum
+        origem = "response-guard-regra5-cumulativo"
+      })
+    } catch { }
+    if ($usoCum -gt $tetoCumulativo) {
+      $cumulativoEstouros.Add($metaInfo.AgentType + ": " + $usoCum + " chamadas acumuladas (teto " + $tetoCumulativo + ") - bloqueio em tempo real nao existe neste host, isto e acusacao de fim de turno")
+    }
+  }
+  $violacaoCumulativo = ($cumulativoEstouros.Count -gt 0)
+  $cumulativoOk = (-not $violacaoCumulativo)
+
   # (5) REGRA 2 - GROUNDING.
   $extMatches = [regex]::Matches($lastAssistantText, '\.(ps1|md|ya?ml|json|html|js|ts|py)\b', 'IgnoreCase').Count
   $lineMatches = [regex]::Matches($lastAssistantText, '[\w\-./\\]+:\d+').Count
@@ -681,6 +857,8 @@ try {
     budget_verificados = $budgetVerificados
     budget_sem_declarar = $budgetSemDeclarar
     budget_estouros    = ($budgetEstouros -join " | ")
+    cumulativo_ok       = $cumulativoOk
+    cumulativo_estouros = ($cumulativoEstouros -join " | ")
     ritual_ok          = (-not $violacaoRitual)
     primeiro_turno     = $primeiroTurno
     tem_linha_status   = $temLinhaStatus
@@ -692,11 +870,14 @@ try {
   [System.IO.File]::AppendAllText($logFile, $logLine + "`n", $utf8NoBom)
 
   # (7) Saida conforme o modo.
-  $anyViolation = (-not $delegaOk) -or (-not $groundingOk) -or (-not $budgetOk) -or $violacaoRitual
+  $anyViolation = (-not $delegaOk) -or (-not $groundingOk) -or (-not $budgetOk) -or (-not $cumulativoOk) -or $violacaoRitual
 
   if ($cfg.mode -eq 'bloqueio') {
     if ($anyViolation) {
       $reasons = New-Object System.Collections.Generic.List[string]
+      if ($violacaoCumulativo) {
+        $reasons.Add("[ORCAMENTO][L64] Especialista estourou o teto CUMULATIVO entre reaberturas: " + ($cumulativoEstouros -join " | ") + " - reabrir o mesmo especialista soma no mesmo saldo, nunca zera. Teto: ALIA_SUBAGENT_MAX_CALLS.")
+      }
       if ($violacaoBudget) {
         $reasons.Add("Sub-agente estourou o Budget declarado no proprio briefing (law-ledger L41, clausula c): " + ($budgetEstouros -join " | ") + " - o teto e o que a delegacao escreveu na linha 'Budget: tools=N', nao boa vontade; ajuste o teto declarado ou o escopo da proxima delegacao.")
       }
@@ -731,6 +912,7 @@ try {
     " grounding_html_ok=" + (-not $violacaoGroundingHtml) +
     " budget_ok=" + $budgetOk + " budget_verificados=" + $budgetVerificados +
     " budget_sem_declarar=" + $budgetSemDeclarar +
+    " cumulativo_ok=" + $cumulativoOk +
     " informativo_sem_delegacao=" + $informativo +
     " ritual_ok=" + (-not $violacaoRitual) + " primeiro_turno=" + $primeiroTurno)
   exit 0

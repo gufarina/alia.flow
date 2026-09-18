@@ -51,8 +51,17 @@ function Warn([string]$name, [bool]$cond, [string]$detail = "") {
 
 
 function ReadText([string]$path) {
+  # TASK-691: arquivo ausente ou erro de leitura nunca mais derruba a bateria inteira (defeito
+  # medido: ReadAllText sem guarda matava o script no meio de studio/desperdicio-baseline.txt,
+  # que nunca existe no pacote por desenho - LEI da superficie publica). Ausencia/erro vira string
+  # vazia; quem chama continua responsavel por decidir se isso e FAIL (via Check de existencia).
+  if (-not (Test-Path -LiteralPath $path)) { return "" }
   $utf8 = New-Object System.Text.UTF8Encoding($false)
-  return [System.IO.File]::ReadAllText($path, $utf8)
+  try {
+    return [System.IO.File]::ReadAllText($path, $utf8)
+  } catch {
+    return ""
+  }
 }
 
 
@@ -1665,6 +1674,15 @@ if (Test-Path -LiteralPath $rgRoot2) { Remove-Item -Recurse -Force -LiteralPath 
 New-Item -ItemType Directory -Force -Path $rgRoot2 | Out-Null
 $rgLog2 = Join-Path $rgRoot2 "log.jsonl"
 $rgCfg2 = Join-Path $rgRoot2 "response-guard.yaml"
+# CONSERTO (achado do CEO apos a entrega, TASK-682): estes 3 cenarios fabricam sub-agente com
+# Task real - sem -BudgetLedgerPath, a REGRA 5 nova escreve no ledger de PRODUCAO
+# (studio/budget-log.jsonl), envenenando a medida de adocao do L64 que a etapa 4 do plano vai
+# ler. Isolado igual aos outros checks da casa (-Root/-LedgerPath).
+$rgBudgetLedgerNoise2 = Join-Path $rgRoot2 "budget-log-noise.jsonl"
+# Baseline do ledger de PRODUCAO real (nao a fixture) - prova pelo negativo (abaixo, apos REGRA 5)
+# que rodar os checks de REGRA 3/REGRA 5 NUNCA aumenta a contagem de linhas dele.
+$rgRealBudgetLedger = Join-Path (Join-Path $root "studio") "budget-log.jsonl"
+$rgRealBudgetLedgerBaseline = if (Test-Path -LiteralPath $rgRealBudgetLedger) { @(Get-Content -LiteralPath $rgRealBudgetLedger -Encoding UTF8 -ErrorAction SilentlyContinue).Count } else { 0 }
 [System.IO.File]::WriteAllText($rgCfg2, "mode: bloqueio`nmin_claims: 3`nmin_chars_informativo: 1500`n", $rgUtf8)
 
 
@@ -1696,7 +1714,7 @@ New-RgTranscript -Path $rgT8 -UserText "delegue uma tarefa pequena" `
     -FinalText "Delegado."
 $rgOut8Payload = (@{ session_id = "RG-T8"; transcript_path = $rgT8.Replace('\', '/'); stop_hook_active = $false } | ConvertTo-Json -Compress)
 if (Test-Path -LiteralPath $rgLog2) { Remove-Item -LiteralPath $rgLog2 -Force -ErrorAction SilentlyContinue }
-$rgOut8 = ($rgOut8Payload | & powershell -ExecutionPolicy Bypass -File $rgScript -LogPath $rgLog2 -ConfigPath $rgCfg2 2>&1) -join "`n"
+$rgOut8 = ($rgOut8Payload | & powershell -ExecutionPolicy Bypass -File $rgScript -LogPath $rgLog2 -ConfigPath $rgCfg2 -BudgetLedgerPath $rgBudgetLedgerNoise2 2>&1) -join "`n"
 Check "Response Guard (REGRA 3 BUDGET, negativo): sub-agente com 5 tool_use vs Budget tools=3 declarado ACUSA e BLOQUEIA" (($rgOut8 -match '"decision":"block"') -and ($rgOut8 -match 'Budget') -and ($rgOut8 -match 'declarado=3 real=5')) ("saida: " + $rgOut8)
 
 
@@ -1709,26 +1727,114 @@ New-RgTranscript -Path $rgT9 -UserText "delegue uma tarefa pequena" `
     -FinalText "Delegado."
 $rgOut9Payload = (@{ session_id = "RG-T9"; transcript_path = $rgT9.Replace('\', '/'); stop_hook_active = $false } | ConvertTo-Json -Compress)
 if (Test-Path -LiteralPath $rgLog2) { Remove-Item -LiteralPath $rgLog2 -Force -ErrorAction SilentlyContinue }
-$rgOut9 = ($rgOut9Payload | & powershell -ExecutionPolicy Bypass -File $rgScript -LogPath $rgLog2 -ConfigPath $rgCfg2 2>&1) -join "`n"
+$rgOut9 = ($rgOut9Payload | & powershell -ExecutionPolicy Bypass -File $rgScript -LogPath $rgLog2 -ConfigPath $rgCfg2 -BudgetLedgerPath $rgBudgetLedgerNoise2 2>&1) -join "`n"
 Check "Response Guard (REGRA 3 BUDGET, positivo): mesmo sub-agente com Budget tools=10 (cabe) PASSA (sem decision:block)" ($rgOut9 -notmatch '"decision":"block"') ("saida: " + $rgOut9)
 
 
 # Cenario 10: delegacao SEM a linha canonica (so prosa) -> nao acusa, so fica SEM-BUDGET-DECLARADO
 # (visivel no log, nunca vira violacao - teto em prosa nao e legivel por maquina, de proposito).
+# ToolCount 5 (era 50 ate TASK-682): 50 colidia com a REGRA 5 nova (teto CUMULATIVO por agente
+# vivo, default 40) - o proprio agentType "general-purpose" desta fixture estourava o teto
+# cumulativo e o Cenario 10 passava a bloquear por um motivo que nao e o que ele testa. A
+# magnitude do ToolCount nunca fez parte do que este cenario prova (so o log SEM-BUDGET-DECLARADO
+# importa aqui) - 5 mantem a intencao original sem tropecar na REGRA 5.
 $rgSid10 = "t10"
 $rgT10 = Join-Path $rgRoot2 ($rgSid10 + ".jsonl")
-New-RgSubagentFixture -SessDir $rgRoot2 -Sid $rgSid10 -Tag "semdeclarar" -ToolUseId "budget-t10" -ToolCount 50
+New-RgSubagentFixture -SessDir $rgRoot2 -Sid $rgSid10 -Tag "semdeclarar" -ToolUseId "budget-t10" -ToolCount 5
 New-RgTranscript -Path $rgT10 -UserText "delegue uma tarefa pequena" `
     -AssistantBlocks @(@{ id = "budget-t10"; name = "Task"; input = @{ subagent_type = "warden"; description = "fixture sem budget"; prompt = "faca X com teto de 3 chamadas (prosa, sem linha canonica)" } }) `
     -FinalText "Delegado."
 if (Test-Path -LiteralPath $rgLog2) { Remove-Item -LiteralPath $rgLog2 -Force -ErrorAction SilentlyContinue }
 $rgOut10Payload = (@{ session_id = "RG-T10"; transcript_path = $rgT10.Replace('\', '/'); stop_hook_active = $false } | ConvertTo-Json -Compress)
-$rgOut10 = ($rgOut10Payload | & powershell -ExecutionPolicy Bypass -File $rgScript -LogPath $rgLog2 -ConfigPath $rgCfg2 2>&1) -join "`n"
+$rgOut10 = ($rgOut10Payload | & powershell -ExecutionPolicy Bypass -File $rgScript -LogPath $rgLog2 -ConfigPath $rgCfg2 -BudgetLedgerPath $rgBudgetLedgerNoise2 2>&1) -join "`n"
 $rgLog10Txt = if (Test-Path -LiteralPath $rgLog2) { ReadText $rgLog2 } else { "" }
 Check "Response Guard (REGRA 3 BUDGET): delegacao SEM linha canonica 'Budget: tools=N' NAO acusa (teto em prosa e ilegivel por maquina, de proposito) e fica SEM-BUDGET-DECLARADO no log" (($rgOut10 -notmatch '"decision":"block"') -and ($rgLog10Txt -match '"budget_sem_declarar":1')) ("saida: " + $rgOut10 + " | log: " + $rgLog10Txt)
 
 
 if (Test-Path -LiteralPath $rgRoot2) { Remove-Item -Recurse -Force -LiteralPath $rgRoot2 -ErrorAction SilentlyContinue }
+
+# --- Response Guard: REGRA 5 - TETO CUMULATIVO POR AGENTE VIVO (L64, TASK-682, prova pelo negativo) ---
+# CONSERTO do furo medido no plano TASK-680: budget-gate.ps1 (PreToolUse) nunca via /subagents/ no
+# transcript_path real (payload dentro de um sub-agente carrega o mesmo transcript_path do turno
+# pai) - o teto NUNCA disparava. Este bloco prova o mecanismo real: reabrir o MESMO especialista
+# (mesmo agentType) 3x tem que SOMAR no mesmo saldo, nao zerar por reabertura - "8 reaberturas de
+# 25 viraram 198 turnos e nenhum guarda reclamou" e exatamente o cenario negativo aqui.
+Write-Host ""
+Write-Host "-- Response Guard: REGRA 5 - teto cumulativo por agente vivo (reabertura soma, nao zera) --"
+$rgRoot5 = Join-Path ([System.IO.Path]::GetTempPath()) ("rg-cumulativo-fixture-" + $PID)
+if (Test-Path -LiteralPath $rgRoot5) { Remove-Item -Recurse -Force -LiteralPath $rgRoot5 -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Force -Path $rgRoot5 | Out-Null
+$rgLog5 = Join-Path $rgRoot5 "log.jsonl"
+$rgCfg5 = Join-Path $rgRoot5 "response-guard.yaml"
+[System.IO.File]::WriteAllText($rgCfg5, "mode: bloqueio`nmin_claims: 3`nmin_chars_informativo: 1500`n", $rgUtf8)
+$rgBudgetLedger5 = Join-Path $rgRoot5 "budget-log.jsonl"
+
+function New-RgSubagentFixtureTyped {
+    # Igual a New-RgSubagentFixture (mesmo layout de disco), mas com $AgentType parametrizado -
+    # REGRA 3 usa sempre "general-purpose" fixo; REGRA 5 precisa do MESMO agentType em varios
+    # arquivos pra provar que reabertura do MESMO especialista soma.
+    param([string]$SessDir, [string]$Sid, [string]$Tag, [string]$ToolUseId, [int]$ToolCount, [string]$AgentType)
+    $subDir = Join-Path $SessDir (Join-Path $Sid "subagents")
+    New-Item -ItemType Directory -Force -Path $subDir | Out-Null
+    $agentJsonl = Join-Path $subDir ("agent-" + $Tag + ".jsonl")
+    $agentMeta = Join-Path $subDir ("agent-" + $Tag + ".meta.json")
+    $lines = New-Object System.Collections.Generic.List[string]
+    for ($i = 0; $i -lt $ToolCount; $i++) {
+        $lines.Add((@{ type = "assistant"; message = @{ role = "assistant"; content = @(@{ type = "tool_use"; id = ("sub" + $i); name = "Bash"; input = @{ command = "echo " + $i } }) } } | ConvertTo-Json -Depth 8 -Compress))
+    }
+    [System.IO.File]::WriteAllText($agentJsonl, ($lines -join "`n") + "`n", $rgUtf8)
+    [System.IO.File]::WriteAllText($agentMeta, (@{ agentType = $AgentType; description = "fixture"; toolUseId = $ToolUseId; spawnDepth = 1 } | ConvertTo-Json -Compress), $rgUtf8)
+}
+
+$rgEnvBackup5 = $env:ALIA_SUBAGENT_MAX_CALLS
+$env:ALIA_SUBAGENT_MAX_CALLS = "10"
+
+# Cenario 11 (negativo): mesmo especialista (agentType identico) reaberto 3x, 10 tool_use cada
+# reabertura (nenhuma reabertura sozinha excede o teto 10) - SOMA acumulada = 30 > 10 -> ACUSA e
+# BLOQUEIA citando o numero ACUMULADO, nao a contagem de uma rodada isolada.
+$rgSid11 = "t-cum-estouro"
+$rgT11 = Join-Path $rgRoot5 ($rgSid11 + ".jsonl")
+New-RgSubagentFixtureTyped -SessDir $rgRoot5 -Sid $rgSid11 -Tag "r1" -ToolUseId "cum-r1" -ToolCount 10 -AgentType "gauge-cumulativo-fixture"
+New-RgSubagentFixtureTyped -SessDir $rgRoot5 -Sid $rgSid11 -Tag "r2" -ToolUseId "cum-r2" -ToolCount 10 -AgentType "gauge-cumulativo-fixture"
+New-RgSubagentFixtureTyped -SessDir $rgRoot5 -Sid $rgSid11 -Tag "r3" -ToolUseId "cum-r3" -ToolCount 10 -AgentType "gauge-cumulativo-fixture"
+New-RgTranscript -Path $rgT11 -UserText "reabri o mesmo especialista 3 vezes" `
+    -AssistantBlocks @(
+        @{ id = "cum-r1"; name = "Task"; input = @{ subagent_type = "gauge-cumulativo-fixture"; description = "reabertura 1"; prompt = "faca X" } },
+        @{ id = "cum-r2"; name = "Task"; input = @{ subagent_type = "gauge-cumulativo-fixture"; description = "reabertura 2"; prompt = "faca Y" } },
+        @{ id = "cum-r3"; name = "Task"; input = @{ subagent_type = "gauge-cumulativo-fixture"; description = "reabertura 3"; prompt = "faca Z" } }
+    ) -FinalText "Fechado apos a 3a reabertura."
+$rgOut11Payload = (@{ session_id = "RG-T11"; transcript_path = $rgT11.Replace('\', '/'); stop_hook_active = $false } | ConvertTo-Json -Compress)
+if (Test-Path -LiteralPath $rgLog5) { Remove-Item -LiteralPath $rgLog5 -Force -ErrorAction SilentlyContinue }
+$rgOut11 = ($rgOut11Payload | & powershell -ExecutionPolicy Bypass -File $rgScript -LogPath $rgLog5 -ConfigPath $rgCfg5 -BudgetLedgerPath $rgBudgetLedger5 2>&1) -join "`n"
+Check "Response Guard (REGRA 5 CUMULATIVO, negativo): especialista reaberto 3x (10+10+10) com teto 10 ACUSA e BLOQUEIA citando 30 chamadas acumuladas (nao 10 de cada rodada)" (($rgOut11 -match '"decision":"block"') -and ($rgOut11 -match 'CUMULATIVO') -and ($rgOut11 -match '30 chamadas acumuladas') -and ($rgOut11 -match 'teto 10')) ("saida: " + $rgOut11)
+
+$rgLedger5Txt = if (Test-Path -LiteralPath $rgBudgetLedger5) { ReadText $rgBudgetLedger5 } else { "" }
+Check "Response Guard (REGRA 5 CUMULATIVO): studio/budget-log.jsonl (via -BudgetLedgerPath) recebeu a linha real com n=30, teto=10, decision:deny (nao 3 linhas duplicadas - dedup por agentType)" (($rgLedger5Txt -match '"n":30') -and ($rgLedger5Txt -match '"teto":10') -and ($rgLedger5Txt -match '"decision":"deny"') -and (@($rgLedger5Txt -split "`n" | Where-Object { $_ -match 'gauge-cumulativo-fixture' }).Count -eq 1)) ("ledger: " + $rgLedger5Txt)
+
+# Cenario 12 (positivo, desfaz o 11): mesmo especialista reaberto 2x, 4 tool_use cada (soma 8 <
+# teto 10) -> PASSA, sem bloqueio.
+$rgSid12 = "t-cum-coube"
+$rgT12 = Join-Path $rgRoot5 ($rgSid12 + ".jsonl")
+New-RgSubagentFixtureTyped -SessDir $rgRoot5 -Sid $rgSid12 -Tag "r1" -ToolUseId "cumok-r1" -ToolCount 4 -AgentType "gauge-cumulativo-fixture-ok"
+New-RgSubagentFixtureTyped -SessDir $rgRoot5 -Sid $rgSid12 -Tag "r2" -ToolUseId "cumok-r2" -ToolCount 4 -AgentType "gauge-cumulativo-fixture-ok"
+New-RgTranscript -Path $rgT12 -UserText "reabri o mesmo especialista 2 vezes, pequeno" `
+    -AssistantBlocks @(
+        @{ id = "cumok-r1"; name = "Task"; input = @{ subagent_type = "gauge-cumulativo-fixture-ok"; description = "reabertura 1"; prompt = "faca X" } },
+        @{ id = "cumok-r2"; name = "Task"; input = @{ subagent_type = "gauge-cumulativo-fixture-ok"; description = "reabertura 2"; prompt = "faca Y" } }
+    ) -FinalText "Fechado apos a 2a reabertura."
+$rgOut12Payload = (@{ session_id = "RG-T12"; transcript_path = $rgT12.Replace('\', '/'); stop_hook_active = $false } | ConvertTo-Json -Compress)
+if (Test-Path -LiteralPath $rgLog5) { Remove-Item -LiteralPath $rgLog5 -Force -ErrorAction SilentlyContinue }
+$rgOut12 = ($rgOut12Payload | & powershell -ExecutionPolicy Bypass -File $rgScript -LogPath $rgLog5 -ConfigPath $rgCfg5 -BudgetLedgerPath $rgBudgetLedger5 2>&1) -join "`n"
+Check "Response Guard (REGRA 5 CUMULATIVO, positivo): especialista reaberto 2x (4+4=8) sob o teto 10 PASSA (sem decision:block)" ($rgOut12 -notmatch '"decision":"block"') ("saida: " + $rgOut12)
+
+if ($null -eq $rgEnvBackup5) { Remove-Item Env:\ALIA_SUBAGENT_MAX_CALLS -ErrorAction SilentlyContinue } else { $env:ALIA_SUBAGENT_MAX_CALLS = $rgEnvBackup5 }
+if (Test-Path -LiteralPath $rgRoot5) { Remove-Item -Recurse -Force -LiteralPath $rgRoot5 -ErrorAction SilentlyContinue }
+
+# --- Prova pelo negativo (achado do CEO, TASK-682): checks de REGRA 3/REGRA 5 NUNCA tocam o
+# ledger de PRODUCAO (studio/budget-log.jsonl) - todos isolam via -BudgetLedgerPath. Compara a
+# contagem de linhas ANTES (capturada no topo desta secao) e DEPOIS de todos os cenarios 8-12.
+$rgRealBudgetLedgerAfter = if (Test-Path -LiteralPath $rgRealBudgetLedger) { @(Get-Content -LiteralPath $rgRealBudgetLedger -Encoding UTF8 -ErrorAction SilentlyContinue).Count } else { 0 }
+Check "Response Guard (REGRA 3/REGRA 5): studio/budget-log.jsonl de PRODUCAO nao ganhou linha nenhuma rodando os checks (isolado via -BudgetLedgerPath, nunca escreve no ledger real)" ($rgRealBudgetLedgerAfter -eq $rgRealBudgetLedgerBaseline) ("linhas antes=" + $rgRealBudgetLedgerBaseline + " depois=" + $rgRealBudgetLedgerAfter)
 
 
 # --- Guarda no ato (DELEGA + RITUAL) - WARDEN, TASK 07/09/2026, incidente sessao 4f2b4cf2 ---
@@ -1776,6 +1882,155 @@ New-RgTranscript -Path $rgT12 -UserText "mexa no motor" `
     ) -FinalText "Pronto."
 $rgOut12 = Invoke-ResponseGuard3 -TranscriptPath $rgT12 -SessionId "RG-T12"
 Check "Response Guard (REGRA 1, ordem, positivo): Task ANTES do Write no mesmo turno PASSA" ($rgOut12 -notmatch '"decision":"block"') ("saida: " + $rgOut12)
+
+
+# --- TASK-681 (WARDEN): filtro de texto injetado pelo harness + ordemPatterns ampliado ---
+# Achado forense (11 dos 62 turnos com delega_ok:false tinham ordem_registrada:true E
+# ordem_detectada:false - o registro auditavel deu certo e a valvula ficou fechada mesmo assim):
+# o passo (2) de response-guard.ps1 ancorava $turnStart na ULTIMA mensagem role='user' com texto,
+# mas o harness injeta mensagens role='user' que o Operador nunca digitou (<task-notification>
+# quando um Task termina, medido em sessao 08efa66c-ad54-455c-8b2f-3a78244548b3 linha 621). A
+# notificacao virava o novo $turnStart e cortava fora a ordem real, o register-task.ps1
+# -OperatorOrder e a propria delegacao. Get-OperatorTextsOnly (novo em response-guard.ps1) filtra
+# esse texto nos dois lugares que decidem "o que o Operador disse". $ordemPatterns tambem ganhou
+# frases REAIS medidas nos transcripts (resolve isso/tudo, garanta isso, quero somente que).
+function New-RgTranscriptFromEntries {
+    # Fabrica GENERICA: ao contrario de New-RgTranscript (1 UserText inicial + pares
+    # tool_use/tool_result + 1 FinalText), aceita uma sequencia ARBITRARIA de entradas - precisa
+    # pra simular <task-notification> injetado NO MEIO do turno (role=user com content STRING,
+    # nao bloco type='text' - mesmo contrato medido no transcript real citado acima). $Entries e
+    # um array de hashtables:
+    #   @{ role='user'; text='...' }                    -> user com bloco type='text' (genuino)
+    #   @{ role='user'; raw='<task-notification>...' }   -> user com content STRING (injetado)
+    #   @{ role='assistant'; tool='Write'; id='w1'; input=@{...} } -> assistant tool_use
+    #   @{ role='tool_result'; id='w1'; text='ok' }       -> user com bloco tool_result
+    #   @{ role='assistant'; text='...' }                 -> assistant so-texto
+    param([string]$Path, [array]$Entries, [switch]$FirstTurn)
+    $lines = New-Object System.Collections.Generic.List[string]
+    if (-not $FirstTurn) {
+        $lines.Add((@{ type = "user"; message = @{ role = "user"; content = @(@{ type = "text"; text = "turno anterior (fixture)" }) } } | ConvertTo-Json -Depth 8 -Compress))
+        $lines.Add((@{ type = "assistant"; message = @{ role = "assistant"; content = @(@{ type = "text"; text = "host: claude-code | delegacao: spawn`n`nresposta do turno anterior" }) } } | ConvertTo-Json -Depth 8 -Compress))
+    }
+    foreach ($e in $Entries) {
+        if ($e.role -eq 'user' -and $e.ContainsKey('raw')) {
+            $lines.Add((@{ type = "user"; message = @{ role = "user"; content = $e.raw } } | ConvertTo-Json -Depth 8 -Compress))
+        } elseif ($e.role -eq 'user') {
+            $lines.Add((@{ type = "user"; message = @{ role = "user"; content = @(@{ type = "text"; text = $e.text }) } } | ConvertTo-Json -Depth 8 -Compress))
+        } elseif ($e.role -eq 'assistant' -and $e.ContainsKey('tool')) {
+            $lines.Add((@{ type = "assistant"; message = @{ role = "assistant"; content = @(@{ type = "tool_use"; id = $e.id; name = $e.tool; input = $e.input }) } } | ConvertTo-Json -Depth 8 -Compress))
+        } elseif ($e.role -eq 'tool_result') {
+            $lines.Add((@{ type = "user"; message = @{ role = "user"; content = @(@{ type = "tool_result"; tool_use_id = $e.id; content = @(@{ type = "text"; text = $e.text }) }) } } | ConvertTo-Json -Depth 8 -Compress))
+        } elseif ($e.role -eq 'assistant') {
+            $lines.Add((@{ type = "assistant"; message = @{ role = "assistant"; content = @(@{ type = "text"; text = $e.text }) } } | ConvertTo-Json -Depth 8 -Compress))
+        }
+    }
+    [System.IO.File]::WriteAllText($Path, ($lines -join "`n") + "`n", $rgUtf8)
+}
+
+$rgNota = Join-Path $rgRoot3 "clients\brax\artifacts\nota.md"
+
+# Cenario A (positivo, CONSERTO): ordem genuina + Task real; DEPOIS chega <task-notification> de
+# um Task nao relacionado (role=user, content STRING); o Write do coordenador vem so DEPOIS da
+# notificacao. Antes do filtro, a notificacao virava $turnStart e o Task ficava fora da janela ->
+# reprovava por "falta delegacao" mesmo tendo delegado de verdade. Com o filtro, o turno inteiro
+# (ordem, Task, notificacao, Write) fica na janela e o Write conta como POSTERIOR a delegacao.
+$rgT14 = Join-Path $rgRoot3 "t14.jsonl"
+New-RgTranscriptFromEntries -Path $rgT14 -Entries @(
+    @{ role = 'user'; text = 'atualize o artifact clients/brax/artifacts/nota.md com o resumo que conversamos' },
+    @{ role = 'assistant'; tool = 'Task'; id = 'tn1'; input = @{ subagent_type = 'brax-especialista'; prompt = 'atualiza o artifact' } },
+    @{ role = 'tool_result'; id = 'tn1'; text = 'Feito, artifact atualizado pelo especialista.' },
+    @{ role = 'user'; raw = "<task-notification>`n<task-id>zzz</task-id>`n<status>completed</status>`n<summary>Agent nao relacionado terminou</summary>`n<result>ok</result>`n</task-notification>" },
+    @{ role = 'assistant'; tool = 'Write'; id = 'w14'; input = @{ file_path = $rgNota; content = 'nota final escrita depois da delegacao' } },
+    @{ role = 'tool_result'; id = 'w14'; text = 'ok' },
+    @{ role = 'assistant'; text = 'Pronto, o especialista atualizou o artifact e eu fechei a nota.' }
+)
+$rgOut14 = Invoke-ResponseGuard3 -TranscriptPath $rgT14 -SessionId "RG-T14"
+Check "Response Guard (TASK-681, filtro de injecao, positivo/CONSERTO): <task-notification> role=user DEPOIS da ordem+Task real nao vira ancora do turno - Write posterior a delegacao PASSA (antes do filtro, reprovava)" ($rgOut14 -notmatch '"decision":"block"') ("saida: " + $rgOut14)
+
+
+# Cenario B (negativo/regressao): o Write acontece ANTES de qualquer Task - mesmo com a
+# <task-notification> no meio depois - continua BLOQUEANDO. Prova que o filtro so tira RUIDO da
+# ancora do turno, nunca muda a regra "ordem importa" (delegacao tardia nao lava escrita anterior).
+$rgT15 = Join-Path $rgRoot3 "t15.jsonl"
+New-RgTranscriptFromEntries -Path $rgT15 -Entries @(
+    @{ role = 'user'; text = 'mexa no artifact clients/brax/artifacts/nota.md' },
+    @{ role = 'assistant'; tool = 'Write'; id = 'w15'; input = @{ file_path = $rgNota; content = 'escrito ANTES de qualquer delegacao' } },
+    @{ role = 'tool_result'; id = 'w15'; text = 'ok' },
+    @{ role = 'user'; raw = "<task-notification>`n<task-id>zzz2</task-id>`n<status>completed</status>`n<summary>Agent nao relacionado terminou</summary>`n<result>ok</result>`n</task-notification>" },
+    @{ role = 'assistant'; tool = 'Task'; id = 'tn15'; input = @{ subagent_type = 'brax-especialista'; prompt = 'so depois, tarde demais' } },
+    @{ role = 'tool_result'; id = 'tn15'; text = 'ok' },
+    @{ role = 'assistant'; text = 'Pronto.' }
+)
+$rgOut15 = Invoke-ResponseGuard3 -TranscriptPath $rgT15 -SessionId "RG-T15"
+Check "Response Guard (TASK-681, filtro de injecao, negativo/regressao): Write ANTES de qualquer Task continua BLOQUEANDO mesmo com <task-notification> no meio (o filtro so tira ruido, nao muda a regra de ordem)" (($rgOut15 -match '"decision":"block"') -and ($rgOut15 -match 'falta delegacao')) ("saida: " + $rgOut15)
+
+
+# Cenario C (positivo, ordemPatterns novo): "resolve isso" (SEM "direto"/"sem delegar" - frase que
+# o padrao antigo nunca casava, medida em sessao 4e8e4935-16cd-41f7-9453-402c38573a2f e
+# e87620af-3083-47cd-8469-4365fa953f9b, "resolva tudo que aparecer") + register-task.ps1
+# -OperatorOrder com sucesso no mesmo turno -> valvula ABRE -> Write direto do coordenador PASSA.
+$rgBug = Join-Path $rgRoot3 "clients\brax\artifacts\bug.md"
+$rgT16 = Join-Path $rgRoot3 "t16.jsonl"
+New-RgTranscriptFromEntries -Path $rgT16 -Entries @(
+    @{ role = 'user'; text = 'resolve isso no arquivo clients/brax/artifacts/bug.md, por favor' },
+    @{ role = 'assistant'; tool = 'Bash'; id = 'rt16'; input = @{ command = 'powershell -File scripts/register-task.ps1 -Client "brax" -Title "conserto" -Project "p" -Specialist "alia" -OperatorOrder' } },
+    @{ role = 'tool_result'; id = 'rt16'; text = '[OK] tarefa registrada TASK-999' },
+    @{ role = 'assistant'; tool = 'Write'; id = 'w16'; input = @{ file_path = $rgBug; content = 'conserto direto' } },
+    @{ role = 'tool_result'; id = 'w16'; text = 'ok' },
+    @{ role = 'assistant'; text = 'Consertei direto, conforme voce pediu.' }
+)
+$rgOut16 = Invoke-ResponseGuard3 -TranscriptPath $rgT16 -SessionId "RG-T16"
+Check "Response Guard (TASK-681, ordemPatterns novo, positivo): 'resolve isso' (sem 'direto'/'sem delegar') + register-task.ps1 -OperatorOrder com sucesso ABRE a valvula - Write direto do coordenador PASSA" ($rgOut16 -notmatch '"decision":"block"') ("saida: " + $rgOut16)
+
+
+# Cenario D (negativo, desfaz C): mesma frase "resolve isso", SEM o register-task.ps1
+# -OperatorOrder no turno -> continua BLOQUEANDO. Prova que o regex sozinho nunca abre a valvula -
+# a perna auditavel (leg 2) continua sendo o freio real.
+$rgBug2 = Join-Path $rgRoot3 "clients\brax\artifacts\bug2.md"
+$rgT17 = Join-Path $rgRoot3 "t17.jsonl"
+New-RgTranscriptFromEntries -Path $rgT17 -Entries @(
+    @{ role = 'user'; text = 'resolve isso no arquivo clients/brax/artifacts/bug2.md, por favor' },
+    @{ role = 'assistant'; tool = 'Write'; id = 'w17'; input = @{ file_path = $rgBug2; content = 'sem registro auditavel' } },
+    @{ role = 'tool_result'; id = 'w17'; text = 'ok' },
+    @{ role = 'assistant'; text = 'Consertei.' }
+)
+$rgOut17 = Invoke-ResponseGuard3 -TranscriptPath $rgT17 -SessionId "RG-T17"
+Check "Response Guard (TASK-681, ordemPatterns novo, negativo): 'resolve isso' SEM o register-task.ps1 -OperatorOrder continua BLOQUEANDO (regex sozinho nunca abre a valvula)" (($rgOut17 -match '"decision":"block"') -and ($rgOut17 -match 'falta delegacao')) ("saida: " + $rgOut17)
+
+
+# Cenario E (negativo, especificidade): "resolva o problema" (sem 'isso'/'tudo' logo apos
+# "resolv") NAO casa o padrao novo - continua reprovando escrita de dominio sem Task e sem
+# registro, provando que a ampliacao nao virou "resolve"/"faz" soltos (que abririam a valvula em
+# qualquer pedido comum).
+$rgBug3 = Join-Path $rgRoot3 "clients\brax\artifacts\bug3.md"
+$rgT18 = Join-Path $rgRoot3 "t18.jsonl"
+New-RgTranscriptFromEntries -Path $rgT18 -Entries @(
+    @{ role = 'user'; text = 'preciso que voce resolva o problema no arquivo clients/brax/artifacts/bug3.md' },
+    @{ role = 'assistant'; tool = 'Write'; id = 'w18'; input = @{ file_path = $rgBug3; content = 'sem ordem, sem registro' } },
+    @{ role = 'tool_result'; id = 'w18'; text = 'ok' },
+    @{ role = 'assistant'; text = 'Consertei.' }
+)
+$rgOut18 = Invoke-ResponseGuard3 -TranscriptPath $rgT18 -SessionId "RG-T18"
+Check "Response Guard (TASK-681, especificidade): 'resolva o problema' (sem 'isso'/'tudo' logo apos 'resolv') nao casa o padrao novo - escrita de dominio sem Task e sem registro continua REPROVANDO" (($rgOut18 -match '"decision":"block"') -and ($rgOut18 -match 'falta delegacao')) ("saida: " + $rgOut18)
+
+
+# Cenario F (negativo, anti-jogo): a frase de ordem ("resolve isso"/"sem delegar") aparece SO
+# dentro do <task-notification> injetado, nunca no texto genuino do Operador - mesmo com
+# register-task.ps1 -OperatorOrder bem-sucedido no turno (perna 2 sozinha nao basta), a valvula
+# NAO abre porque Get-OperatorTextsOnly descarta o texto injetado da deteccao de linguagem.
+$rgBug4 = Join-Path $rgRoot3 "clients\brax\artifacts\bug4.md"
+$rgT19 = Join-Path $rgRoot3 "t19.jsonl"
+New-RgTranscriptFromEntries -Path $rgT19 -Entries @(
+    @{ role = 'user'; text = 'atualize o arquivo clients/brax/artifacts/bug4.md' },
+    @{ role = 'assistant'; tool = 'Bash'; id = 'rt19'; input = @{ command = 'powershell -File scripts/register-task.ps1 -Client "brax" -Title "x" -Project "p" -Specialist "alia" -OperatorOrder' } },
+    @{ role = 'tool_result'; id = 'rt19'; text = '[OK] tarefa registrada TASK-998' },
+    @{ role = 'user'; raw = "<task-notification>`n<task-id>zzz3</task-id>`n<status>completed</status>`n<summary>relatorio</summary>`n<result>resolve isso e quero somente que voce prossiga sem delegar</result>`n</task-notification>" },
+    @{ role = 'assistant'; tool = 'Write'; id = 'w19'; input = @{ file_path = $rgBug4; content = 'write direto, ordem so no texto injetado' } },
+    @{ role = 'tool_result'; id = 'w19'; text = 'ok' },
+    @{ role = 'assistant'; text = 'Feito.' }
+)
+$rgOut19 = Invoke-ResponseGuard3 -TranscriptPath $rgT19 -SessionId "RG-T19"
+Check "Response Guard (TASK-681, filtro anti-jogo): frase de ordem SO dentro de <task-notification> (texto injetado) nao abre a valvula - continua BLOQUEANDO mesmo com register-task.ps1 -OperatorOrder bem-sucedido no turno" (($rgOut19 -match '"decision":"block"') -and ($rgOut19 -match 'falta delegacao')) ("saida: " + $rgOut19)
 
 
 # (ii-negativo) transcript de 1 SO turno (a resposta atual e a 1a assistant da sessao) sem a linha
@@ -2836,7 +3091,7 @@ Check "package-release.ps1: allowlist de scripts/ foi encontrada e lida (nao vei
 $selfSmokeTxt650 = ReadText (Join-Path $root "scripts\smoke-test.ps1")
 $referenciados650 = New-Object System.Collections.Generic.HashSet[string]
 foreach ($mm650 in [regex]::Matches($selfSmokeTxt650, '(?:scripts[\\/])([A-Za-z0-9_.\-]+\.(?:ps1|py))')) { [void]$referenciados650.Add($mm650.Groups[1].Value) }
-$foraDeProposito650 = @("smoke-test.ps1", "smoke-test-studio.ps1")   # este proprio arquivo, e o irmao da instancia - fora de proposito do pacote (ver comentario em package-release.ps1)
+$foraDeProposito650 = @("smoke-test.ps1", "smoke-test-studio.ps1", "extract-secrets.ps1", "migrate-to-studio.ps1")   # este proprio arquivo, o irmao da instancia, e os 2 scripts internos de migracao/extracao unica do dono (mesma lista $internalFiles de package-release.ps1) - fora de proposito do pacote, so citados aqui (TASK-691) como texto literal no Guard de .gitignore, nunca invocados
 $candidatosReais650 = @($referenciados650 | Where-Object {
   ($foraDeProposito650 -notcontains $_) -and (Test-Path -LiteralPath (Join-Path $root ("scripts\" + $_)))
 } | Sort-Object)
@@ -4037,11 +4292,276 @@ $pgPayloadE = (@{ session_id = "PG-E"; tool_name = "PowerShell"; transcript_path
 $pgOutE = Invoke-PublishGate -RawInput $pgPayloadE
 Check "publish-gate.ps1 (negativo): git commit via PowerShell dentro de sub-agente BLOQUEIA" (($pgOutE -match '\[PUBLICA\]') -and ($pgOutE -match '"permissionDecision":"deny"')) ("saida: " + $pgOutE)
 
+# --- Gatilho da regua de alinhamento (TASK-684, L73): alinhamento-gate.ps1, prova pelo negativo ---
+Write-Host ""
+Write-Host "-- Gatilho da regua de alinhamento (TASK-684, L73): alinhamento-gate.ps1 --"
+
+$agScript = Join-Path $root "scripts\alinhamento-gate.ps1"
+Check "alinhamento-gate.ps1 existe" (Test-Path -LiteralPath $agScript)
+
+$agParseErrors = $null
+$agParseTokens = $null
+try { [void][System.Management.Automation.Language.Parser]::ParseFile($agScript, [ref]$agParseTokens, [ref]$agParseErrors) } catch { $agParseErrors = @($_) }
+Check "alinhamento-gate.ps1: 0 erro de sintaxe (Parser::ParseFile)" (($null -ne $agParseErrors) -and ($agParseErrors.Count -eq 0)) ("erros: " + ($agParseErrors -join " | "))
+
+$agSettingsWired = $false
+if (Test-Path -LiteralPath $settingsPath) {
+  try {
+    $settingsJsonAg = (ReadText $settingsPath) | ConvertFrom-Json
+    foreach ($upsEntryAg in @($settingsJsonAg.hooks.UserPromptSubmit)) {
+      foreach ($hAg in @($upsEntryAg.hooks)) {
+        if ("$($hAg.command)" -match 'alinhamento-gate\.ps1') { $agSettingsWired = $true }
+      }
+    }
+  } catch { }
+}
+Check "alinhamento-gate.ps1: hook UserPromptSubmit LIGADO em .claude/settings.json (nao so projetado)" $agSettingsWired
+
+Check "skills/alinhamento/SKILL.md existe (a regua que o gate obriga, nao reescrita aqui)" (Test-Path -LiteralPath (Join-Path $root "skills\alinhamento\SKILL.md"))
+
+$agRoot = Join-Path (Join-Path $root "studio") ("_ag-fixture-" + $PID)
+if (Test-Path -LiteralPath $agRoot) { Remove-Item -Recurse -Force -LiteralPath $agRoot -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Force -Path $agRoot | Out-Null
+$agLedger = Join-Path $agRoot "alinhamento-log.jsonl"
+$agOffFile = Join-Path $agRoot ".claude\alinhamento-gate.off"
+
+$agPreservedRootForDotSource = $root
+. $agScript
+$root = $agPreservedRootForDotSource
+
+# (a, negativo) prompt ambiguo que toca superficie publica -> DISPARA.
+$agPromptA = "refaz sse plano e so volta com tudo feito e corrigido, e com o o github atualizado e propagado aquii no studio farina"
+$agPayloadA = (@{ session_id = "AG-A"; prompt = $agPromptA } | ConvertTo-Json -Compress)
+$agOutA = Invoke-AlinhamentoGate -RawInput $agPayloadA -Root $agRoot -LedgerPath $agLedger
+Check "alinhamento-gate.ps1 (negativo): prompt ambiguo + superficie publica DISPARA ([ALINHAMENTO])" (($agOutA -match '\[ALINHAMENTO\]') -and ($agOutA -match 'skills/alinhamento/SKILL\.md')) ("saida: " + $agOutA)
+
+# (b, positivo) prompt trivial de fato -> FICA MUDO (stdout vazio).
+$agPromptB = "qual a versao do motor?"
+$agPayloadB = (@{ session_id = "AG-B"; prompt = $agPromptB } | ConvertTo-Json -Compress)
+$agOutB = Invoke-AlinhamentoGate -RawInput $agPayloadB -Root $agRoot -LedgerPath $agLedger
+Check "alinhamento-gate.ps1 (positivo): prompt trivial FICA MUDO (stdout vazio, sem custo de contexto)" ([string]::IsNullOrWhiteSpace($agOutB)) ("saida: " + $agOutB)
+
+# (c) interruptor .claude/alinhamento-gate.off desliga a fala mesmo acima do limiar (cenario a).
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $agOffFile) | Out-Null
+Set-Content -LiteralPath $agOffFile -Value "off" -Encoding utf8
+$agOutC = Invoke-AlinhamentoGate -RawInput $agPayloadA -Root $agRoot -LedgerPath $agLedger
+Remove-Item -LiteralPath $agOffFile -Force -ErrorAction SilentlyContinue
+Check "alinhamento-gate.ps1: .claude/alinhamento-gate.off desliga a fala (mesmo cenario do (a) fica mudo)" ([string]::IsNullOrWhiteSpace($agOutC)) ("saida: " + $agOutC)
+
+# (d) o ledger recebe linha nos DOIS casos (dispara e nao dispara) - substrato de medicao.
+$agLedgerTxt = if (Test-Path -LiteralPath $agLedger) { ReadText $agLedger } else { "" }
+$agLedgerLines = @($agLedgerTxt -split "`n" | Where-Object { $_.Trim() -ne "" })
+Check "alinhamento-gate.ps1: ledger (studio/alinhamento-log.jsonl) recebeu 1 linha por prompt avaliado (inclusive silencioso)" ($agLedgerLines.Count -eq 3) ("linhas: " + $agLedgerLines.Count)
+Check "alinhamento-gate.ps1: ledger tem linha decisao=dispara" ($agLedgerTxt -match '"decisao":"dispara"')
+Check "alinhamento-gate.ps1: ledger tem linha decisao=silencio (prompt trivial)" ($agLedgerTxt -match '"decisao":"silencio"')
+
+Remove-Item -Recurse -Force -LiteralPath $agRoot -ErrorAction SilentlyContinue
+Check "alinhamento-gate.ps1: fixture removida (faxina)" (-not (Test-Path -LiteralPath $agRoot))
+
 
 # --- squad-bridge.ps1: bundle de persona camada B contem Task liberado pela cerca do leitor ---
 $sbTxt = ReadText (Join-Path $root "scripts\squad-bridge.ps1")
 Check "squad-bridge.ps1: toda camada ganha Task (cercado por leitor-gate.ps1, TASK-571)" ($sbTxt -match "elseif \(\`$validTools -notcontains 'Task'\)")
 Check "squad-bridge.ps1: bundle gerado (spawn/opencode) inclui o paragrafo da cerca do leitor" ($sbTxt -match 'leitor em massa \(Explore em Haiku')
+
+
+# --- Briefing de delegacao (TASK-683, L74): contrato em skills/delegate/SKILL.md + gabarito
+# gerado por squad-bridge.ps1 ({client}-{id}.brief.md). Segunda metade da TASK-683 (WEAVER fez o
+# contrato e o gerador; WARDEN prova). 3 itens do "PRECISA DE PROVA" do WEAVER, cada um com
+# cenario positivo E negativo. Fixture isolada em temp, nunca o squad real do alia-flow-lab.
+Write-Host ""
+Write-Host "-- Briefing de delegacao (TASK-683, L74) --"
+
+function Test-BriefingContract76([string]$Text) {
+    $idx = $Text.IndexOf('## O briefing completo')
+    if ($idx -lt 0) { return $false }
+    $rest = $Text.Substring($idx + 1)
+    $nextIdx = $rest.IndexOf("`n## ")
+    $section = if ($nextIdx -gt 0) { $rest.Substring(0, $nextIdx) } else { $rest }
+    $campoMatches = [regex]::Matches($section, '(?m)^\d+\.\s+\*\*')
+    $hasSevenCampos = $campoMatches.Count -ge 7
+    $hasRamoA = $section -match [regex]::Escape('achei algo fora do escopo')
+    $hasRamoB = $section -match [regex]::Escape('a premissa do brief caiu')
+    return ($hasSevenCampos -and $hasRamoA -and $hasRamoB)
+}
+
+$delegateSkillPath = Join-Path $root "skills\delegate\SKILL.md"
+$delegateSkillTxt = ReadText $delegateSkillPath
+
+# (1, positivo) o arquivo real de hoje tem o marcador, os 7 campos numerados e os 2 ramos citados.
+Check "Briefing (L74, positivo): skills/delegate/SKILL.md tem '## O briefing completo' com 7 campos numerados + os 2 ramos obrigatorios citados" (Test-BriefingContract76 $delegateSkillTxt)
+
+# (1, negativo a) fixture com a secao inteira removida -> reprova (marcador some).
+$fxSecaoRemovida = $delegateSkillTxt.Replace("## O briefing completo", "## Secao renomeada de proposito (fixture WARDEN)")
+Check "Briefing (L74, negativo): fixture SEM o marcador '## O briefing completo' REPROVA" (-not (Test-BriefingContract76 $fxSecaoRemovida))
+
+# (1, negativo b) fixture com so 5 dos 7 campos (derruba os campos 6 e 7 pro corpo do campo 5, sem
+# numeracao nova) -> reprova por contagem, mesmo com o marcador e os 2 ramos ainda presentes.
+$fx5Campos = [regex]::Replace($delegateSkillTxt, '(?m)^6\.\s+\*\*Prova de aceite\*\*.*$', 'Prova de aceite (fixture, sem numero)')
+$fx5Campos = [regex]::Replace($fx5Campos, '(?m)^7\.\s+\*\*Formato da saida\*\*.*$', 'Formato da saida (fixture, sem numero)')
+Check "Briefing (L74, negativo): fixture com so 5 de 7 campos numerados REPROVA (contagem, marcador e ramos intactos)" ((-not (Test-BriefingContract76 $fx5Campos)) -and ($fx5Campos -match [regex]::Escape('achei algo fora do escopo')))
+
+# (2 e 3) o gabarito nasce do gerador: rodar squad-bridge.ps1 real sobre squad de fixture isolada
+# (nunca o squad real do alia-flow-lab) e conferir que cada {client}-{id}.md ganha um
+# {client}-{id}.brief.md irmao, com os headers de campo e os 2 ramos presentes.
+$briefFxRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("brief-fx-" + $PID)
+if (Test-Path -LiteralPath $briefFxRoot) { Remove-Item -Recurse -Force -LiteralPath $briefFxRoot -ErrorAction SilentlyContinue }
+$briefFxAgentsDir = Join-Path $briefFxRoot "clients\brief-squad\squad\agents"
+New-Item -ItemType Directory -Force -Path $briefFxAgentsDir | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $briefFxRoot "clients\brief-squad\squad\squad.yaml"), "squad:`n  client: brief-squad`n  name: Fixture Briefing (WARDEN TASK-683)`n  domain: fixture temporaria de prova pelo negativo`n  status: active`n", $utf8NoBom76)
+$briefFxYaml = "id: fx-brief`ncamada: B`ndomain: fixture`ntools: [Read, Grep]`nbudget:`n  tool_calls: 20`noutput_contract:`n  max_lines: 60`n  evidence_tags: [MEDIDO, LIDO, INFERIDO]`ngrounding: client.md`nauthority:`n  decides: teste`n  escalates_to: teste`n"
+[System.IO.File]::WriteAllText((Join-Path $briefFxAgentsDir "fx-brief.yaml"), $briefFxYaml, $utf8NoBom76)
+[System.IO.File]::WriteAllText((Join-Path $briefFxAgentsDir "fx-brief.md"), "# fx-brief`n`nFixture persona para prova WARDEN (TASK-683).`n", $utf8NoBom76)
+
+$briefFxAgentPath = Join-Path $briefFxRoot ".claude\agents\brief-squad-fx-brief.md"
+$briefFxBriefPath = Join-Path $briefFxRoot ".claude\agents\brief-squad-fx-brief.brief.md"
+
+& $sbPath -RepoRoot $briefFxRoot -Client "brief-squad" *>&1 | Out-Null
+$briefFxContentRun1 = if (Test-Path -LiteralPath $briefFxBriefPath) { Get-Content -LiteralPath $briefFxBriefPath -Raw -Encoding UTF8 } else { $null }
+
+Check "Briefing (L74, positivo): gerador real cria {client}-{id}.md" (Test-Path -LiteralPath $briefFxAgentPath)
+Check "Briefing (L74, positivo): gerador real cria o irmao {client}-{id}.brief.md" (Test-Path -LiteralPath $briefFxBriefPath)
+$briefFxHeadersOk = $false
+if ($briefFxContentRun1) {
+    $briefFxHeadersOk = (
+        ($briefFxContentRun1 -match '## 1\. Identificacao') -and
+        ($briefFxContentRun1 -match '## 2\. Orcamento declarado') -and
+        ($briefFxContentRun1 -match '## 6\. Escopo fechado') -and
+        ($briefFxContentRun1 -match '## 7\. Desfechos previsiveis') -and
+        ($briefFxContentRun1 -match '## 8\. Prova de aceite') -and
+        ($briefFxContentRun1 -match '## 9\. Formato da saida') -and
+        ($briefFxContentRun1 -match [regex]::Escape('achei algo fora do escopo')) -and
+        ($briefFxContentRun1 -match [regex]::Escape('a premissa do brief caiu'))
+    )
+}
+Check "Briefing (L74, positivo): .brief.md gerado tem os headers dos 7 campos do contrato + os 2 ramos" $briefFxHeadersOk
+
+# (2, negativo) apagar o .brief.md e rodar de novo -> recria.
+Remove-Item -LiteralPath $briefFxBriefPath -Force -ErrorAction SilentlyContinue
+Check "Briefing (L74): .brief.md apagado nao existe mais (pre-condicao do negativo)" (-not (Test-Path -LiteralPath $briefFxBriefPath))
+& $sbPath -RepoRoot $briefFxRoot -Client "brief-squad" *>&1 | Out-Null
+Check "Briefing (L74, negativo/desfaz): .brief.md apagado e RECRIADO na proxima rodada do gerador" (Test-Path -LiteralPath $briefFxBriefPath)
+
+# (3, positivo) rodar o gerador 2x sobre o mesmo yaml produz arquivo identico (idempotente).
+$briefFxContentRun2 = if (Test-Path -LiteralPath $briefFxBriefPath) { Get-Content -LiteralPath $briefFxBriefPath -Raw -Encoding UTF8 } else { $null }
+& $sbPath -RepoRoot $briefFxRoot -Client "brief-squad" *>&1 | Out-Null
+$briefFxContentRun3 = if (Test-Path -LiteralPath $briefFxBriefPath) { Get-Content -LiteralPath $briefFxBriefPath -Raw -Encoding UTF8 } else { $null }
+Check "Briefing (L74, positivo): rodar o gerador 2x sobre o mesmo yaml produz .brief.md identico (idempotente)" (($briefFxContentRun2) -and ($briefFxContentRun2 -eq $briefFxContentRun3))
+
+# (3, negativo) editar o .brief.md a mao e regerar tem que SOBRESCREVER a edicao manual.
+$briefFxHandEdit = "# EDICAO A MAO (fixture WARDEN, TASK-683) - isto NUNCA pode sobreviver a regeracao`n"
+[System.IO.File]::WriteAllText($briefFxBriefPath, $briefFxHandEdit, $utf8NoBom76)
+Check "Briefing (L74): edicao a mao gravada no .brief.md (pre-condicao do negativo)" ((Get-Content -LiteralPath $briefFxBriefPath -Raw -Encoding UTF8) -eq $briefFxHandEdit)
+& $sbPath -RepoRoot $briefFxRoot -Client "brief-squad" *>&1 | Out-Null
+$briefFxContentAfterHandEdit = if (Test-Path -LiteralPath $briefFxBriefPath) { Get-Content -LiteralPath $briefFxBriefPath -Raw -Encoding UTF8 } else { $null }
+Check "Briefing (L74, negativo/desfaz): regerar SOBRESCREVE a edicao a mao (volta ao conteudo gerado, nunca preserva o texto manual)" (($briefFxContentAfterHandEdit) -and ($briefFxContentAfterHandEdit -ne $briefFxHandEdit) -and ($briefFxContentAfterHandEdit -eq $briefFxContentRun1))
+
+Remove-Item -Recurse -Force -LiteralPath $briefFxRoot -ErrorAction SilentlyContinue
+Check "Briefing (L74): fixture removida (faxina)" (-not (Test-Path -LiteralPath $briefFxRoot))
+
+
+# --- Painel de desperdicio (TASK-685, L75): scripts/desperdicio.ps1, prova pelo negativo ---
+Write-Host ""
+Write-Host "-- Painel de desperdicio (TASK-685, L75): desperdicio.ps1 --"
+
+$dpScript = Join-Path $root "scripts\desperdicio.ps1"
+Check "desperdicio.ps1 existe" (Test-Path -LiteralPath $dpScript)
+
+$dpParseErrors = $null
+$dpParseTokens = $null
+try { [void][System.Management.Automation.Language.Parser]::ParseFile($dpScript, [ref]$dpParseTokens, [ref]$dpParseErrors) } catch { $dpParseErrors = @($_) }
+Check "desperdicio.ps1: 0 erro de sintaxe (Parser::ParseFile)" (($null -ne $dpParseErrors) -and ($dpParseErrors.Count -eq 0)) ("erros: " + ($dpParseErrors -join " | "))
+
+$dpFxRoot = Join-Path (Join-Path $root "studio") ("_dp-fixture-" + $PID)
+if (Test-Path -LiteralPath $dpFxRoot) { Remove-Item -Recurse -Force -LiteralPath $dpFxRoot -ErrorAction SilentlyContinue }
+# TASK-691: faxina em finally (nao mais so no caminho feliz) - orfao medido em release/alia-flow/
+# porque qualquer excecao entre a criacao da fixture e a linha de Remove-Item deixava a pasta pra
+# tras (o proprio caso real: o crash de studio/desperdicio-baseline.txt, mais adiante no arquivo,
+# nao tocava esta fixture, mas o principio vale pra qualquer excecao futura neste bloco).
+try {
+$dpSlug = "fx-slug"
+$dpSessDir = Join-Path (Join-Path $dpFxRoot "projects") $dpSlug
+New-Item -ItemType Directory -Force -Path $dpSessDir | Out-Null
+$utf8NoBomDp = New-Object System.Text.UTF8Encoding($false)
+
+# (a) negativo/prova de mistura: retrabalho bruto conta a mensagem injetada, limpo nao; sidechain
+# nunca conta; pergunta so conta quando o turno NAO tem tool_use; reabertura conta o MESMO
+# agentType spawnado 3x como 2 reaberturas.
+$dpLines = @(
+  '{"type":"user","timestamp":"2026-09-18T10:00:00.000Z","isSidechain":false,"message":{"role":"user","content":[{"type":"text","text":"isso ta errado, corrige por favor"}]}}',
+  '{"type":"assistant","timestamp":"2026-09-18T10:00:05.000Z","isSidechain":false,"message":{"role":"assistant","content":[{"type":"text","text":"Confirma que devo seguir assim?"}]}}',
+  '{"type":"assistant","timestamp":"2026-09-18T10:00:10.000Z","isSidechain":false,"message":{"role":"assistant","content":[{"type":"text","text":"Vou rodar o comando agora, ok?"},{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}}]}}',
+  '{"type":"user","timestamp":"2026-09-18T10:00:15.000Z","isSidechain":false,"message":{"role":"user","content":[{"type":"text","text":"<task-notification>tarefa concluida, nada a corrige aqui</task-notification>"}]}}',
+  '{"type":"user","timestamp":"2026-09-18T10:00:20.000Z","isSidechain":false,"message":{"role":"user","content":[{"type":"text","text":"beleza, obrigado"}]}}',
+  '{"type":"user","timestamp":"2026-09-18T10:00:25.000Z","isSidechain":true,"message":{"role":"user","content":[{"type":"text","text":"de novo isso? corrige"}]}}'
+)
+[System.IO.File]::WriteAllText((Join-Path $dpSessDir "S1.jsonl"), (($dpLines -join "`n") + "`n"), $utf8NoBomDp)
+
+$dpSubDir = Join-Path $dpSessDir (Join-Path "S1" "subagents")
+New-Item -ItemType Directory -Force -Path $dpSubDir | Out-Null
+for ($i = 1; $i -le 3; $i++) {
+  [System.IO.File]::WriteAllText((Join-Path $dpSubDir ("agent-g" + $i + ".meta.json")), ('{"agentType":"alia-flow-lab-gauge","description":"fx","toolUseId":"toolu_g' + $i + '","spawnDepth":1}'), $utf8NoBomDp)
+}
+[System.IO.File]::WriteAllText((Join-Path $dpSubDir "agent-w1.meta.json"), '{"agentType":"alia-flow-lab-warden","description":"fx","toolUseId":"toolu_w1","spawnDepth":1}', $utf8NoBomDp)
+
+$dpOut = & $dpScript -ProjectsDir (Join-Path $dpFxRoot "projects") -Slug $dpSlug -Dias 3650 -Json 2>&1 | Select-Object -Last 1
+$dpJson = $null
+try { $dpJson = $dpOut | ConvertFrom-Json } catch { }
+Check "desperdicio.ps1 (fixture): mensagensUserBruto=3 (sidechain excluida)" (($null -ne $dpJson) -and ($dpJson.agregado.mensagensUserBruto -eq 3)) ("saida: " + $dpOut)
+Check "desperdicio.ps1 (fixture): mensagensUserLimpo=2 (texto injetado excluido)" ($dpJson.agregado.mensagensUserLimpo -eq 2)
+Check "desperdicio.ps1 (fixture): retrabalhoBruto=2 (conta a msg injetada tambem)" ($dpJson.agregado.retrabalhoBruto -eq 2)
+Check "desperdicio.ps1 (fixture): retrabalhoLimpo=1 (msg injetada NAO conta no limpo)" ($dpJson.agregado.retrabalhoLimpo -eq 1)
+Check "desperdicio.ps1 (fixture): perguntasAntes=1 (so a mensagem sem tool_use)" ($dpJson.agregado.perguntasAntes -eq 1)
+Check "desperdicio.ps1 (fixture): reaberturasEspecialista=2 (3 spawns do mesmo agentType = 2 reaberturas)" ($dpJson.agregado.reaberturasEspecialista -eq 2)
+Check "desperdicio.ps1 (fixture): especialistasInvocados=4 (3 gauge + 1 warden)" ($dpJson.agregado.especialistasInvocados -eq 4)
+
+# (b) negativo: ProjectsDir/Slug inexistente nao derruba o script, sai [INFO] + json com falta.
+$dpOutMiss = & $dpScript -ProjectsDir (Join-Path $dpFxRoot "projects") -Slug "slug-que-nao-existe" -Json 2>&1 | Select-Object -Last 1
+$dpJsonMiss = $null
+try { $dpJsonMiss = $dpOutMiss | ConvertFrom-Json } catch { }
+Check "desperdicio.ps1 (negativo): ProjectsDir/Slug ausente nao derruba, json.falta preenchido" (($null -ne $dpJsonMiss) -and (-not [string]::IsNullOrWhiteSpace([string]$dpJsonMiss.falta)))
+} finally {
+  Remove-Item -Recurse -Force -LiteralPath $dpFxRoot -ErrorAction SilentlyContinue
+}
+Check "desperdicio.ps1: fixture removida (faxina)" (-not (Test-Path -LiteralPath $dpFxRoot))
+
+# (c) catraca: retrabalho LIMPO agregado sobre o corpus REAL desta instancia nao pode piorar alem
+# do baseline gravado (mesmo padrao de $LINK_QUEBRADO_BASELINE, L71). Portatil por desenho: se
+# esta maquina nao tiver o historico real (~/.claude/projects), o proprio script devolve
+# agregado.retrabalhoLimpoPct = $null e o ratchet vira SKIP, nunca FAIL falso em outra maquina.
+# TASK-691: o bloco inteiro (existencia da baseline + catraca) so se aplica em contexto OFICINA -
+# studio/ e dado de operador e NUNCA e copiado pro pacote (LEI da superficie publica,
+# package-release.ps1 exclui "studio" da linha 259). Discriminador reusado do bloco README/M5 mais
+# abaixo neste mesmo arquivo (docs/CLAIMS.md so existe na oficina, tambem excluido do pacote em
+# package-release.ps1:269) - mesmo idioma, nao um segundo. Antes deste conserto, a AUSENCIA do
+# arquivo virava FAIL e a linha seguinte (ReadText sem guarda) derrubava o script inteiro no meio
+# (661 linhas de saida em vez de ~500, law-ledger-check e tudo depois nunca rodavam).
+$dpOficinaContext = Test-Path -LiteralPath (Join-Path $root "docs\CLAIMS.md")
+if ($dpOficinaContext) {
+$dpBaselinePath = Join-Path $root "studio\desperdicio-baseline.txt"
+Check "desperdicio-baseline.txt existe" (Test-Path -LiteralPath $dpBaselinePath)
+$dpBaselineTxt = ReadText $dpBaselinePath
+$dpBaselineVal = $null
+if ($dpBaselineTxt -match 'retrabalho_limpo_pct=([\d\.]+)') { $dpBaselineVal = [double]$Matches[1] }
+Check "desperdicio-baseline.txt: retrabalho_limpo_pct presente e numerico" ($null -ne $dpBaselineVal) ("conteudo: " + $dpBaselineTxt)
+
+$dpRealOut = & $dpScript -Json 2>&1 | Select-Object -Last 1
+$dpRealJson = $null
+try { $dpRealJson = $dpRealOut | ConvertFrom-Json } catch { }
+if (($null -ne $dpRealJson) -and ($null -ne $dpRealJson.agregado.retrabalhoLimpoPct)) {
+  # Tolerancia de 1.0 ponto percentual (mesmo espirito de harness-baseline.txt, ">10% pior=FAIL"):
+  # a PROPRIA sessao que roda este smoke esta gravando no transcript em tempo real (a conversa
+  # ainda esta acontecendo), entao o denominador real cresce a cada rodada - um catraca EXATA
+  # (<=) reprovaria por ruido de 1 mensagem nova, nao por regressao de verdade. Regressao real
+  # (varios pontos percentuais) continua acusando.
+  $dpTolerancia = 1.0
+  Check ("Catraca de desperdicio: retrabalho LIMPO real (" + $dpRealJson.agregado.retrabalhoLimpoPct + "%) nao piora o baseline (" + $dpBaselineVal + "%) alem da tolerancia de " + $dpTolerancia + "pp (sessao viva gravando no proprio transcript)") ([double]$dpRealJson.agregado.retrabalhoLimpoPct -le ($dpBaselineVal + $dpTolerancia)) ("saida: " + $dpRealOut)
+} else {
+  Write-Host "[SKIP] Catraca de desperdicio: sem historico real de transcript nesta maquina - nada a comparar"
+}
+} else {
+  Write-Host "[SKIP] Catraca de desperdicio pulada: contexto sem docs/CLAIMS.md (pacote/produto) - studio/desperdicio-baseline.txt e dado do operador e nunca e copiado pra la (LEI da superficie publica)"
+}
 
 # --- Instalador nunca falha por limpeza de temporario (TASK-569, L65) ---
 $instScript = Join-Path $root "scripts\install.ps1"
@@ -4361,6 +4881,68 @@ if (Test-Path -LiteralPath $rgScript) {
 }
 
 
+# --- release-gate.ps1: a LENTE do passo 1/4 confere BRANCHES LOCAIS, nunca o cache
+# refs/remotes/* do servidor (TASK-661, deadlock real, 18/09/2026). O CEO reescreveu os 42
+# commits do repo publico com identidade limpa, mas o gate continuava reprovando porque
+# refs/remotes/origin/main (nao atualizado ate o push) ainda carregava a identidade suja antiga -
+# `git log --all` enumera QUALQUER ref, inclusive o cache do que o servidor ja tem. O portao
+# travava exatamente o push que existia pra corrigir o servidor. Prova pelo negativo em repo git
+# real (fixture descartavel, nunca o repo publico de verdade): remoto com commit de identidade
+# suja + branch local limpo -> PASSA (o defeito parou de existir); acrescenta commit local sujo por
+# cima -> REPROVA de novo (a severidade nunca baixou, so a lente mudou).
+$rgDlFixture = Join-Path ([System.IO.Path]::GetTempPath()) ("release-gate-deadlock-" + [guid]::NewGuid().ToString("N"))
+if (Test-Path -LiteralPath $rgScript) {
+  New-Item -ItemType Directory -Path $rgDlFixture -Force | Out-Null
+  $rgDlRemote = Join-Path $rgDlFixture "remote.git"
+  $rgDlWork = Join-Path $rgDlFixture "work"
+  $prevEapDl = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    & git init -q --bare $rgDlRemote 2>&1 | Out-Null
+    $rgDlSeed = Join-Path $rgDlFixture "seed"
+    & git init -q $rgDlSeed 2>&1 | Out-Null
+    "conteudo" | Out-File -LiteralPath (Join-Path $rgDlSeed "README.md") -Encoding utf8 -NoNewline
+    Push-Location -LiteralPath $rgDlSeed
+    & git add README.md 2>&1 | Out-Null
+    & git -c user.name="alguem" -c user.email="alguem@exemplo.com" commit -q -m "commit pessoal antigo (servidor)" 2>&1 | Out-Null
+    & git remote add origin $rgDlRemote 2>&1 | Out-Null
+    & git push -q origin HEAD:refs/heads/main 2>&1 | Out-Null
+    Pop-Location
+
+    & git init -q $rgDlWork 2>&1 | Out-Null
+    Push-Location -LiteralPath $rgDlWork
+    & git remote add origin $rgDlRemote 2>&1 | Out-Null
+    & git fetch -q origin 2>&1 | Out-Null
+    & git checkout -q --orphan main 2>&1 | Out-Null
+    "conteudo limpo" | Out-File -LiteralPath (Join-Path $rgDlWork "README.md") -Encoding utf8 -NoNewline
+    & git add README.md 2>&1 | Out-Null
+    & git -c user.name="Alia Flow" -c user.email="noreply@alia-flow.local" commit -q -m "commit limpo local" 2>&1 | Out-Null
+    Pop-Location
+    & powershell -ExecutionPolicy Bypass -File (Join-Path $root "scripts\make-manifest.ps1") -Dir $rgDlWork | Out-Null
+
+    $rgDlOutOk = (& powershell -ExecutionPolicy Bypass -File $rgScript -Repo $rgDlWork 2>&1) -join "`n"
+    $rgDlOkPass = ($LASTEXITCODE -eq 0) -and ($rgDlOutOk -match "\[OK\] todo commit")
+    Check "release-gate.ps1 (TASK-661): local limpo com origin/main ainda sujo (cache do servidor) PASSA - lente e branches locais, nao refs/remotes" $rgDlOkPass ("exit=" + $LASTEXITCODE)
+
+    Push-Location -LiteralPath $rgDlWork
+    "outra alteracao" | Out-File -LiteralPath (Join-Path $rgDlWork "README.md") -Encoding utf8 -Append
+    & git add README.md 2>&1 | Out-Null
+    & git -c user.name="alguem" -c user.email="alguem@exemplo.com" commit -q -m "commit local com identidade errada (regressao)" 2>&1 | Out-Null
+    Pop-Location
+
+    $rgDlOutBad = (& powershell -ExecutionPolicy Bypass -File $rgScript -Repo $rgDlWork 2>&1) -join "`n"
+    $rgDlBadFail = ($LASTEXITCODE -ne 0) -and ($rgDlOutBad -match "alguem@exemplo.com")
+    Check "release-gate.ps1 (TASK-661, negativo): commit LOCAL com identidade errada continua REPROVANDO mesmo com remoto ja sujo" $rgDlBadFail ("exit=" + $LASTEXITCODE)
+  } finally {
+    $ErrorActionPreference = $prevEapDl
+    Remove-Item -LiteralPath $rgDlFixture -Recurse -Force -ErrorAction SilentlyContinue
+  }
+} else {
+  Write-Host "[SKIP] release-gate.ps1 (TASK-661, deadlock de refs/remotes): script ausente neste contexto"
+  $script:skip++
+}
+
+
 # --- release-gate.ps1: manifesto vs git ls-files (TASK-618). Incidente real: o ZIP publico do
 # GitHub falhava verify-manifest.ps1 na mao do cliente porque .opencode/.gitignore se auto-ignora
 # (o git nunca rastreia o arquivo, o ZIP nunca o entrega), mas make-manifest.ps1 lia o DISCO e
@@ -4532,6 +5114,46 @@ if ((Test-Path -LiteralPath $rgScript) -and (Test-Path -LiteralPath $hookInstall
   }
 } else {
   Write-Host "[SKIP] hook pre-push (TASK-617, L69): script(s) ausente(s) neste contexto"
+  $script:skip++
+}
+
+
+# --- Hook pre-push REALMENTE instalado no repo PUBLICO DE VERDADE (TASK-661, L69). Os blocos
+# acima provam que install-release-hooks.ps1 FUNCIONA contra fixture - nunca conferiram se o repo
+# publico de verdade (Projetos/alia-flow) tem o hook no ar. Medido em 18/09/2026: o CEO deletou e
+# recriou o repositorio publico, .git/hooks ficou com ZERO hooks, e o proprio cabecalho de
+# install-release-hooks.ps1 ja avisava que isso aconteceria ("reexecutado toda vez que .git for
+# recriado") - o aviso escrito nao e mecanismo. Este check le o DISCO real, nunca fixture; se a
+# pasta nao existir nesta maquina vira SKIP nomeado, nunca PASS silencioso.
+$publicRepoPath = "C:/Users/Lite OS/Projetos/alia-flow"
+if (Test-Path -LiteralPath $publicRepoPath -PathType Container) {
+  $publicPrePushHook = Join-Path $publicRepoPath ".git\hooks\pre-push"
+  Check "repo publico (Projetos/alia-flow, TASK-661, L69): hook pre-push instalado em .git/hooks" (Test-Path -LiteralPath $publicPrePushHook) ("reinstale com: powershell -File scripts/install-release-hooks.ps1 -Repo " + $publicRepoPath)
+} else {
+  Write-Host ("[SKIP] repo publico (Projetos/alia-flow, TASK-661, L69): pasta nao existe nesta maquina - " + $publicRepoPath)
+  $script:skip++
+}
+
+
+# --- Identidade LOCAL do repo publico de verdade dentro da allowlist (TASK-661, L69). O hook e o
+# gate so travam o que este git LOCAL vai empurrar se a identidade local (git config
+# user.name/user.email) tambem estiver correta - repo sem identidade local cai na identidade
+# GLOBAL da maquina, que no incidente real (18/09/2026) e a pessoal do CEO (40 dos 41 commits do
+# repo recriado saíram assim). Mesma allowlist do passo 1/4 de release-gate.ps1: Alia Flow
+# <noreply@alia-flow.local>. O CEO ja configurou a identidade correta agora - este check PASSA
+# hoje e reprova se alguem desconfigurar depois.
+if (Test-Path -LiteralPath $publicRepoPath -PathType Container) {
+  $prevEapPubId = $ErrorActionPreference
+  $ErrorActionPreference = "SilentlyContinue"
+  Push-Location -LiteralPath $publicRepoPath
+  $pubLocalName = ((& git config --local user.name 2>$null) -join "").Trim()
+  $pubLocalEmail = ((& git config --local user.email 2>$null) -join "").Trim()
+  Pop-Location
+  $ErrorActionPreference = $prevEapPubId
+  $pubIdOk = ($pubLocalName -eq "Alia Flow") -and ($pubLocalEmail -eq "noreply@alia-flow.local")
+  Check "repo publico (Projetos/alia-flow, TASK-661, L69): identidade local git configurada e dentro da allowlist (Alia Flow <noreply@alia-flow.local>)" $pubIdOk ("user.name='" + $pubLocalName + "' user.email='" + $pubLocalEmail + "'")
+} else {
+  Write-Host ("[SKIP] repo publico (Projetos/alia-flow, identidade local, TASK-661, L69): pasta nao existe nesta maquina - " + $publicRepoPath)
   $script:skip++
 }
 
@@ -4758,6 +5380,25 @@ foreach ($gi in $giFiles) {
 Check "Guard: nenhum .gitignore do produto se auto-exclui (classe do defeito .opencode/.gitignore)" ($giSelfExcluding.Count -eq 0) ("auto-exclusao encontrada em: " + ($giSelfExcluding -join ", "))
 
 
+# --- Guard: .gitignore da oficina cobre os 13 caminhos internos medidos vazando no repo publico
+# (TASK-691) ---
+# Medido direto no repo publico (Projetos/alia-flow): 13 caminhos NAO rastreados e NAO ignorados -
+# um `git add -A` de qualquer sessao os publicaria, e check-public-surface.ps1 diz SUPERFICIE
+# LIMPA assim mesmo porque so olha o que ja esta versionado. Todos os 13 sao material interno
+# (confirmado linha a linha contra scripts/package-release.ps1); docs/assets/olho-alia.gif fica
+# de FORA de proposito - e o unico asset que o README publico referencia.
+$rootGitignorePath = Join-Path $root ".gitignore"
+$rootGitignoreTxt = if (Test-Path -LiteralPath $rootGitignorePath) { ReadText $rootGitignorePath } else { "" }
+$leakedPaths13 = @(
+  "docs/decisoes/","docs/brand/","docs/provas/","docs/RELEASE-STATUS.md","docs/DESIGN.md",
+  "docs/assets/banner.svg","docs/assets/chart-freio.svg","docs/assets/chart-memoria.svg",
+  "docs/assets/chart-verificacoes.svg","engine/governance/edges.json","scripts/extract-secrets.ps1",
+  "scripts/migrate-to-studio.ps1","scripts/smoke-test-studio.ps1"
+)
+$leakedPathsMissing = @($leakedPaths13 | Where-Object { $rootGitignoreTxt -notmatch [regex]::Escape($_) })
+Check "Guard: .gitignore da oficina cobre os 13 caminhos internos que vazavam no repo publico (TASK-691)" ($leakedPathsMissing.Count -eq 0) ("faltando: " + ($leakedPathsMissing -join ", "))
+
+
 # --- Numero publico: README.md (produto) e GUARD-NUM (oficina) - cada um trava so contra o
 # total REAL do CONTEXTO onde faz sentido (M5) ---
 # Dois numeros diferentes e legitimos, nunca somar (engine/governance/client-truth.md, LEI 2):
@@ -4784,7 +5425,19 @@ Write-Host ""
 Write-Host "-- Numero publico: README.md (produto) + GUARD-NUM (oficina) vs total real do contexto (M5) --"
 $claimsPath = Join-Path $root "docs\CLAIMS.md"
 $claimsExists = Test-Path -LiteralPath $claimsPath
-$numChecksNesteBloco = if ($claimsExists) { 1 } else { 2 }  # oficina: 1 Check real (GUARD-NUM, README e so Warn); pacote/publico: 2 Checks reais (README bate com o total + nenhum placeholder {{VERIFICACOES}} sobra, TASK-624)
+# TASK-663: o numero do README e um retrato ESTATICO escrito uma unica vez por -UpdateReadme
+# dentro do pacote SEM .git (package-release.ps1 monta $out do zero). Comparar esse retrato
+# contra um total recalculado AO VIVO so e valido DENTRO do mesmo contexto sem .git (o
+# auto-teste de package-release.ps1 linha 307, rodado no MESMO $out logo depois do
+# -UpdateReadme) - ali um numero errado E defeito real e tem que travar. Fora dali, quando este
+# smoke roda contra um $root que JA TEM .git (ex.: update-engine.ps1 rodando a bateria da FONTE
+# contra uma instancia ja aplicada, Projetos/alia-flow), o total de checks muda so por presenca
+# de .git (checks sensiveis a .git, ex. linha ~3378) - dois contextos legitimos, numeros
+# diferentes, nunca o mesmo; bloquear ali reprova um drift que nao e defeito e trava a aplicacao
+# por engano. $rootHasGit decide aqui, ANTES do total esperado, pra $expectedFinalCount previr
+# certo se o README vira Check real ou Warn.
+$rootHasGit = Test-Path -LiteralPath (Join-Path $root ".git")
+$numChecksNesteBloco = if ($claimsExists) { 1 } elseif ($rootHasGit) { 1 } else { 2 }  # oficina: 1 Check real (GUARD-NUM, README e so Warn); pacote/publico SEM .git: 2 Checks reais (README bate com o total + nenhum placeholder {{VERIFICACOES}} sobra, TASK-624); pacote/produto COM .git: 1 Check real (so o placeholder - README vira Warn, TASK-663)
 $expectedFinalCount = $script:pass + $script:fail + $numChecksNesteBloco
 
 
@@ -4837,7 +5490,11 @@ if ($claimsExists) {
     $readmeVal = $expectedFinalCount
   }
 
-  Check "Numero publico: README.md (formato novo ou legado) bate com o total real executado pelo smoke" (($readmeM.Success) -and ($readmeVal -eq $expectedFinalCount)) ("README.md diz " + $readmeVal + "; total real que o smoke vai reportar = " + $expectedFinalCount)
+  if ($rootHasGit) {
+    Warn ("Numero publico: README.md - contexto COM .git (nao e onde -UpdateReadme escreveu o numero, TASK-663): README.md diz " + $readmeVal + "; total real DESTE contexto = " + $expectedFinalCount) (($readmeM.Success) -and ($readmeVal -eq $expectedFinalCount)) "comparacao so e blindada no contexto SEM .git onde -UpdateReadme escreve (package-release.ps1 linha 303+307); aqui os dois numeros sao legitimos e podem diferir por design"
+  } else {
+    Check "Numero publico: README.md (formato novo ou legado) bate com o total real executado pelo smoke" (($readmeM.Success) -and ($readmeVal -eq $expectedFinalCount)) ("README.md diz " + $readmeVal + "; total real que o smoke vai reportar = " + $expectedFinalCount)
+  }
   Check "Release: nenhum placeholder {{VERIFICACOES}} sobra no README (marcador publicado e vergonha na vitrine)" (-not ([regex]::IsMatch($readmeTxt, '\{\{VERIFICACOES\}\}')))
 }
 

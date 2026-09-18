@@ -68,6 +68,36 @@ nao e degradacao, e o mesmo contrato por outro mecanismo.
    depois do fato.
 7. **Rode o Gate** (`engine/governance/quality-gate.md`) FORA do chapeu, como coordenadora.
 
+## O briefing completo (vale nos dois modos)
+
+> Origem (medido, TASK-683): 547 reaberturas de especialista em 30 dias, 24% do trafego. Caso da
+> semana: a coordenadora mandou "recertificar os 42 selos" sem dizer o que fazer com quem nao tem
+> selo de funcionando. O especialista parou nos 21 corretos, e a rodada teve que ser reaberta. O
+> erro era do BRIEFING, nao do especialista.
+
+Um briefing incompleto nao poupa tempo, gera trabalho que volta. Antes de despachar (spawn ou
+context-load), quem delega escreve os 7 campos abaixo. Falta um, o briefing nao esta pronto -
+`scripts/squad-bridge.ps1` ja gera um gabarito com o que sabe de cada Specialist
+(`.claude/agents/{client}-{id}.brief.md`); os campos que so quem delega sabe ficam em branco ali.
+
+1. **Identificacao** - a Task registrada (id), o Client, o papel do Specialist, e onde fica a raiz
+   de trabalho dele.
+2. **Orcamento declarado** - chamadas de ferramenta, linhas maximas de saida, e a exigencia de
+   rotulo por afirmacao (`[MEDIDO]` / `[LIDO]` / `[INFERIDO]`).
+3. **O que ja existe e deve ser reusado** - lei reuse-first: aponte o que ja foi feito antes de
+   pedir para o Specialist criar do zero.
+4. **O escopo fechado** - o que entra e, quando util, o que fica explicitamente de fora.
+5. **Desfechos previsiveis e a regra de decisao de cada um** - no minimo 3 ramos nomeados, cada
+   um com o que fazer. Sempre inclua estes dois:
+   - **"achei algo fora do escopo"** - o que o Specialist anota e o que ele nao toca.
+   - **"a premissa do brief caiu"** - o que ele faz quando o fato que sustentava o pedido nao
+     bate (para e avisa, ou segue por caminho alternativo - quem delega decide qual).
+   Se quem delega nao sabe dizer o que quer no ramo B, o briefing nao esta pronto - a duvida e
+   dele, nao do Specialist. E o caso "recertificar os 42 selos" acima: faltava o ramo "e os 21 sem
+   selo?" e a rodada travou.
+6. **Prova de aceite** - o que precisa existir (arquivo, numero, teste) para o Gate dar PASS.
+7. **Formato da saida** - onde o Artifact fica e o tamanho maximo do resumo devolvido.
+
 ## O fallback proibido
 
 "Nao consegui acionar o Specialist, entao fiz eu mesma" nao existe mais. Se o host nao spawna, o

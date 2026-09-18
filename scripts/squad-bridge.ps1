@@ -1037,6 +1037,101 @@ foreach ($clientDir in $clientDirs) {
             }
 
             [void]$reportLines.Add("$clientId/$agentId -> $name$fileSuffix (camada $camada, model $model, modo $Mode)")
+
+            # ---- gabarito de briefing (TASK-683, WEAVER): nasce do MESMO gerador, nunca copiado a
+            # mao - preenchido com o que o gerador ja sabe (identidade, dominio, gatilhos, tools,
+            # knowledge) e com os campos que quem delega tem que completar antes de acionar o
+            # Specialist (contrato completo em skills/delegate/SKILL.md, secao "O briefing
+            # completo"). Sibling file (nao dentro do .md do agente) para nao inchar o frontmatter
+            # que cada host le nem quebrar o contrato do gerador por modo.
+            $briefSections = New-Object System.Collections.ArrayList
+            [void]$briefSections.Add("# BRIEFING GABARITO - $name")
+            [void]$briefSections.Add('# Gerado por scripts/squad-bridge.ps1 - NUNCA editar a mao (a proxima geracao sobrescreve).')
+            [void]$briefSections.Add('# Preencha os campos em branco ANTES de delegar. Contrato: skills/delegate/SKILL.md, secao "O briefing completo".')
+            [void]$briefSections.Add('')
+            [void]$briefSections.Add('## 1. Identificacao')
+            [void]$briefSections.Add('')
+            [void]$briefSections.Add("- Specialist: $role ($clientId/$agentId)")
+            [void]$briefSections.Add("- Camada: $camada")
+            if ($domain) { [void]$briefSections.Add("- Dominio: $domain") }
+            if ($triggers.Count -gt 0) { [void]$briefSections.Add('- Gatilhos: ' + ($triggers -join '; ')) }
+            if ($entryPointPath) { [void]$briefSections.Add("- Raiz de trabalho: $entryPointPath") }
+            [void]$briefSections.Add('- Task registrada (id): ____ (preencher)')
+            [void]$briefSections.Add('- Client / Project: ____ (preencher)')
+            [void]$briefSections.Add('')
+            [void]$briefSections.Add('## 2. Orcamento declarado (preencher)')
+            [void]$briefSections.Add('')
+            [void]$briefSections.Add('- Chamadas de ferramenta (maximo): ____')
+            [void]$briefSections.Add('- Linhas maximas de saida: ____')
+            [void]$briefSections.Add('- Rotulo obrigatorio por afirmacao: [MEDIDO] / [LIDO] / [INFERIDO]')
+            [void]$briefSections.Add('')
+            [void]$briefSections.Add('## 3. Escopo de ferramentas (o gerador ja sabe)')
+            [void]$briefSections.Add('')
+            [void]$briefSections.Add("$toolsLine")
+            [void]$briefSections.Add('')
+            [void]$briefSections.Add('## 4. Knowledge a carregar (o gerador ja sabe)')
+            [void]$briefSections.Add('')
+            if ($knowledgeLines.Count -eq 0) {
+                [void]$briefSections.Add('- (nenhum knowledge declarado no yaml deste agente)')
+            }
+
+            else {
+                foreach ($kl in $knowledgeLines) { [void]$briefSections.Add("- $kl") }
+            }
+
+            [void]$briefSections.Add('')
+            [void]$briefSections.Add('## 5. O que ja existe e deve ser reusado (preencher, lei reuse-first)')
+            [void]$briefSections.Add('')
+            [void]$briefSections.Add('- ____')
+            [void]$briefSections.Add('')
+            [void]$briefSections.Add('## 6. Escopo fechado (preencher)')
+            [void]$briefSections.Add('')
+            [void]$briefSections.Add('- ____')
+            [void]$briefSections.Add('')
+            [void]$briefSections.Add('## 7. Desfechos previsiveis e a regra de decisao de cada um (preencher, minimo 3 ramos)')
+            [void]$briefSections.Add('')
+            [void]$briefSections.Add('- (ramo 1) ____ : ____')
+            [void]$briefSections.Add('- (ramo 2) ____ : ____')
+            [void]$briefSections.Add('- (ramo 3) ____ : ____')
+            [void]$briefSections.Add('- achei algo fora do escopo: ____')
+            [void]$briefSections.Add('- a premissa do brief caiu: ____')
+            [void]$briefSections.Add('')
+            [void]$briefSections.Add('## 8. Prova de aceite (preencher)')
+            [void]$briefSections.Add('')
+            [void]$briefSections.Add('- ____')
+            [void]$briefSections.Add('')
+            [void]$briefSections.Add('## 9. Formato da saida (preencher)')
+            [void]$briefSections.Add('')
+            [void]$briefSections.Add('- ____')
+
+            $briefContent = ($briefSections -join "`n").TrimEnd() + "`n"
+            $briefPath = Join-Path $outDir "$name.brief.md"
+            $briefIsNew = -not (Test-Path $briefPath)
+            $briefWriteNeeded = $true
+            if (-not $briefIsNew) {
+                $briefExisting = Get-Content -Path $briefPath -Raw -Encoding UTF8
+                if ($briefExisting -eq $briefContent) { $briefWriteNeeded = $false }
+            }
+
+            if ($briefWriteNeeded) {
+                if ($DryRun) {
+                    if ($briefIsNew) { Write-Host "[DRYRUN] geraria: $briefPath" }
+                    else { Write-Host "[DRYRUN] atualizaria: $briefPath" }
+                }
+
+                else {
+                    $briefUtf8 = New-Object System.Text.UTF8Encoding($false)
+                    [System.IO.File]::WriteAllText($briefPath, $briefContent, $briefUtf8)
+                }
+
+                if ($briefIsNew) { $generated++ } else { $updated++ }
+            }
+
+            else {
+                $unchanged++
+            }
+
+            [void]$reportLines.Add("$clientId/$agentId -> $name.brief.md (briefing gabarito)")
         }
 
         catch {

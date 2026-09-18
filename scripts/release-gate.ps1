@@ -17,7 +17,17 @@
 # PESSOAL do CEO no campo committer - so foi achado porque o CEO pediu revisao adversarial DEPOIS
 # do push. `grep` por committer/GIT_AUTHOR/%ae/%ce em scripts/*.ps1 desta oficina dava ZERO: nenhum
 # script conferia identidade de commit, entao mesmo rodando este gate o vazamento passava. Passo
-# 1/4 abaixo fecha esse buraco - varre TODOS os commits do repo alvo contra uma allowlist estreita.
+# 1/4 abaixo fecha esse buraco - varre os commits alcancaveis pelos BRANCHES LOCAIS do repo alvo
+# (o que vai ser empurrado) contra uma allowlist estreita.
+#
+# TASK-661 (mandato do CEO, 18/09/2026): o passo 1/4 usava `git log --all`, que inclui
+# refs/remotes/* - o CACHE LOCAL do que o servidor ja tem, nao o que sera empurrado. Isso criou um
+# deadlock real: apos reescrever o historico local com identidade limpa, o gate continuava
+# reprovando porque refs/remotes/origin/main (nunca atualizado ate o push) ainda carregava a
+# identidade suja antiga - o portao travava exatamente o push que existia pra corrigir o servidor.
+# Consertada a LENTE, nao a severidade: `git log --branches` olha so refs/heads/* (branches
+# locais), nunca refs/remotes/* nem refs/tags/*. Um commit local com identidade errada continua
+# reprovando igual; o que muda e parar de reprovar por causa do que o servidor ainda tem sujo.
 #
 # TASK-618 (mandato do CEO, 17/09/2026): o ZIP publico do GitHub falhava verify-manifest.ps1 na mao
 # do cliente porque `.opencode/.gitignore` se auto-ignora (linha 5 = ".gitignore") - o git nunca o
@@ -51,7 +61,7 @@ function Test-CommitIdentities {
     $rc = $LASTEXITCODE
     $ErrorActionPreference = $prevEap
     if ($rc -ne 0) { $result.Skipped = $true; return $result }
-    $lines = & git log --all --format='%H|%an|%ae|%cn|%ce' 2>$null
+    $lines = & git log --branches --format='%H|%an|%ae|%cn|%ce' 2>$null
     $violations = @()
     foreach ($line in $lines) {
       if ([string]::IsNullOrWhiteSpace($line)) { continue }
