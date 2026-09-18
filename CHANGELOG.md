@@ -18,6 +18,17 @@ testado na instancia viva (a instancia aplicada) antes de fechar. Um update = um
 reversivel. Fluxo: alterar engine -> bump VERSION -> entrada no CHANGELOG -> smoke-test-studio
 ALL GREEN -> tag.
 
+## [1.82.1] - 2026-09-18
+
+Conserto pequeno na versao anterior: o aviso de estouro de orcamento (teto cumulativo por
+especialista e teto de Budget por delegacao) passou a AVISAR em vez de TRAVAR o fechamento da
+resposta. O numero que ele acusa ja aconteceu quando o aviso dispara - nao existia acao que
+baixasse esse numero no mesmo turno, entao travar so tirava do operador a resposta que ja estava
+pronta e travava de novo no proximo fechamento, em loop. A medida continua identica: os dois
+ledgers de orcamento seguem recebendo a mesma linha, e o aviso continua aparecendo no console de
+quem coordena. Nenhuma outra regra de disciplina (delegacao obrigatoria, citar a fonte, ritual de
+apresentacao) mudou - essas continuam travando normalmente.
+
 ## [1.82.0] - 2026-09-18
 
 Versao de disciplina: cinco mecanismos que a casa tinha no papel passam a existir na maquina - e um

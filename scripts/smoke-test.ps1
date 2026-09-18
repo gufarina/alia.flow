@@ -1705,7 +1705,9 @@ function New-RgSubagentFixture {
 }
 
 
-# Cenario 8 (negativo): Budget: tools=3 declarado, sub-agente real gastou 5 -> ESTOURO, BLOQUEIA.
+# Cenario 8 (negativo, EMENDADO TASK-696): Budget: tools=3 declarado, sub-agente real gastou 5 ->
+# ESTOURO, ACUSA no log/stdout mas NAO bloqueia mais (acusacao A POSTERIORI, L41, sem remediacao
+# possivel no turno ja fechado - ver comentario do bloco (7) em response-guard.ps1).
 $rgSid8 = "t8"
 $rgT8 = Join-Path $rgRoot2 ($rgSid8 + ".jsonl")
 New-RgSubagentFixture -SessDir $rgRoot2 -Sid $rgSid8 -Tag "estouro" -ToolUseId "budget-t8" -ToolCount 5
@@ -1715,7 +1717,8 @@ New-RgTranscript -Path $rgT8 -UserText "delegue uma tarefa pequena" `
 $rgOut8Payload = (@{ session_id = "RG-T8"; transcript_path = $rgT8.Replace('\', '/'); stop_hook_active = $false } | ConvertTo-Json -Compress)
 if (Test-Path -LiteralPath $rgLog2) { Remove-Item -LiteralPath $rgLog2 -Force -ErrorAction SilentlyContinue }
 $rgOut8 = ($rgOut8Payload | & powershell -ExecutionPolicy Bypass -File $rgScript -LogPath $rgLog2 -ConfigPath $rgCfg2 -BudgetLedgerPath $rgBudgetLedgerNoise2 2>&1) -join "`n"
-Check "Response Guard (REGRA 3 BUDGET, negativo): sub-agente com 5 tool_use vs Budget tools=3 declarado ACUSA e BLOQUEIA" (($rgOut8 -match '"decision":"block"') -and ($rgOut8 -match 'Budget') -and ($rgOut8 -match 'declarado=3 real=5')) ("saida: " + $rgOut8)
+$rgLog8Txt = if (Test-Path -LiteralPath $rgLog2) { ReadText $rgLog2 } else { "" }
+Check "Response Guard (REGRA 3 BUDGET, negativo, TASK-696): sub-agente com 5 tool_use vs Budget tools=3 declarado ACUSA (stdout resumo com budget_ok=False + log com budget_estouros preenchido) mas NAO BLOQUEIA (perna 1: sem decision:block)" (($rgOut8 -notmatch '"decision":"block"') -and ($rgOut8 -match 'budget_ok=False') -and ($rgLog8Txt -match '"budget_ok":false') -and ($rgLog8Txt -match 'declarado=3 real=5')) ("saida: " + $rgOut8 + " | log: " + $rgLog8Txt)
 
 
 # Cenario 9 (positivo, desfaz o cenario 8): mesmo sub-agente, Budget: tools=10 (cabe) -> PASSA.
@@ -1806,10 +1809,16 @@ New-RgTranscript -Path $rgT11 -UserText "reabri o mesmo especialista 3 vezes" `
 $rgOut11Payload = (@{ session_id = "RG-T11"; transcript_path = $rgT11.Replace('\', '/'); stop_hook_active = $false } | ConvertTo-Json -Compress)
 if (Test-Path -LiteralPath $rgLog5) { Remove-Item -LiteralPath $rgLog5 -Force -ErrorAction SilentlyContinue }
 $rgOut11 = ($rgOut11Payload | & powershell -ExecutionPolicy Bypass -File $rgScript -LogPath $rgLog5 -ConfigPath $rgCfg5 -BudgetLedgerPath $rgBudgetLedger5 2>&1) -join "`n"
-Check "Response Guard (REGRA 5 CUMULATIVO, negativo): especialista reaberto 3x (10+10+10) com teto 10 ACUSA e BLOQUEIA citando 30 chamadas acumuladas (nao 10 de cada rodada)" (($rgOut11 -match '"decision":"block"') -and ($rgOut11 -match 'CUMULATIVO') -and ($rgOut11 -match '30 chamadas acumuladas') -and ($rgOut11 -match 'teto 10')) ("saida: " + $rgOut11)
+$rgLog5Txt11 = if (Test-Path -LiteralPath $rgLog5) { ReadText $rgLog5 } else { "" }
+# EMENDADO TASK-696 (L64 deixou de bloquear, acusacao A POSTERIORI sem remediacao no turno - ver
+# comentario do bloco (7) em response-guard.ps1). Perna 1: nao bloqueia mais. Perna 2: acusacao
+# ainda aparece no stdout (resumo reusado do modo aviso, cumulativo_ok=False) e no log dedicado
+# (cumulativo_estouros com o texto "30 chamadas acumuladas"). Perna 3 (ledger real) e o Check
+# seguinte, inalterado.
+Check "Response Guard (REGRA 5 CUMULATIVO, negativo, TASK-696): especialista reaberto 3x (10+10+10) com teto 10 ACUSA (perna 2: stdout cumulativo_ok=False + log cumulativo_estouros cita 30 chamadas acumuladas) mas NAO BLOQUEIA (perna 1: sem decision:block)" (($rgOut11 -notmatch '"decision":"block"') -and ($rgOut11 -match 'cumulativo_ok=False') -and ($rgLog5Txt11 -match '"cumulativo_ok":false') -and ($rgLog5Txt11 -match '30 chamadas acumuladas') -and ($rgLog5Txt11 -match 'teto 10')) ("saida: " + $rgOut11 + " | log: " + $rgLog5Txt11)
 
 $rgLedger5Txt = if (Test-Path -LiteralPath $rgBudgetLedger5) { ReadText $rgBudgetLedger5 } else { "" }
-Check "Response Guard (REGRA 5 CUMULATIVO): studio/budget-log.jsonl (via -BudgetLedgerPath) recebeu a linha real com n=30, teto=10, decision:deny (nao 3 linhas duplicadas - dedup por agentType)" (($rgLedger5Txt -match '"n":30') -and ($rgLedger5Txt -match '"teto":10') -and ($rgLedger5Txt -match '"decision":"deny"') -and (@($rgLedger5Txt -split "`n" | Where-Object { $_ -match 'gauge-cumulativo-fixture' }).Count -eq 1)) ("ledger: " + $rgLedger5Txt)
+Check "Response Guard (REGRA 5 CUMULATIVO, perna 3): studio/budget-log.jsonl (via -BudgetLedgerPath) recebeu a linha real com n=30, teto=10, decision:deny (nao 3 linhas duplicadas - dedup por agentType) MESMO sem bloquear o Stop" (($rgLedger5Txt -match '"n":30') -and ($rgLedger5Txt -match '"teto":10') -and ($rgLedger5Txt -match '"decision":"deny"') -and (@($rgLedger5Txt -split "`n" | Where-Object { $_ -match 'gauge-cumulativo-fixture' }).Count -eq 1)) ("ledger: " + $rgLedger5Txt)
 
 # Cenario 12 (positivo, desfaz o 11): mesmo especialista reaberto 2x, 4 tool_use cada (soma 8 <
 # teto 10) -> PASSA, sem bloqueio.

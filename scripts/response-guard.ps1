@@ -67,9 +67,13 @@
 
   Modo aviso: NUNCA bloqueia, so grava studio/response-guard-log.jsonl (uma linha por turno,
   violacao ou nao - e esse log que mede aderencia antes de virar bloqueio) e imprime um resumo
-  de uma linha no stdout. Modo bloqueio: havendo violacao, stdout vira
-  {"decision":"block","reason":"..."}; sem violacao, exit 0 silencioso. Log sempre grava, nos
-  dois modos.
+  de uma linha no stdout. Modo bloqueio: havendo violacao BLOQUEANTE (DELEGA/GROUNDING/RITUAL),
+  stdout vira {"decision":"block","reason":"..."}; sem violacao bloqueante, exit 0. REGRA 3
+  (BUDGET, L41) e REGRA 5 (CUMULATIVO, L64) sao acusacao A POSTERIORI sobre gasto que ja
+  aconteceu - nao entram no bloqueio (CONSERTO TASK-696, 18/09/2026: bloquear algo que nenhuma
+  acao do turno atual consegue desfazer so tira a resposta pronta do operador, nunca baixa o
+  numero); quando violam sozinhas (sem DELEGA/GROUNDING/RITUAL junto), o mesmo resumo de uma
+  linha do modo aviso ainda imprime no stdout. Log sempre grava, nos dois modos.
 
   BLINDAGEM: try/catch em tudo. QUALQUER erro -> exit 0 silencioso. O guard NUNCA pode derrubar
   nem travar a sessao do operador (mesmo risco que travou este item no backlog antes: "hook
@@ -870,7 +874,32 @@ try {
   [System.IO.File]::AppendAllText($logFile, $logLine + "`n", $utf8NoBom)
 
   # (7) Saida conforme o modo.
-  $anyViolation = (-not $delegaOk) -or (-not $groundingOk) -or (-not $budgetOk) -or (-not $cumulativoOk) -or $violacaoRitual
+  # CONSERTO TASK-696 (WARDEN, 18/09/2026): REGRA 5 (cumulativo, L64) e REGRA 3 (budget, L41) sao
+  # acusacao A POSTERIORI - o proprio texto das duas ja registra "nao trava em tempo real" porque
+  # o sub-agente ja terminou quando o Stop do turno pai roda. Toda OUTRA regra que bloqueia tem
+  # conserto possivel NO MESMO turno (delegue agora, rotule agora, escreva a linha de status
+  # agora); estas duas nao - o gasto ja aconteceu, nenhuma acao do turno atual baixa o numero.
+  # Barrar o fechamento por isso nao e guardrail, e beco sem saida: o agente tenta fechar de novo,
+  # o guarda barra de novo, o operador fica sem a resposta que ja estava pronta. Por isso saem de
+  # $anyViolation - viram acusacao NAO BLOQUEANTE. A medida nao se perde: continuam gravando em
+  # studio/budget-log.jsonl e em cumulativo_ok/budget_ok de studio/response-guard-log.jsonl, e
+  # quando violam SOZINHAS (nenhuma regra bloqueante junto) o mesmo resumo de uma linha que o modo
+  # aviso ja imprime sai tambem em modo bloqueio - reuso do UNICO caminho de output nao-bloqueante
+  # que a casa ja tinha, nao um segundo mecanismo.
+  $anyViolation = (-not $delegaOk) -or (-not $groundingOk) -or $violacaoRitual
+  $anyAdvisorioNaoBloqueante = $violacaoCumulativo -or $violacaoBudget
+
+  $informativo = ($charsResposta -gt $cfg.min_chars_informativo) -and (-not $houveDelegacao)
+  $resumoLine = ("[RESPONSE-GUARD][aviso] delega_ok=" + $delegaOk + " grounding_ok=" + $groundingOk +
+    " sinal_dominio=" + $sinalDominio + " houve_delegacao=" + $houveDelegacao +
+    " valvula_aberta=" + $valvulaAberta + " especialista_ok=" + (-not $violacaoEspecialista) +
+    " qtd_afirmacoes=" + $qtdAfirmacoes + " chars_resposta=" + $charsResposta +
+    " grounding_html_ok=" + (-not $violacaoGroundingHtml) +
+    " budget_ok=" + $budgetOk + " budget_verificados=" + $budgetVerificados +
+    " budget_sem_declarar=" + $budgetSemDeclarar +
+    " cumulativo_ok=" + $cumulativoOk +
+    " informativo_sem_delegacao=" + $informativo +
+    " ritual_ok=" + (-not $violacaoRitual) + " primeiro_turno=" + $primeiroTurno)
 
   if ($cfg.mode -eq 'bloqueio') {
     if ($anyViolation) {
@@ -900,21 +929,14 @@ try {
       Write-Output ($blockObj | ConvertTo-Json -Compress)
       exit 0
     }
+    # sem violacao BLOQUEANTE, mas cumulativo/budget acusaram sozinhos: mesmo resumo do modo
+    # aviso sai no stdout, nao bloqueante (ver comentario do bloco (7) acima).
+    if ($anyAdvisorioNaoBloqueante) { Write-Host $resumoLine }
     exit 0
   }
 
   # aviso (default): nunca bloqueia, so resume em uma linha no stdout.
-  $informativo = ($charsResposta -gt $cfg.min_chars_informativo) -and (-not $houveDelegacao)
-  Write-Host ("[RESPONSE-GUARD][aviso] delega_ok=" + $delegaOk + " grounding_ok=" + $groundingOk +
-    " sinal_dominio=" + $sinalDominio + " houve_delegacao=" + $houveDelegacao +
-    " valvula_aberta=" + $valvulaAberta + " especialista_ok=" + (-not $violacaoEspecialista) +
-    " qtd_afirmacoes=" + $qtdAfirmacoes + " chars_resposta=" + $charsResposta +
-    " grounding_html_ok=" + (-not $violacaoGroundingHtml) +
-    " budget_ok=" + $budgetOk + " budget_verificados=" + $budgetVerificados +
-    " budget_sem_declarar=" + $budgetSemDeclarar +
-    " cumulativo_ok=" + $cumulativoOk +
-    " informativo_sem_delegacao=" + $informativo +
-    " ritual_ok=" + (-not $violacaoRitual) + " primeiro_turno=" + $primeiroTurno)
+  Write-Host $resumoLine
   exit 0
 } catch {
   # Freio que quebra passa a gritar (TASK-213): antes disto um erro aqui (ex.: transcript_path
