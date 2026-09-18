@@ -18,6 +18,27 @@ testado na instancia viva (a instancia aplicada) antes de fechar. Um update = um
 reversivel. Fluxo: alterar engine -> bump VERSION -> entrada no CHANGELOG -> smoke-test-studio
 ALL GREEN -> tag.
 
+## [1.81.0] - 2026-09-18
+
+- Comando de publicar rodado por um especialista passa a ser bloqueado no terminal. Ate agora o
+  motor vigiava quem EDITAVA arquivo e deixava passar quem rodava comando - e foi por ai que, em
+  16/09, um especialista publicou no repositorio publico no meio da propria rodada, sem passar por
+  ninguem. Quem conduz a sessao segue publicando normalmente, e ha interruptor de emergencia.
+  Limite honesto: a cerca reconhece o especialista pelo sinal que o proprio host da; se um dia esse
+  sinal faltar, ela deixa passar em vez de travar o operador, e ela cobre o terminal, nao todo
+  caminho possivel ate o git.
+- O mapa de navegacao da documentacao passa a enxergar tambem a ligacao que um documento faz a
+  outro no formato [[assim]], que antes era invisivel para ele. Vale entre documentos da mesma
+  pasta.
+- Memoria sob medida: a ficha de um especialista pode declarar de quais documentos ele precisa, e
+  recebe so aquilo em vez da pasta inteira. O campo e opcional, e ficha que nao declara nada nao
+  muda de caminho - continua sendo gerada exatamente como antes.
+- Duas travas novas na bateria de testes: ligacao de memoria apontando para nota que nao existe
+  nao pode aumentar, e o indice da memoria nao pode passar do tamanho que o modelo consegue ler de
+  uma vez. O indice da propria casa tinha estourado esse tamanho e parte dele nao carregava.
+
+---
+
 ## [1.80.2] - 2026-09-16
 
 Higiene interna: ajustes de consistencia no registro de eventos da instancia e nos documentos de

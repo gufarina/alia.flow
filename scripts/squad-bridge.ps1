@@ -53,6 +53,15 @@
   compartilhada do segundo cerebro" quer dizer). Token que nao resolve em nada -> OMITIDO, com
   aviso no resumo final (nunca escreve caminho falso no briefing de um Specialist).
 
+  knowledge_focus[] (TASK-634, opcional, OPT-IN): quando a persona declara "knowledge: - all/shared"
+  E TAMBEM declara knowledge_focus[], a resolucao de all/shared para de apontar a pasta inteira e
+  passa a apontar SO os arquivos listados em knowledge_focus (mesma validacao contra disco de
+  knowledge[]: token que nao resolve -> OMITIDO com aviso, nunca caminho falso). Campo AUSENTE
+  (o caso de hoje, em toda persona) -> all/shared continua resolvendo para a pasta inteira,
+  identico, sem aviso - retrocompatibilidade total. Existe pra atacar o gargalo medido (TASK-603
+  item 1: 62% do consumo de token da casa mora dentro dos especialistas) sem migracao em massa:
+  cada Gateway (camada A, hoje sempre "all") declara SO quando souber exatamente quais fontes usa.
+
   CAMINHO DE KNOWLEDGE - PORTAVEL POR LEI (conserto de 05/09/2026, TASK-421): o caminho escrito no
   bloco "Antes de agir, carregue" nasce RELATIVO a $RepoRoot sempre que o arquivo alvo estiver
   DENTRO de $RepoRoot (ex: "clients/acme-saas/squad/knowledge/graphify-out/GRAPH_REPORT.md"),
@@ -683,6 +692,7 @@ foreach ($clientDir in $clientDirs) {
 
             $triggers = Get-ListValue $data 'triggers'
             $knowledgeEntries = Get-ListValue $data 'knowledge'
+            $knowledgeFocusEntries = Get-ListValue $data 'knowledge_focus'
             $rawTools = Get-ListValue $data 'tools'
 
  # ---- contrato do especialista (auditoria-harness-v2.html, secao 03; TASK-509 acrescenta a 6a
@@ -816,7 +826,32 @@ foreach ($clientDir in $clientDirs) {
                 $entry = $k.Trim()
                 if (-not $entry) { continue }
                 if ($entry -eq 'all' -or $entry -eq 'shared' -or $entry -match 'todo o knowledge') {
-                    [void]$knowledgeLines.Add($knowledgeDir)
+                    # TASK-634: knowledge_focus[] presente -> curadoria por arquivo, no lugar da
+                    # pasta inteira. Ausente -> comportamento de hoje, sem mudanca (retrocompat).
+                    if ($knowledgeFocusEntries.Count -gt 0) {
+                        foreach ($fk in $knowledgeFocusEntries) {
+                            $fEntry = $fk.Trim()
+                            if (-not $fEntry) { continue }
+                            $fEntry = $fEntry -replace '^knowledge[\\/]', ''
+                            if ($fEntry -notmatch '\.\w+$') { $fEntry = "$fEntry.md" }
+                            $fEntry = $fEntry -replace '/', '\'
+                            $fResolvedPath = Join-Path $knowledgeDir $fEntry
+                            if (Test-Path $fResolvedPath) {
+                                [void]$knowledgeLines.Add($fResolvedPath)
+                            }
+
+                            else {
+                                [void]$knowledgeWarnings.Add("$clientId/$agentId : knowledge_focus '$fk' nao resolve em arquivo ($fResolvedPath) - omitido")
+                            }
+
+                        }
+
+                    }
+
+                    else {
+                        [void]$knowledgeLines.Add($knowledgeDir)
+                    }
+
                     continue
                 }
 

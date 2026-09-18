@@ -15,7 +15,7 @@
   TASK-587/TASK-588 (Etapa 2, contrato do LATTICE, corrigido apos medicao): na MESMA chamada,
   tambem escreve edges.json - indice ESTRUTURAL de arestas doc->doc, nasce de parser (custo de
   modelo ZERO), nunca substitui o mapa semantico do graphify (nome/pasta graphify-out/ e graph.json
-  sao reservados a ele). Quatro vias, cada aresta com proveniencia (from + from_line), sem
+  sao reservados a ele). Cinco vias, cada aresta com proveniencia (from + from_line), sem
   peso/score gravado - grau de entrada e CALCULADO por quem le, nunca armazenado aqui. MEDIDO
   (TASK-588): contar "to" bruto (toda linha) infla doc que so repete a mesma mencao varias vezes;
   contar por PAR UNICO from->to (uma origem conta 1x por alvo, nao 1x por linha) bate muito mais
@@ -24,11 +24,15 @@
     (b) link markdown [texto](alvo).
     (c) mencao de caminho dentro de uma linha de heading (mesmo regex da via a, so linha "# ...").
     (d) campo de frontmatter YAML (--- ... --- no topo do doc) cujo valor bate o regex de caminho.
+    (e) wikilink [[alvo]] no corpo do doc (TASK-633, FURO B) - resolve SO contra a pasta do doc de
+        origem (alvo ou alvo.md), nunca contra a raiz do lab: wikilink e convencao de nota curta
+        entre vizinhos da mesma pasta, nao caminho de projeto.
   Via (a)/(c)/(d) casam o token `[\w./-]+\.(md|ps1|yaml|json|yml)` e resolvem, nesta ordem, contra
   (i) a pasta do doc de origem e (ii) a raiz do lab (`Split-Path -Parent $PSScriptRoot`) - primeiro
-  que existir em disco vence. Mencao que NAO resolve nao vira aresta (e nao gera aviso). Array final
-  ordenado por GRAU de entrada (PageRank fora de escopo, proibido); corte de topo e politica de
-  quem consome, nao deste artefato.
+  que existir em disco vence. Via (e) casa `\[\[([^\]]+)\]\]` e resolve so contra a pasta do doc de
+  origem (sem fallback de raiz). Mencao que NAO resolve nao vira aresta (e nao gera aviso). Array
+  final ordenado por GRAU de entrada (PageRank fora de escopo, proibido); corte de topo e politica
+  de quem consome, nao deste artefato.
 
   Duas formas de apontar a pasta (MESMO parametro generalizado, sem script novo):
     -KnowledgePath <dir>  legado, 1 pasta so, caminho como foi passado (relativo ao cwd ou
@@ -144,6 +148,7 @@ function Resolve-Token([string]$token, [string]$docDir) {
 $rePath = '[\w./-]+\.(?:md|ps1|yaml|json|yml)'
 $reLink = '\[[^\]]*\]\(([^)]+)\)'
 $reHeading = '^#{1,6}\s'
+$reWiki = '\[\[([^\]]+)\]\]'
 
 $edges = New-Object System.Collections.Generic.List[object]
 foreach ($d in $docs) {
@@ -176,6 +181,21 @@ foreach ($d in $docs) {
       $resolved = Resolve-Token $targetNoFrag $docDir
       if ($null -ne $resolved -and $resolved -ne $relFrom) {
         $edges.Add([pscustomobject]@{ via = 'b'; from = $relFrom; from_line = $lineNo; to = $resolved; raw = $target })
+      }
+    }
+
+    # via (e): wikilink [[alvo]] - resolve SO contra a pasta do doc de origem (alvo ou alvo.md),
+    # nunca contra a raiz do lab (wikilink e convencao de nota curta entre vizinhos, nao caminho).
+    foreach ($mm in [regex]::Matches($ln, $reWiki)) {
+      $wTarget = $mm.Groups[1].Value.Trim()
+      if ($wTarget -eq '') { continue }
+      $wResolved = $null
+      foreach ($wCandidate in @($wTarget, ($wTarget + '.md'))) {
+        $wPath = Join-Path $docDir $wCandidate
+        if (Test-Path -LiteralPath $wPath -PathType Leaf) { $wResolved = ToRootRel $wPath; break }
+      }
+      if ($null -ne $wResolved -and $wResolved -ne $relFrom) {
+        $edges.Add([pscustomobject]@{ via = 'e'; from = $relFrom; from_line = $lineNo; to = $wResolved; raw = $mm.Value })
       }
     }
   }

@@ -151,7 +151,7 @@ $scriptsAllow = @(
   "graph-check.ps1","graph-usage-sensor.ps1","graph-usage.ps1","guard-core.ps1","health-check.ps1",
   "import-project.ps1","install.ps1","kb-index.ps1","law-ledger-check.ps1",
   "lineage-graph.ps1","make-manifest.ps1","memory-curator.ps1","mission-control.ps1",
-  "package-release.ps1","promote-memory.ps1","reflect-check.ps1","register-task.ps1",
+  "package-release.ps1","promote-memory.ps1","publish-gate.ps1","reflect-check.ps1","register-task.ps1",
   "response-guard.ps1","rsi-patterns.ps1","semantic-lint.ps1","session-reflection.ps1",
   "session-search.py","smoke-test.ps1","squad-bridge.ps1","squad-report.ps1","stale-tasks.ps1",
   "task-context.ps1","task-sweep.ps1","update-engine.ps1","update-online.ps1","validate-workflow.ps1","verify-manifest.ps1",

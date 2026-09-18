@@ -2812,6 +2812,38 @@ $pcSemEntrada = @($pcBasenames | Where-Object { $pcTxt -notmatch [regex]::Escape
 Check ("Persistence catalog: todo alvo real de escrita (" + $pcBasenames.Count + " nome(s) unico(s) em scripts/*.ps1) tem entrada no catalogo") ($pcSemEntrada.Count -eq 0) ("sem entrada: " + ($pcSemEntrada -join ", "))
 
 
+# --- Allowlist do empacotador cobre todo script que a bateria do PRODUTO exige (TASK-650) ---
+# Incidente medido pelo COURIER: publish-gate.ps1 (WARDEN, TASK-632/L70) nao estava na allowlist
+# de scripts\ de package-release.ps1. O pacote passou pelos portoes 0/3 e 1/3, foi COPIADO pra
+# release/alia-flow, e so nao chegou ao usuario porque o proprio smoke, rodando DENTRO do pacote
+# no 3/3, quebrou com CommandNotFoundException - tarde demais, depois do arquivo ja copiado.
+# Este check fecha a CLASSE (nao so o caso): qualquer script REAL (existe em disco) que este
+# proprio smoke-test.ps1 invoca via "scripts\<nome>" tem que estar na allowlist $scriptsAllow de
+# package-release.ps1 - reprova AQUI, na oficina, antes de empacotar, nunca so no 3/3 depois de
+# copiar. Filtra por "existe em disco" pra nao confundir com nome de fixture/placeholder que
+# outros Checks deste arquivo usam de proposito (ex.: "foo.ps1"/"bar.ps1" em teste de guard).
+Write-Host ""
+Write-Host "-- Allowlist do empacotador cobre a bateria do produto (TASK-650) --"
+$prScriptPath = Join-Path $root "scripts\package-release.ps1"
+$prTxt650 = ReadText $prScriptPath
+$allowMatch650 = [regex]::Match($prTxt650, '(?s)\$scriptsAllow\s*=\s*@\((.*?)\)\r?\n')
+$allowList650 = @()
+if ($allowMatch650.Success) {
+  $allowList650 = @([regex]::Matches($allowMatch650.Groups[1].Value, '"([^"]+)"') | ForEach-Object { $_.Groups[1].Value })
+}
+Check "package-release.ps1: allowlist de scripts/ foi encontrada e lida (nao veio vazia)" ($allowList650.Count -gt 0)
+
+$selfSmokeTxt650 = ReadText (Join-Path $root "scripts\smoke-test.ps1")
+$referenciados650 = New-Object System.Collections.Generic.HashSet[string]
+foreach ($mm650 in [regex]::Matches($selfSmokeTxt650, '(?:scripts[\\/])([A-Za-z0-9_.\-]+\.(?:ps1|py))')) { [void]$referenciados650.Add($mm650.Groups[1].Value) }
+$foraDeProposito650 = @("smoke-test.ps1", "smoke-test-studio.ps1")   # este proprio arquivo, e o irmao da instancia - fora de proposito do pacote (ver comentario em package-release.ps1)
+$candidatosReais650 = @($referenciados650 | Where-Object {
+  ($foraDeProposito650 -notcontains $_) -and (Test-Path -LiteralPath (Join-Path $root ("scripts\" + $_)))
+} | Sort-Object)
+$faltandoAllowlist650 = @($candidatosReais650 | Where-Object { $allowList650 -notcontains $_ })
+Check ("Empacotador: todo script real que scripts/smoke-test.ps1 referencia (" + $candidatosReais650.Count + " candidato(s) reais em disco) esta na allowlist de package-release.ps1") ($faltandoAllowlist650.Count -eq 0) ("faltando na allowlist: " + ($faltandoAllowlist650 -join ", "))
+
+
 # --- Freio que quebra passa a gritar: ratchet de linhas "erro" nos ledgers do freio (TASK-213,
 # item 2). response-guard.ps1 e graph-usage-sensor.ps1 agora gravam uma linha {"erro":...} no
 # MESMO ledger que ja escrevem quando o catch geral (ou o catch interno do gate) dispara, em vez
@@ -2845,6 +2877,75 @@ Write-Host "-- Memoria com validade no tempo (OPP-76 M3) --"
 $mcScript = Join-Path $root "scripts\memory-curator.ps1"
 $mcTxt76 = if (Test-Path -LiteralPath $mcScript) { ReadText $mcScript } else { "" }
 Check "Memoria: memory-curator.ps1 tem o modo -Validade e imprime RESULTADO: (texto que o smoke le)" (($mcTxt76 -match '\[switch\]\$Validade') -and ($mcTxt76 -match 'RESULTADO: FAIL') -and ($mcTxt76 -match 'RESULTADO: PASS'))
+
+
+# --- Catraca de ligacao quebrada (TASK-636, furo do laudo TASK-630): memory-curator.ps1 -Validade
+# ja resolve [[wikilink]] e imprime [LINK-QUEBRADO], mas o achado e SINAL e nunca reprova por
+# desenho (engine/governance/memory-types.md: "reprovar por debito velho nao pega regressao nova").
+# O que faltava e a CATRACA - MESMO padrao numerico que $SEM_VALIDADE_BASELINE ja usa em
+# scripts/smoke-test-studio.ps1 (baseline datado, so encolhe; reprova so quando SOBE).
+$LINK_QUEBRADO_BASELINE = 7   # medido 18/09/2026 (memory-curator.ps1 -Validade, cofres reais).
+# NAO e 4 (so os defeitos de verdade): dos 7 medidos, 3 sao a sintaxe [[...]] CITADA COMO EXEMPLO
+# dentro do texto de uma nota (nao um link de verdade quebrado) - contar so 4 faria a catraca
+# nascer ja reprovando por divida ja conhecida e aceita. Baixar este numero (por limpar os 3
+# falsos-positivos ou os 4 reais) e decisao humana; a catraca so trava quando SOBE de 7.
+$mvOutReal = (& $mcScript -Validade 6>&1) -join "`n"
+$mLinkQuebrado = [regex]::Match($mvOutReal, '(\d+)\s+link-quebrado')
+if ($mLinkQuebrado.Success) {
+  $nLinkQuebrado = [int]$mLinkQuebrado.Groups[1].Value
+  Check ("Memoria: link-quebrado nao cresce alem do baseline (" + $LINK_QUEBRADO_BASELINE + ")") ($nLinkQuebrado -le $LINK_QUEBRADO_BASELINE) ($nLinkQuebrado.ToString() + " [[link]] quebrado(s) -> nota NOVA com link quebrado e regressao; conserte o alvo ou o texto da nota")
+} else {
+  Warn "Memoria: link-quebrado - nao foi possivel ler o Resumo do -Validade (saida mudou de formato?)" $false ("saida: " + $mvOutReal.Substring(0, [Math]::Min(200, $mvOutReal.Length)))
+}
+
+
+# --- Teto vigiado do indice-mae de memoria (TASK-636, furo do laudo TASK-630): medido que o
+# indice-mae estourou o teto do host e 24 linhas nao carregaram na sessao (porta de entrada do
+# metodo falhando em silencio). Espelha kb-index.ps1 -Validate -BudgetLines (MESMO formato de
+# recusa: "indice com N linhas > teto B") - reuse-first, nao inventa segundo esquema.
+# Deteccao do cofre: MESMO algoritmo de Get-ValidadeVaults (memory-curator.ps1, linhas 103-111) -
+# instancia = 2 niveis acima quando a pasta-pai se chama "clients", cofre do harness em
+# $env:USERPROFILE\.claude\projects\<slug>\memory. Reimplementado aqui (nao dot-source) porque
+# memory-curator.ps1 termina em `exit` no modo -Validade - dot-source arrastaria esse exit e
+# derrubaria o smoke inteiro.
+# LIMITACAO HONESTA: o cofre de VERDADE do operador mora FORA do studio inteiro (o caminho acima,
+# em .claude/projects/, nao em clients/alia-flow-lab nem em studio-farina). Quando ele existe
+# nesta maquina, o vigia mede ELE de verdade; sem ele (clone novo, outra maquina, CI), cai pro
+# indice DENTRO da instancia (<instance>/memory/_index.md) - cobertura parcial, nomeada abaixo,
+# nunca fingida.
+$MEMORIA_INDICE_TETO_LINHAS = 200
+$instanceMv = $root
+$parentMv = Split-Path $root -Parent
+if ((Split-Path $parentMv -Leaf) -eq "clients") { $instanceMv = Split-Path $parentMv -Parent }
+$slugMv = ($instanceMv -replace '[^A-Za-z0-9]', '-')
+$v2Mv = Join-Path $env:USERPROFILE (".claude\projects\" + $slugMv + "\memory")
+$v1Mv = Join-Path $instanceMv "memory"
+# PRIORIDADE: cofre do harness/operador (v2, o de VERDADE, fora do studio inteiro) primeiro; cofre
+# da instancia (v1, dentro do studio) so como FALLBACK quando o de verdade nao existir nesta
+# maquina - nunca o contrario, senao o check mediria o indice errado em silencio quando os dois
+# existem ao mesmo tempo.
+$mvVaultsReais = New-Object System.Collections.Generic.List[string]
+if (Test-Path -LiteralPath $v2Mv) { $mvVaultsReais.Add($v2Mv) }
+if (Test-Path -LiteralPath $v1Mv) { $mvVaultsReais.Add($v1Mv) }
+$mvIndiceArquivo = $null
+$mvIndiceLabel = ""
+foreach ($vv in $mvVaultsReais) {
+  foreach ($nomeIdx in @("MEMORY.md", "_index.md")) {
+    $cand = Join-Path $vv $nomeIdx
+    if (Test-Path -LiteralPath $cand) {
+      $mvIndiceArquivo = $cand
+      $mvIndiceLabel = if ($vv -eq $v2Mv) { "cofre do harness/operador" } else { "cofre da instancia (fallback, cofre do harness ausente nesta maquina)" }
+      break
+    }
+  }
+  if ($mvIndiceArquivo) { break }
+}
+if ($null -ne $mvIndiceArquivo) {
+  $mvIndiceLinhas = @([System.IO.File]::ReadAllLines($mvIndiceArquivo)).Count
+  Check ("Memoria: indice-mae (" + (Split-Path -Leaf $mvIndiceArquivo) + ", " + $mvIndiceLabel + ") nao estoura o teto do host (" + $MEMORIA_INDICE_TETO_LINHAS + " linhas)") ($mvIndiceLinhas -le $MEMORIA_INDICE_TETO_LINHAS) ($mvIndiceLinhas.ToString() + " linhas em " + $mvIndiceArquivo + " -> acima do teto o host corta o fim em silencio; pode faltar entrada essencial da memoria")
+} else {
+  Warn "Memoria: indice-mae - nenhum cofre com _index.md/MEMORY.md encontrado nesta maquina" $false "Get-ValidadeVaults nao achou cofre (nem instancia nem harness) - sem indice pra medir neste ambiente, cobertura zero nomeada, nunca fingida"
+}
 
 
 $mvRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("mv-fixture-" + $PID)
@@ -3878,6 +3979,64 @@ Check "leitor-gate.ps1: ledger (studio/leitor-log.jsonl via -LedgerPath) recebeu
 
 Remove-Item -Recurse -Force -LiteralPath $lgRoot -ErrorAction SilentlyContinue
 Check "leitor-gate.ps1: fixture removida (faxina)" (-not (Test-Path -LiteralPath $lgRoot))
+
+# --- Cerca de publicacao dentro de sub-agente: publish-gate.ps1 (TASK-632, incidente TASK-603 -
+# `git push` por Bash dentro de um Specialist publicou sozinho, sem passar por ninguem) ---
+Write-Host ""
+Write-Host "-- Cerca de publicacao (TASK-632): publish-gate.ps1 --"
+
+$pgScript = Join-Path $root "scripts\publish-gate.ps1"
+Check "publish-gate.ps1 existe" (Test-Path -LiteralPath $pgScript)
+
+$pgParseErrors = $null
+$pgParseTokens = $null
+try { [void][System.Management.Automation.Language.Parser]::ParseFile($pgScript, [ref]$pgParseTokens, [ref]$pgParseErrors) } catch { $pgParseErrors = @($_) }
+Check "publish-gate.ps1: 0 erro de sintaxe (Parser::ParseFile)" (($null -ne $pgParseErrors) -and ($pgParseErrors.Count -eq 0)) ("erros: " + ($pgParseErrors -join " | "))
+
+$pgSettingsWired = $false
+if (Test-Path -LiteralPath $settingsPath) {
+  try {
+    $settingsJsonPg = (ReadText $settingsPath) | ConvertFrom-Json
+    foreach ($ptEntryPg in @($settingsJsonPg.hooks.PreToolUse)) {
+      foreach ($hPg in @($ptEntryPg.hooks)) {
+        if ((("$($ptEntryPg.matcher)" -match 'Bash') -or ("$($ptEntryPg.matcher)" -match 'PowerShell')) -and ("$($hPg.command)" -match 'publish-gate\.ps1')) { $pgSettingsWired = $true }
+      }
+    }
+  } catch { }
+}
+Check "publish-gate.ps1: hook PreToolUse LIGADO em .claude/settings.json no matcher Bash|PowerShell (nao so projetado)" $pgSettingsWired
+
+$pgPreservedRootForDotSource = $root
+. $pgScript
+$root = $pgPreservedRootForDotSource
+
+# (a, negativo) dentro de sub-agente (transcript_path com /subagents/) + git push -> DENY.
+$pgPayloadA = (@{ session_id = "PG-A"; tool_name = "Bash"; transcript_path = "C:/fake/session-x/subagents/agent-1.jsonl"; tool_input = @{ command = "git push origin main" } } | ConvertTo-Json -Compress)
+$pgOutA = Invoke-PublishGate -RawInput $pgPayloadA
+Check "publish-gate.ps1 (negativo): git push dentro de sub-agente BLOQUEIA ([PUBLICA] + deny)" (($pgOutA -match '\[PUBLICA\]') -and ($pgOutA -match '"permissionDecision":"deny"')) ("saida: " + $pgOutA)
+
+# (b, positivo, REGRA DURA do Operator): sessao principal (transcript_path sem /subagents/) + o
+# MESMO git push -> LIBERA sempre. Se este check falhar, a entrega esta reprovada.
+$pgPayloadB = (@{ session_id = "PG-B"; tool_name = "Bash"; transcript_path = "C:/fake/session-x.jsonl"; tool_input = @{ command = "git push origin main" } } | ConvertTo-Json -Compress)
+$pgOutB = Invoke-PublishGate -RawInput $pgPayloadB
+Check "publish-gate.ps1 (positivo, regra dura): git push na sessao principal NUNCA e bloqueado" ([string]::IsNullOrWhiteSpace($pgOutB)) ("saida: " + $pgOutB)
+
+# (c, positivo) dentro de sub-agente, comando inofensivo (git status) -> LIBERA.
+$pgPayloadC = (@{ session_id = "PG-C"; tool_name = "Bash"; transcript_path = "C:/fake/session-x/subagents/agent-1.jsonl"; tool_input = @{ command = "git status" } } | ConvertTo-Json -Compress)
+$pgOutC = Invoke-PublishGate -RawInput $pgPayloadC
+Check "publish-gate.ps1 (positivo): comando de git que nao publica (git status) dentro de sub-agente LIBERA" ([string]::IsNullOrWhiteSpace($pgOutC)) ("saida: " + $pgOutC)
+
+# (d) interruptor de emergencia ALIA_PUBLISH_GATE_OFF=1 desliga o bloqueio mesmo no cenario (a).
+$env:ALIA_PUBLISH_GATE_OFF = "1"
+$pgOutD = Invoke-PublishGate -RawInput $pgPayloadA
+Remove-Item Env:\ALIA_PUBLISH_GATE_OFF -ErrorAction SilentlyContinue
+Check "publish-gate.ps1: interruptor ALIA_PUBLISH_GATE_OFF=1 desliga o bloqueio (mesmo cenario do (a) libera)" ([string]::IsNullOrWhiteSpace($pgOutD)) ("saida: " + $pgOutD)
+
+# (e, negativo) outro comando negado (git commit) via tool_name PowerShell, dentro de sub-agente.
+$pgPayloadE = (@{ session_id = "PG-E"; tool_name = "PowerShell"; transcript_path = "C:/fake/session-x/subagents/agent-2.jsonl"; tool_input = @{ command = "git commit -m 'x'" } } | ConvertTo-Json -Compress)
+$pgOutE = Invoke-PublishGate -RawInput $pgPayloadE
+Check "publish-gate.ps1 (negativo): git commit via PowerShell dentro de sub-agente BLOQUEIA" (($pgOutE -match '\[PUBLICA\]') -and ($pgOutE -match '"permissionDecision":"deny"')) ("saida: " + $pgOutE)
+
 
 # --- squad-bridge.ps1: bundle de persona camada B contem Task liberado pela cerca do leitor ---
 $sbTxt = ReadText (Join-Path $root "scripts\squad-bridge.ps1")
