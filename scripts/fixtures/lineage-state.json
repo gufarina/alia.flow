@@ -1,0 +1,67 @@
+{
+  "studio": "fixture-lineage",
+  "operator": "fixture",
+  "updated": "2026-08-04",
+  "source_of_truth": "fixture do smoke - NAO e ledger real. Prova o -Health e o -Impact do lineage-graph.ps1 com numeros deterministicos: 4 Tasks, 2 orfas (entregaram sem declarar base), 1 id repetido (TASK-002 x2) e a cadeia docs/base.md -> docs/derivado.md -> docs/neto.md.",
+  "clients": [
+    { "id": "acme-saas", "name": "Acme Pulse" }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "client": "acme-saas",
+      "project": "pulse",
+      "title": "escreve a base",
+      "specialist": "quinn",
+      "type": "construcao",
+      "status": "done",
+      "artifact": "docs/base.md",
+      "base_artifact": "",
+      "session": "sess-a",
+      "gate_verdict": "PASS",
+      "created": "2026-01-01T09:00:00Z"
+    },
+    {
+      "id": "TASK-002",
+      "client": "acme-saas",
+      "project": "pulse",
+      "title": "deriva da base",
+      "specialist": "quinn",
+      "type": "construcao",
+      "status": "done",
+      "artifact": "docs/derivado.md",
+      "base_artifact": "docs/base.md",
+      "session": "sess-b",
+      "gate_verdict": "PASS",
+      "created": "2026-01-02T09:00:00Z"
+    },
+    {
+      "id": "TASK-002",
+      "client": "acme-saas",
+      "project": "pulse",
+      "title": "id repetido de proposito (o furo que o -Health tem que acusar)",
+      "specialist": "quinn",
+      "type": "construcao",
+      "status": "done",
+      "artifact": "docs/neto.md",
+      "base_artifact": "docs/derivado.md",
+      "session": "sess-c",
+      "gate_verdict": "PASS",
+      "created": "2026-01-03T09:00:00Z"
+    },
+    {
+      "id": "TASK-004",
+      "client": "acme-saas",
+      "project": "pulse",
+      "title": "entregou sem declarar de onde partiu (orfa)",
+      "specialist": "quinn",
+      "type": "construcao",
+      "status": "done",
+      "artifact": "docs/orfa.md",
+      "base_artifact": "",
+      "session": "sess-d",
+      "gate_verdict": "PASS",
+      "created": "2026-01-04T09:00:00Z"
+    }
+  ]
+}

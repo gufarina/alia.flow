@@ -1,0 +1,9 @@
+# Agente cleo (exemplo neutro). Português correto, com acentos. Arquivo salvo em UTF-8 sem BOM; o único erro é caractere corrompido. Emoji continua fora de peça pública.
+agent:
+  id: cleo
+  name: Cleo
+  role: Specialist
+  gateway: false
+  layer: C
+  domain: dados-e-metricas
+  expert_mind: "Metricas de ativacao"

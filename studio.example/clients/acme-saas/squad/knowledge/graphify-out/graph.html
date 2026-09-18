@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<title>Graph - Acme SaaS</title>
+<style>
+body{background:#0a0a0a;color:#e8e8e8;font-family:ui-monospace,Consolas,monospace;margin:0;padding:32px}
+h1{font-size:18px;letter-spacing:.04em;margin:0 0 4px}
+p{color:#8a8a8a;font-size:12px;margin:0 0 24px}
+h2{font-size:13px;color:#8a8a8a;text-transform:uppercase;letter-spacing:.12em;margin:28px 0 8px}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th,td{border:1px solid #262626;padding:6px 10px;text-align:left}
+th{color:#8a8a8a;font-weight:400}
+td:first-child{color:#f5f5f5}
+</style>
+</head>
+<body>
+<h1>Graph - Acme SaaS</h1>
+<p>Visualizacao do grafo do segundo cerebro. 6 nos, 4 arestas, 2 comunidades. Fixture do demo.</p>
+<h2>Nos</h2>
+<table><tr><th>id</th><th>label</th><th>comunidade</th><th>fonte</th></tr>
+<tr><td>acme_saas</td><td>Acme SaaS</td><td>Produto e Painel</td><td>01-contexto-do-produto.md</td></tr>
+<tr><td>painel_pulse</td><td>Painel Pulse</td><td>Produto e Painel</td><td>01-contexto-do-produto.md</td></tr>
+<tr><td>cartao</td><td>Cartao</td><td>Produto e Painel</td><td>02-linguagem-ubiqua.md</td></tr>
+<tr><td>ativacao</td><td>Ativacao</td><td>Produto e Painel</td><td>02-linguagem-ubiqua.md</td></tr>
+<tr><td>headline</td><td>Headline</td><td>Mensagem</td><td>03-tom-e-mensagem.md</td></tr>
+<tr><td>chamada_de_acao</td><td>Chamada de acao</td><td>Mensagem</td><td>03-tom-e-mensagem.md</td></tr>
+</table>
+<h2>Arestas</h2>
+<table><tr><th>origem</th><th>relacao</th><th>destino</th><th>confianca</th></tr>
+<tr><td>acme_saas</td><td>has_component</td><td>painel_pulse</td><td>EXTRACTED</td></tr>
+<tr><td>painel_pulse</td><td>contains</td><td>cartao</td><td>EXTRACTED</td></tr>
+<tr><td>painel_pulse</td><td>drives</td><td>ativacao</td><td>INFERRED</td></tr>
+<tr><td>headline</td><td>precedes</td><td>chamada_de_acao</td><td>EXTRACTED</td></tr>
+</table>
+</body>
+</html>

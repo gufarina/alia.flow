@@ -1,0 +1,11 @@
+# Normaliza para LF no repo (produto distribuivel, multiplataforma).
+* text=auto eol=lf
+
+# Scripts PowerShell rodam em Windows; manter LF interno funciona no PS moderno.
+*.ps1 text eol=lf
+
+# Binarios (caso surjam)
+*.png binary
+*.jpg binary
+*.pdf binary
+*.ico binary

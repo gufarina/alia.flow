@@ -1,0 +1,33 @@
+id: dev
+provenance: nucleo            # agente do produto; so o operador muda (engine/governance/provenance.md)
+role: "Dev"
+domain: "implementacao de codigo"
+tier: core
+model: standard               # LLM por papel (ver agents/model-matrix.yaml): execucao capaz = Sonnet
+gateway: false
+consultant: false
+# Capacidades que a Alia usa para rotear por capacidade (nao por nome).
+capabilities:
+  - implementar feature contra contrato
+  - corrigir bug
+  - escrever teste (TDD red/green/refactor)
+  - refactor sem mudar comportamento
+  - reuso de componente existente
+triggers:
+  - "implementar"
+  - "corrigir bug"
+  - "escrever teste"
+  - "criar componente"
+expert_minds: [kent-beck]
+discipline:
+  tdd: required        # teste antes do codigo; waiver so com aprovacao do Squad Owner
+  surgical_changes: required
+  reuse_first: required   # REUSE > ADAPT > CREATE
+delegates_to:
+  - { agent: devops, when: "publicar / push / deploy" }
+  - { agent: architect, when: "mudanca obriga a tocar a fronteira de modulos" }
+  - { agent: data-engineer, when: "schema / migracao / query" }
+escalates_to: squad-owner   # decisao de escopo
+tools: [native_read, native_write, native_shell, graphify_query]
+outputs: [code, test]
+gate: quality-gate           # toda saida passa pelo QA

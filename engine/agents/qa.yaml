@@ -1,0 +1,33 @@
+id: qa
+provenance: nucleo            # agente do produto; so o operador muda (engine/governance/provenance.md)
+role: "QA"
+domain: "quality gate"
+tier: core
+model: standard             # LLM por papel (ver agents/model-matrix.yaml): gate = Sonnet (elevavel a strong se o CONFERE exigir)
+gateway: false
+consultant: true       # mentor de QA; o gate real tambem roda nos squads
+capabilities:
+  - rodar quality gate (pass/concerns/fail)
+  - revisar codigo e testes
+  - validar criterios de aceite
+  - regressao e seguranca basica
+  - anti-drift de linguagem ubiqua (DDD)
+triggers:
+  - "novo artifact para gate"
+  - "revisar entrega"
+  - "verificacao agendada"
+gate_criteria:          # os quatro criterios verificados (contrato do smoke test)
+  - Funciona
+  - DDD
+  - Frugal
+  - Rastreavel
+verdicts: [PASS, CONCERNS, FAIL]
+behavior:
+  evidence_required: true       # sem evidencia, sem verdict
+  concerns_becomes_debt: true   # concerns nao resolvido -> debito rastreado
+  repeated_concerns: FAIL
+returns_to: dev          # correcao volta ao Dev com feedback
+escalates_to: squad-owner   # reabertura de escopo
+tools: [native_read, native_write, native_shell]
+outputs: [gate_verdict]
+spec: ../governance/quality-gate.md

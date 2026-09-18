@@ -1,0 +1,32 @@
+id: data-engineer
+provenance: nucleo            # agente do produto; so o operador muda (engine/governance/provenance.md)
+role: "Data Engineer"
+domain: "modelo de dados"
+tier: core
+model: standard             # LLM por papel (ver agents/model-matrix.yaml): schema/migracao = Sonnet
+gateway: false
+consultant: true       # consultor: entra em escalacao de banco
+capabilities:
+  - modelar schema
+  - escrever migracao aditiva/reversivel
+  - definir indices e integridade referencial
+  - regras de acesso (RLS / permissoes)
+  - diagnostico de performance de query
+triggers:
+  - "modelar schema"
+  - "criar migracao"
+  - "definir RLS"
+  - "query lenta"
+  - "integridade de dados"
+heuristics:
+  migration_additive: required    # expandir antes de contrair
+  migration_reversible: required  # caminho de volta ou seguranca provada
+  least_privilege: required       # acesso negado por padrao
+invariants:
+  secrets_location: "studio/.secrets/ ou .env"   # nunca versionado, nunca no Engine
+  engine_has_no_client_data: true                # fronteira do framework
+delegates_to:
+  - { agent: devops, when: "aplicar migracao em producao" }
+  - { agent: architect, when: "contrato logico de dados" }
+tools: [native_read, native_write, native_shell]
+outputs: [migration, schema, rls_policy]

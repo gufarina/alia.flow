@@ -1,0 +1,319 @@
+# Alia - Selecao de Ferramentas e Frugalidade
+
+> Qual ferramenta usar, e como gastar o minimo de token fazendo o maximo. Frugalidade nao e
+> avareza: e fazer o trabalho certo na forca certa, sem desperdicio e sem perda de qualidade.
+> O manifesto estruturado vive ao lado em [tools.yaml](tools.yaml) - esta prosa explica, o YAML
+> deixa as regras maquinaveis.
+
+---
+
+## Prioridade de ferramentas
+
+**Nativa primeiro.** Ler, escrever, buscar e rodar comando com a ferramenta nativa - rapida,
+precisa, barata. MCP **so quando a nativa nao cobre**: navegador, banco de dados, API externa,
+busca na web. Cada salto de camada custa mais contexto e mais latencia; nao salte sem motivo.
+
+| Tarefa | Use | Nao use |
+|--------|-----|---------|
+| Ler / escrever / buscar arquivo | ferramenta nativa | MCP generico |
+| Rodar comando | shell nativo | MCP generico |
+| Navegador / scraping / banco / web search | MCP especifico | MCP generico, scraping manual |
+
+> Regra de uma linha: a ferramenta mais barata que resolve com qualidade vence. Subir de camada
+> exige justificativa, nao o contrario.
+
+## Frugality Check
+
+Antes de qualquer operacao cara (delegar a um Specialist, varrer arquivos, chamar MCP, gerar
+resposta longa), passe por estes cinco filtros. E o Principio VIII tornado pratica.
+
+1. **Memory antes de reprocessar** - existe contexto na Memory que eu posso recall em vez de
+   recalcular do zero? (Principio VII)
+2. **Grafo antes de varredura (PASSO OBRIGATORIO)** - quem tem segundo cerebro CONSULTA o grafo em
+   `squad/knowledge/graphify-out/` ANTES de qualquer varredura cega (grep/glob). Nao e lembrete nem
+   preferencia: e passo obrigatorio. Pular so com justificativa explicita (ver "Grafo obrigatorio").
+3. **Forca certa** - e o modelo/agente certo pra esta Task? Nao usar canhao pra mosquito; nao usar
+   estilingue pra muralha.
+4. **Mecanico antes de julgamento** - da pra resolver por Frugal Skill (script, custo zero de token)
+   em vez de acionar um Specialist? (ver [Frugal Skills](features/frugal-skills.md))
+5. **Compactar antes de entregar** - comprimir o handoff antes de delegar; em resposta grande,
+   extrair so o essencial e descartar ruido.
+6. **Escada antes de produzir (PASSO OBRIGATORIO NA SAIDA)** - antes de escrever Artifact novo,
+   suba a escada de [features/artifact-ladder.md](features/artifact-ladder.md) e pare no primeiro
+   degrau que resolve. Espelho do passo 2 (grafo), do lado da SAIDA em vez da ENTRADA.
+
+> Ordem importa: recall (1) e grafo (2) evitam o gasto; forca (3) e mecanico (4) escolhem a rota
+> barata; compactacao (5) corta o que sobra; a escada (6) decide quanto se produz do que sobrou.
+> Pare no primeiro filtro que resolve.
+
+## Grafo obrigatorio (consulta antes de varredura cega)
+
+A consulta ao grafo deixou de ser lembrete/prioridade e virou **passo obrigatorio**: quem tem
+segundo cerebro consulta `squad/knowledge/graphify-out/` (o grafo da Memory) ANTES de qualquer
+varredura cega - grep, glob, leitura em massa de arquivos. O grafo leva direto ao alvo e ao que ja
+se sabe; varrer sem consultar e reprocessar o que a Memory ja indexou (viola Memory Before
+Reprocessing, Principio VII).
+
+A regra, em uma frase: **grafo primeiro, varredura depois - e a varredura so amplia o que o grafo
+nao cobriu.** Pular o passo so e aceitavel COM justificativa explicita, por exemplo:
+
+- o grafo ainda nao foi gerado para este Client/Squad (pre-condicao abaixo);
+- a busca e por algo fora do escopo do grafo (ex: um arquivo recem-criado, ainda nao indexado);
+- o alvo exato e conhecido (ler um caminho especifico nao e varredura cega).
+
+Sem justificativa, varrer antes de consultar o grafo e desvio - o mesmo desvio que o Frugality
+Check (passo 2) existe para evitar. Isso alinha tools.md com o fluxo do boot loader (AGENTS.md: o
+Specialist consulta o grafo em `squad/knowledge/graphify-out/` antes de delegar).
+
+### Pre-condicao operacional (nota honesta)
+
+O passo so faz sentido onde o grafo JA existe. Gerar o `GRAPH_REPORT.md` (e o `graph.json`) via a
+capacidade graphify e **pre-condicao operacional**: sem grafo gerado pelo menos uma vez por Squad,
+nao ha o que consultar e a regra fica vazia. Onde o grafo ainda nao existe, gera-lo primeiro e a
+acao - nao pular a consulta. (Gerar o grafo do proprio engine nao e requisito desta regra; a regra
+vale para o segundo cerebro de cada Client.)
+
+#### Como gerar o grafo (o comando real - nao e aspiracional)
+
+A GERACAO nao e uma flag do CLI `graphify` (o CLI so faz `install`/`path`/`explain`/`query`). O grafo
+e gerado pela **skill graphify**, que o agente roda: detecta os arquivos -> extrai entidades/relacoes
+(estrutural por tree-sitter + semantica pelo proprio modelo do agente, tudo LOCAL) -> build/cluster ->
+escreve `graph.json` + `GRAPH_REPORT.md` + `graph.html` na pasta `graphify-out/`. Passos:
+1. O motor da ferramenta (interpretador + pacote) e REQUISITO da instalacao desde 10/08/2026 (mandato
+   do CEO) - `scripts/ensure-graphify.ps1` garante isso sozinho no primeiro contato (`skills/setup-alia`),
+   cadeia fail-soft (tenta a rota mais leve, escala sozinha, nunca trava, nunca pede terminal ao
+   operador). So se tudo falhar mesmo assim ele fica indisponivel e a Alia avisa e segue nas notas.
+2. O agente roda a skill apontando para a pasta do Client; a saida vai pra `squad/knowledge/graphify-out/`.
+   Esta parte (a GERACAO por Client) continua sob demanda de proposito - custa modelo, e decisao do
+   operador, nunca automatica so por criar o Squad (nao confundir com o passo 1, que e so o motor
+   ficar pronto pra usar).
+3. PROVADO end-to-end num Client do estudio (29/jun): 39 nos, 53 arestas, 6 comunidades.
+NOTA HONESTA: a geracao POR CLIENT ainda depende do agente rodar a skill (`/graphify <path>`) - nao ha
+hook que gere sozinho ao criar o Squad, e essa parte segue sendo decisao do operador (custa modelo).
+O que mudou em 10/08/2026 foi so o passo 1 (o motor ficar pronto): antes dependia de ter Python na
+maquina, agora e garantido sozinho, sem o operador precisar saber o que roda por baixo.
+
+### A guarda do mapa: existir nao basta, tem que ser AUTENTICO e estar EM DIA (OPP-76)
+
+> LEI: mapa forjado ou podre nao vale como mapa. `graphify-out/` que nao e saida real do graphify,
+> ou grafo mais velho que o corpus que ele cobre, e PIOR que nao ter grafo - tem cara de fonte
+> curada e leva o agente a um mundo que ja mudou.
+
+Ate 04/08/2026 a guarda so perguntava "existe `GRAPH_REPORT.md` e `nodes` > 0?" - criterio que
+qualquer JSON escrito a mao em 5 minutos satisfaz. Medido na auditoria: **2 dos 5** grafos de cliente
+eram exatamente isso, e **nenhum** dos grafos do studio estava em dia (80 arquivos do proprio lab
+mais novos que o grafo do lab). `scripts/graph-check.ps1` passou a classificar cada Client em quatro
+estados, e a rodar contra os Clients REAIS - nao mais so contra o cliente-demo:
+
+| Estado | O que e | Veredito |
+|---|---|---|
+| **OK** | saida real do graphify e em dia com a base que cobre | passa |
+| **STALE** | autentico, porem PODRE: arquivos-fonte mudaram depois do `graph.json` | reprova (`-AllowStale` rebaixa a aviso) |
+| **FAKE** | tem `graphify-out/` mas o conteudo nao e saida do graphify | reprova |
+| **FALTA** | sem pasta, sem relatorio, sem `graph.json` ou grafo vazio | reprova |
+
+Autenticidade = o que o pipeline realmente escreve: `GRAPH_REPORT.md` + `graph.html` + `graph.json`
+no schema node-link (`directed`/`multigraph`/`nodes`/`links`), nos com `id` + `community` +
+procedencia (`source_file`/`file_type`), arestas com `source`/`target`. Podridao = o mtime do
+`graph.json` contra os arquivos-fonte da base (`-MaxNewerFiles`, default 10).
+
+Rota barata de conserto: `scripts/graph-check.ps1 -Refresh` tenta `graphify update` (re-extrai SEM
+custo de modelo) nos grafos podres. FAKE e FALTA nao tem rota barata - exigem a skill
+(`/graphify <base>`), e isso custa modelo: e decisao do operador, nunca do smoke.
+
+**Leitura do resultado:** case o TEXTO da saida (`[FAIL]`, `[FAKE]`, `[STALE]`), NUNCA o exit code -
+foi medido que o `exit 1` do PowerShell nao propaga por toda rota de shell usada aqui.
+
+### A adocao da lei e MEDIDA, nao presumida (OPP-76)
+
+> LEI: lei sem contador e fe. A aderencia a "grafo antes de varredura" e medida por sessao e por
+> codebase, e o sensor que a mede tem que estar LIGADO - "projetado-mas-desligado" reprova a prova.
+
+A lei acima estava escrita em tres lugares do motor e ninguem nunca soube se ela era cumprida. Duas
+pecas fecham isso, e nenhuma delas bloqueia nada:
+
+- `scripts/graph-usage-sensor.ps1` (hook `PreToolUse`, matcher `Read|Grep|Glob|Bash`) anota em
+  ledger append-only `studio/graph-usage-log.jsonl` dois eventos e mais nada: LEITURA DE MAPA
+  (`kind=map`) e VARREDURA (`kind=scan`). Nunca grava conteudo de arquivo, nunca grava o texto do
+  operador, nunca grava a linha de comando do Bash - so o token que casou. Qualquer erro, sai em
+  silencio: falha de sensor jamais trava o trabalho. O matcher e OBRIGATORIO (sem ele o hook dispara
+  em toda chamada de ferramenta e cada disparo custa ~450ms so de boot do powershell).
+- `scripts/graph-usage.ps1` e o contador. A unidade de medida e o par **(sessao, escopo)**: ler o
+  grafo de um Client nao autoriza varrer outro as cegas. ADOCAO = par que leu o mapa ANTES da
+  primeira varredura; FURO = par que varreu sem ler. Alvo >= 70% com amostra minima de 5 pares.
+
+O sensor entra MEDINDO, nao punindo: a taxa e AVISO ate haver historico real. O que reprova hoje e
+so o que pode ser provado hoje - o hook ligado.
+
+### Bonus: commit auditavel de memoria e grafo
+
+Mudancas na Memory (`memory/`, `knowledge/`) e no `graphify-out/` sao commitadas com mensagem real
+que descreve a evolucao - assim o segundo cerebro tem historia auditavel (o que mudou, quando, por
+que), nao um diff anonimo. O commit respeita a fronteira da [governanca de ferramentas](#governanca-de-mcp):
+`git push` continua **exclusivo do DevOps** (engineering.md). Commitar localmente com mensagem real
+e do agente; publicar e do DevOps.
+
+## Escada obrigatoria (saida)
+
+Espelho do "Grafo obrigatorio" acima, do lado da SAIDA: antes de produzir Artifact novo (codigo,
+config, doc), suba a escada de [features/artifact-ladder.md](features/artifact-ladder.md) e pare no
+primeiro degrau que resolve. O passo 4 (mecanico antes de julgamento) decide SE cabe uma Frugal
+Skill; esta escada decide, dentro do que exige julgamento, QUANTO se produz de novo.
+
+Simplificacao deliberada leva o marcador `frugal-debito: <teto> - upgrade: <caminho>` (doutrina e
+exemplos completos em artifact-ladder.md). Contrato lido hoje - mesma honestidade do "Grafo
+obrigatorio": sem hook que bloqueie Write/Edit antes da producao, a adesao depende do agente. O
+marcador e grep-avel pelo `debt-scan.ps1` sem mudanca de codigo (o regex existente ja casa
+`debito`).
+
+## Pipeline em CLI, nao sequencia tagarela (PTC)
+
+Um pipeline deterministico de N passos deve virar UMA invocacao de CLI cujo unico custo de contexto
+e o stdout - nao N chamadas tagarelas de ferramenta. Cada chamada de tool separada paga ida, volta e
+ruido intermediario; um script que encadeia os N passos paga so o resultado final. E o passo 4 do
+Frugality Check (mecanico antes de julgamento) levado ao pipeline inteiro: se a sequencia e fixa e
+verificavel, ela e um comando, nao uma conversa.
+
+Regra: quando os passos sao deterministicos e a ordem e fixa, colapse em 1 CLI e leia so o stdout.
+Reserve as chamadas passo a passo para quando cada passo exige julgamento ou ramifica conforme o
+resultado anterior.
+
+Exemplo real do proprio produto - os scripts em `scripts/` ja sao esse colapso:
+`smoke-test.ps1` roda dezenas de checks (engine, studio, squad, gates, ablation, encoding) numa
+unica invocacao e devolve `ALL GREEN` ou a lista de falhas; conferir cada item por chamada de tool
+custaria N vezes mais contexto. O mesmo colapso vale para a curadoria de memoria: em vez de um
+agendador de SO separado, `smoke-test-studio.ps1` chama `memory-curator.ps1 -Validade` dentro da
+propria prova - a rotina "de vez em quando" anda de carona no pipeline que ja roda sempre.
+
+## Budget e a metrica viva
+
+Cada operacao tem um **Budget** (limite/meta de token). O Frugality Check protege o Budget antes do
+gasto; o Loop de RSI mede o resultado depois. A metrica que prova a alma do Alia Flow:
+
+> **Custo medio por Artifact cai com o tempo.** Se o custo por entrega sobe sem ganho de qualidade,
+> e regressao - vira sinal pro RSI.
+
+## Verificacao visual frugal e teto de delegacao (TASK-283, mandato do CEO 25/08/2026)
+
+> LEI: verificacao de UI mede primeiro por TEXTO; screenshot de tela cheia so no FECHAMENTO. Teto
+> de 6 imagens por conversa de subagente. Delegacao DECLARA Budget. Fan-out > 10 exige Task
+> justificada.
+
+Medido no proprio parque em 25/08/2026: 149,4 MB de transcript num dia, 161 subagentes, um unico
+subagente (FLINT/TASK-197) com 168 chamadas de ferramenta incluindo dezenas de `Read` de screenshot
+PNG de tela cheia (250-460 KB de base64 cada) - cada volta seguinte reenvia TODAS as imagens
+anteriores no contexto (custo QUADRATICO, o ralo mais caro medido). A doutrina existia em prosa
+("Budget", "Frugality Check" acima) mas nada media nem acusava - o CEO descobriu pelo faturamento,
+nao pelo motor. Quatro clausulas fecham isso:
+
+**(a) Texto/DOM/log primeiro, screenshot so no fechamento.** Verificacao de UI mede por
+`read_page`/DOM, console/log ou arquivo ANTES de qualquer imagem. Screenshot de tela cheia e o
+ULTIMO recurso, usado so no FECHAMENTO da entrega (prova final ao operador) - nunca a cada iteracao
+do loop de correcao (`engine/workflows/qa-loop.md`). Cada iteracao do loop usa o sinal mais barato
+que confirma ou nega a correcao (texto/DOM), guardando a imagem para quando a decisao ja foi tomada.
+
+**(b) Teto de 6 imagens de tela cheia por conversa de subagente.** Acima de 6 `Read` de imagem de
+tela cheia na MESMA conversa e desvio, nao escolha livre - o contexto com N imagens paga TODAS de
+novo a cada volta (a causa raiz do Ralo n.1). Precisa comparar mais telas: (1) recorte/zoom so da
+REGIAO que mudou, nunca a tela inteira de novo, ou (2) feche a conversa e abra outra (memoria fica
+no Artifact escrito, nao no contexto vivo).
+
+**(c) Delegacao DECLARA Budget - e desde 25/08/2026 (TASK-286) o teto e COBRAVEL, nao so lido.**
+Todo briefing de delegacao a um Specialist declara teto de chamadas de ferramenta e teto de
+imagens (o campo `Budget` ja existia como termo no glossario). Prova constrangedora medida na
+propria TASK-286: os subagentes que CONSTRUIRAM este freio estouraram o teto do proprio briefing
+(115 chamadas de um teto de 55, 53 de um teto de 40) e nada acusou - o teto em prosa livre
+("teto de 60 chamadas de ferramenta") nunca foi legivel por maquina. Correcao: o teto agora se
+declara numa LINHA CANONICA, dentro do `prompt` da delegacao (Task/Agent) -
+
+> `Budget: tools=<N> images=<M>`
+
+- `tools=<N>` (obrigatorio para o sensor pegar) e o teto de chamadas de ferramenta da conversa do
+  sub-agente; `images=<M>` (opcional) e o teto de `Read` de imagem de tela cheia. `scripts/response-guard.ps1`
+  (o mesmo hook de `Stop` que ja audita REGRA 1/DELEGA e REGRA 2/GROUNDING) ganhou a REGRA 3
+  (BUDGET): ao fim do turno do coordenador, para cada Task/Agent chamado, le a linha canonica do
+  `prompt`, acha o transcript PROPRIO do sub-agente gerado (`subagents/agent-*.jsonl`, correlacionado
+  pelo `toolUseId` do `.meta.json` irmao - mesmo layout de disco que `scripts/cost-sensor.ps1` ja usa
+  pra contar subagentes) e CONTA de verdade quantos `tool_use` (e quantas imagens) o sub-agente
+  chamou. Estourou o declarado -> `[ESTOURO]` no log (`studio/response-guard-log.jsonl`, campos
+  `budget_ok`/`budget_estouros`) e, em modo bloqueio, a razao do bloqueio do turno cita o numero
+  declarado e o numero real, lado a lado.
+
+**Alcance real (honestidade obrigatoria, nao inflar o freio):** o sensor e A POSTERIORI - o
+sub-agente ja terminou e ja gastou quando o Stop do turno pai roda, entao isto NUNCA impede o
+estouro em tempo real, so ACUSA depois (mesma honestidade da clausula (d) abaixo). So mede
+delegacao que passa pela ferramenta `Task`/`Agent` com transcript proprio em disco - nao cobre
+sub-delegacao dentro do proprio texto de um Specialist sem novo `Task`. So mede `tools=` e
+`images=`; `conversations=`/fan-out continua so na clausula (d) (`cost-sensor.ps1`, contagem de
+subagentes por sessao, nao por delegacao individual). Delegacao SEM a linha canonica (so prosa)
+fica `SEM-BUDGET-DECLARADO` no log - visivel para medir adocao do formato, mas NAO acusa (nao ha
+numero de maquina pra comparar); a lei aqui e "declare no formato certo e o sensor te cobra", nao
+"toda delegacao sem numero e violacao". Subagente que estoura o teto continua devendo FECHAR e
+devolver parcial por conta propria (a doutrina do paragrafo anterior nao mudou) - o sensor prova
+que isso aconteceu ou nao, nao substitui o julgamento de quem executa.
+
+**(d) Fan-out > 10 subagentes por sessao exige justificativa registrada na Task.** Honestidade sobre
+o mecanismo: nao ha como medir uma sessao VIVA e bloquear em tempo real (o hook de `PreToolUse` roda
+por chamada de ferramenta, nao teria visao do total da sessao sem custo proprio alto). A lei aqui e
+CONTRATO LIDO + SENSOR A POSTERIORI, nao trava em tempo real - `scripts/cost-sensor.ps1` mede depois
+(MB de transcript + contagem de subagentes por sessao/dia, a partir dos transcripts locais que o
+proprio Claude Code ja grava) e acusa `[ESTOURO]` quando uma sessao passa do teto configurado
+(default 20 subagentes OU 30 MB) ou o dia passa do teto diario (default 80 MB) - grava
+`studio/cost-log.jsonl` para tendencia. Numa instancia real, a chamada anda de carona no
+`smoke-test-studio.ps1` (mesmo padrao de `memory-curator.ps1 -Validade`, ver "Pipeline em CLI"
+acima) - zero agendador novo.
+
+## Frugalidade nunca corta qualidade
+
+Reduzir custo e obrigatorio; reduzir qualidade e proibido (Principio VIII). Na duvida entre a rota
+barata e a rota segura, a qualidade do Artifact final ganha - e o gasto extra vira evidencia pro
+Loop ajustar a regra. Economia cega que reprova no Gate nao economizou nada.
+
+## Governanca de MCP
+
+A gerencia de MCP (instalar, configurar, remover) e **exclusiva do DevOps**. Os demais agentes sao
+consumidores: usam o que esta provisionado, nao mexem na infra.
+
+A forma curada de declarar quais MCP sao aprovados e o catalogo `optional-mcps/` (raiz): cada servidor
+e um diretorio com `manifest.yaml`, e presenca no diretorio = aprovacao. Ver
+[optional-mcps/README.md](../optional-mcps/README.md).
+
+## Erro de tool e frugalidade
+
+Tool que falha ou e negada nao se repete identica: re-tentar igual queima token sem ganho (viola o
+Budget). Leia o erro, ajuste a chamada ou troque de rota; negacao do operador se respeita, nao se
+contorna. A disciplina completa esta na [regra de tool do Specialist](agents/persona-skeleton.md)
+(secao 3, regra 4: erro e sinal, nao parede).
+
+## Pesquisa segura (sem runaway)
+
+> LEI: agente de pesquisa nao se multiplica e nao entra em loop. Pesquisa e SEQUENCIAL e LIMITADA.
+
+Agentes com segundo cerebro de pesquisa (MCP de web/fontes, ex: notebooklm, perplexity) seguem um
+contrato duro - a regua que impede o desastre de varrer o mundo em paralelo:
+
+1. **Sequencial, nunca em enxame.** Uma consulta por vez, a um cerebro por vez. `max_parallel: 1`.
+2. **Proibido auto-spawn.** O agente de pesquisa NUNCA cria sub-agentes nem dispara lote de buscas.
+   Quem orquestra fan-out e a Alia - e so com aviso. `self_spawn: forbidden`.
+3. **Fan-out so com aviso e aprovacao.** Qualquer busca em lote/paralela exige avisar a escala e o
+   custo ANTES e ter o sim do operador. `fanout: human_approval`.
+4. **Teto duro de consultas por Task.** Atingiu o teto, para e entrega o que tem. `max_queries_per_task`.
+5. **Quota-aware, sem re-tentar em loop.** Checa a quota ANTES (ex: `pplx_usage`); erro ou quota
+   estourada = PARA e reporta, nunca repete identico (e a regra de erro de tool aplicada a pesquisa:
+   erro e sinal, nao parede). `on_quota_or_error: stop_and_report`.
+
+**Rota de pesquisa (padrao).** Perplexity em busca normal (Pro) e a primeira parada - amplitude da
+web. Modelo padrao: **Claude Sonnet 4.6 com thinking** (`pplx_claude_sonnet_think`); **JAMAIS Sonar**
+(regra dura do operador). **Deep research NAO** (quota escassa; so a pedido explicito do operador).
+NotebookLM e a escalada quando a Perplexity nao der conta: cerebro ancorado em fontes, com citacao,
+mais forte para profundidade. Ordem: Perplexity normal -> (se nao bastar) NotebookLM. Uma de cada vez.
+
+Esses campos vivem no `.yaml` do agente de pesquisa (bloco `research_limits`); o smoke reprova um
+agente de pesquisa sem a trava declarada. O contrato estruturado esta em [tools.yaml](tools.yaml)
+(`research_safety`).
+
+## Segue
+
+[Constituicao](constitution.md) - os Principios. [Persona](agents/persona.md) - a voz.
+[Frugal Skills](features/frugal-skills.md) - o mecanico sem LLM.
+[Manifesto: tools.yaml](tools.yaml) - as regras maquinaveis.

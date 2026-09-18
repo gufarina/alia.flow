@@ -1,0 +1,13 @@
+{
+  "studio": "Fixture - events fora de ordem (viola append-only/monotonico)",
+  "updated": "2026-06-14",
+  "tasks": [
+    {
+      "id": "TASK-ART-098",
+      "client": "acme-saas",
+      "title": "Journal adulterado: ts retrocede",
+      "specialist": "rex",
+      "status": "in_progress"
+    }
+  ]
+}

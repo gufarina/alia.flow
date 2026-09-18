@@ -1,0 +1,13 @@
+{
+  "studio": "Fixture - Task interrompida",
+  "updated": "2026-06-14",
+  "tasks": [
+    {
+      "id": "TASK-ART-099",
+      "client": "acme-saas",
+      "title": "Run multi-passo que morreu no meio",
+      "specialist": "bruno",
+      "status": "in_progress"
+    }
+  ]
+}

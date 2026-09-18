@@ -1,0 +1,50 @@
+# Estrategia de Leitura - contrato maquinavel (par de reading-strategy.md).
+# Ler sem ler tudo: indice mestre + assinatura + grep-por-secao. OPP-69.
+# UTF-8.
+
+id: reading-strategy
+provenance: nucleo
+
+# Os tres padroes que toda leitura de KB markdown segue, na ordem.
+patterns:
+  - id: master_index
+    is: "Indice de 1 linha por item por nivel (knowledge/MAP.md; engine/MAP.md e o exemplo)."
+    rule: "Ler o indice decide o que abrir; indice acima do teto e fatiado, nao inchado."
+  - id: signature_first
+    is: "Cada doc abre com titulo (# ...) + descricao de 1 linha (blockquote > ...)."
+    rule: "Decidir por assinatura antes de abrir o corpo (outline-first)."
+  - id: section_grep
+    is: "Headers previsiveis (## ...) permitem ler so a fatia necessaria."
+    rule: "Buscar o header e ler N linhas; nunca o arquivo inteiro por padrao."
+  - id: bulk_reader
+    is: "Sub-agente em modelo barato le o arquivo inteiro e devolve so um resumo em bullets (skills/leitura-em-massa/SKILL.md)."
+    rule: "So acima de shunt_min_lines; entender delega, editar/raciocinio/arquitetura nunca delega."
+
+order: [master_index, signature_first, section_grep, bulk_reader]
+
+# Teto do indice mestre (repo-map cabe pequeno).
+index_budget_lines: 80
+
+# Teto de linhas para leitura inteira; acima disso o hook nega e roteia (env ALIA_SHUNT_MIN_LINES).
+shunt_min_lines: 350
+
+# Acima disto e so para ENTENDER (nao editar), vai para o leitor em massa mesmo abaixo do hook.
+bulk_reader_min_lines_to_understand: 150
+
+# O que fica de fora de proposito (KISS/YAGNI).
+rejected:
+  - embeddings
+  - rag_vetorial
+  - pagerank_sobre_markdown
+
+mechanism:
+  - script: scripts/kb-index.ps1
+    does: "Gera/valida knowledge/MAP.md de um Client; reprova indice acima do teto ou doc sem assinatura."
+  - script: scripts/read-shunt-guard.ps1
+    does: "Hook de PreToolUse; nega leitura inteira de arquivo acima de shunt_min_lines e aponta a rota (fatia ou leitor em massa)."
+
+references:
+  - reading-strategy.md
+  - tools.md
+  - MAP.md
+  - workflows/story-cycle.md

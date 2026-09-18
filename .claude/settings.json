@@ -1,0 +1,89 @@
+{
+    "hooks":  {
+                  "PreToolUse":  [
+                                     {
+                                         "matcher":  "Read",
+                                         "hooks":  [
+                                                       {
+                                                           "type":  "command",
+                                                           "command":  "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/read-shunt-guard.ps1\"",
+                                                           "timeout":  10
+                                                       }
+                                                   ]
+                                     },
+                                     {
+                                         "matcher":  "Grep|Glob|Bash|PowerShell",
+                                         "hooks":  [
+                                                       {
+                                                           "type":  "command",
+                                                           "command":  "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/graph-usage-sensor.ps1\"",
+                                                           "timeout":  10
+                                                       }
+                                                   ]
+                                     },
+                                     {
+                                         "matcher":  "Edit|Write|NotebookEdit|Task",
+                                         "hooks":  [
+                                                       {
+                                                           "type":  "command",
+                                                           "command":  "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/pre-tool-use.ps1\"",
+                                                           "timeout":  10
+                                                       }
+                                                   ]
+                                     }
+                                 ],
+                  "SessionStart":  [
+                                       {
+                                           "matcher":  "startup|resume|compact",
+                                           "hooks":  [
+                                                         {
+                                                             "type":  "command",
+                                                             "command":  "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/session-start.ps1\"",
+                                                             "timeout":  30
+                                                         }
+                                                     ]
+                                       }
+                                   ],
+                  "PreCompact":  [
+                                     {
+                                         "matcher":  "",
+                                         "hooks":  [
+                                                       {
+                                                           "type":  "command",
+                                                           "command":  "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/session-baton-guard.ps1\"",
+                                                           "timeout":  30
+                                                       }
+                                                   ]
+                                     }
+                                 ],
+                  "SessionEnd":  [
+                                     {
+                                         "matcher":  "",
+                                         "hooks":  [
+                                                       {
+                                                           "type":  "command",
+                                                           "command":  "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/session-baton-guard.ps1\"",
+                                                           "timeout":  30
+                                                       },
+                                                       {
+                                                           "type":  "command",
+                                                           "command":  "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/session-reflection.ps1\"",
+                                                           "timeout":  120
+                                                       }
+                                                   ]
+                                     }
+                                 ],
+                  "Stop":  [
+                               {
+                                   "matcher":  "",
+                                   "hooks":  [
+                                                 {
+                                                     "type":  "command",
+                                                     "command":  "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/scripts/response-guard.ps1\"",
+                                                     "timeout":  15
+                                                 }
+                                             ]
+                               }
+                           ]
+              }
+}

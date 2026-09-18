@@ -1,0 +1,32 @@
+name: smoke
+
+# O trilho do Alia Flow como porta de CI: todo push e todo PR contra main roda o
+# smoke-test.ps1 e o doctor. Vermelho bloqueia o merge - a mesma prova que roda na
+# maquina do contribuidor roda aqui. Sem acentos, sem emojis.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  smoke:
+    # windows-latest e o alvo primario (o produto e PowerShell-first). Multi-OS via
+    # pwsh no ubuntu/macos e uma evolucao futura declarada (OPP-22, onda 1) - so entra
+    # depois de provado que o trilho roda identico fora do Windows, pra nao vermelhar o CI.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trilho (smoke-test)
+        shell: pwsh
+        run: |
+          ./scripts/smoke-test.ps1
+          if ($LASTEXITCODE -ne 0) { throw "smoke vermelho (exit $LASTEXITCODE)" }
+
+      - name: Doctor (diagnostico read-only)
+        shell: pwsh
+        run: |
+          ./scripts/doctor.ps1
+          if ($LASTEXITCODE -ne 0) { throw "doctor reprovou (exit $LASTEXITCODE)" }
