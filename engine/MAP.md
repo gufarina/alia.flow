@@ -49,6 +49,9 @@ Biblioteca de referencia do nucleo (abrir a fatia quando o nucleo.md remeter):
 ## Governanca e qualidade (abrir ao fechar Task ou desenhar loops)
 
 - engine/governance/quality-gate.md - a regua unica (6 criterios + verdicts). Roda a cada Artifact.
+- scripts/gate-check.ps1 - a PORTA DE SAIDA em maquina do Quality Gate: 6 checks deterministicos e
+  sem rede (existe, travessao, emoji, marca, minimo, encoding) sobre o Artifact declarado, PASS/
+  FAIL/CONCERN. `scripts/register-task.ps1` chama ao fechar Task com `-GateVerdict` e `-Artifact`.
 - engine/governance/loops.md - catalogo da governanca: 2 tiers + taxonomia de loops.
 - engine/governance/memory-types.md - tipos de Memory e TTL (quando uma nota expira).
 - engine/governance/memory-audit.md - checklist de higiene da Memory (nota vencida/duplicada/contraditoria).

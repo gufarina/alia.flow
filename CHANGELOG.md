@@ -18,6 +18,32 @@ testado na instancia viva (a instancia aplicada) antes de fechar. Um update = um
 reversivel. Fluxo: alterar engine -> bump VERSION -> entrada no CHANGELOG -> smoke-test-studio
 ALL GREEN -> tag.
 
+## [1.83.0] - 2026-09-21
+
+O Quality Gate ganhou uma porta de saída em máquina. Antes do julgamento em prosa, seis checagens
+determinísticas passam sobre o arquivo que a Task declara como prova: se ele existe mesmo em disco e
+tem conteúdo, se tem travessão, se tem emoji, se uma peça interna está vestida com a marca do
+produto, se não é um esqueleto vazio e se o texto está íntegro. O operador ganha o óbvio: defeito que
+a máquina pega de graça para de chegar até ele, e o veredito sai tipado, aprovado, reprovado ou com
+ressalva. Nada disso bloqueia nada. Ao fechar uma Task com veredito e prova, o registro chama a
+checagem, avisa se reprovou e guarda o resultado junto da Task; quem decide continua sendo o humano.
+
+A mudança mais importante é a ressalva. Prova que ninguém consegue abrir, uma URL ou uma frase
+descrevendo o que foi feito, nunca mais vira aprovação automática: vira ressalva, porque ausência de
+prova não é prova de qualidade. Medido sobre as 323 Tasks que o Gate em prosa já tinha aprovado: 95
+(29,4%) seriam reprovadas pela máquina, 159 (49,2%) ficariam com ressalva por prova não verificável e
+só 69 (21,4%) passariam limpas. Os motivos das reprovações foram conferidos um a um à mão: 66
+apontavam para um arquivo de prova que não existe, 23 tinham travessão, 9 citavam marca do produto em
+peça interna e 3 tinham emoji. A regra de marca é dirigida por dado: sem o arquivo de regras da casa,
+essa checagem não opina.
+
+Honestidade sobre o caminho até aqui: a porta só foi ligada depois de cinco rodadas de conserto de
+alarme falso, todas sobre casos reais que ela acusava errado, caminho relativo resolvido contra a
+pasta errada, marca deduzida por tonalidade parecida, peça grande tratada como esqueleto vazio,
+arquivo íntegro acusado de corrompido e um visto simples confundido com emoji. Alarme falso em portão
+de qualidade custa mais caro que buraco, porque ensina a ignorar o portão. Por isso a bateria ganhou
+também checks de NÃO alarme, e não só a prova pelo negativo.
+
 ## [1.82.1] - 2026-09-18
 
 Conserto pequeno na versao anterior: o aviso de estouro de orcamento (teto cumulativo por

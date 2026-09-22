@@ -446,6 +446,31 @@ if ($Specialist -eq "alia") {
   $agentId = ("$Client-$Specialist").ToLower()
 }
 
+# GATE-CHECK (TASK-782, porta de saida em maquina do Quality Gate): Task fechada com -GateVerdict
+# (o veredito HUMANO) e com -Artifact roda os checks deterministicos de scripts/gate-check.ps1
+# ANTES de gravar, e anota o resultado em gate_check - nunca sobrescreve $GateVerdict. Fail-soft
+# total (try/catch): gate-check ausente, quebrado, ou erro de parse do JSON nunca impede o
+# registro da Task - so deixa gate_check vazio.
+$gateCheckField = $null
+if (-not [string]::IsNullOrWhiteSpace($GateVerdict) -and -not [string]::IsNullOrWhiteSpace($Artifact)) {
+  try {
+    $gcScript = Join-Path $PSScriptRoot "gate-check.ps1"
+    if (Test-Path -LiteralPath $gcScript) {
+      $gcOut = & $gcScript -Artifact $Artifact -Client $Client -StudioDir $studioRoot -Json
+      $gcObj = ($gcOut | Out-String).Trim() | ConvertFrom-Json
+      if ($gcObj.verdict -eq "FAIL") {
+        $motivos = @($gcObj.checks | Where-Object { $_.estado -eq "FAIL" } | ForEach-Object { $_.nome + ": " + $_.motivo }) -join " | "
+        Write-Host ("[GATE-CHECK] FAIL: " + $motivos)
+        $gateCheckField = "FAIL: " + $motivos
+      } else {
+        $gateCheckField = $gcObj.verdict
+      }
+    }
+  } catch {
+    # fail-soft: gate-check ausente/quebrado nunca impede o registro da Task (spec TASK-782).
+  }
+}
+
 $task = [PSCustomObject][ordered]@{
   id             = $newId
   client         = $Client
@@ -467,6 +492,7 @@ $task = [PSCustomObject][ordered]@{
  budget = $(if ($Budget -ge 0) { $Budget } else { $null })
  budget_exceeded = $budgetExceeded
  tokens_source = $(if ($tokensSource -ne "") { $tokensSource } else { $null })
+  gate_check     = $gateCheckField
   created        = $now
 }
 

@@ -84,6 +84,21 @@ Seis perguntas, todas inegociaveis. Reprovar uma e reprovar o Artifact.
 > confirma por git que o Artifact ligado a Task foi de fato PERSISTIDO (existe no disco e esta
 > versionado), retornando PASS/FAIL/CONCERN sem LLM.
 
+## Porta de saida em maquina (checks antes do julgamento)
+
+Antes do julgamento humano/LLM dos 6 criterios acima, `scripts/gate-check.ps1` (TASK-782, WARDEN)
+roda 6 checks deterministicos e sem rede sobre o Artifact declarado: existe (caminho no disco, com
+conteudo), travessao (zero em/en dash), emoji (zero emoji), marca (HTML de pasta de operacao do
+Studio nao pode citar a cor de marca do PRODUTO nem visual legado), minimo (peca nao pode ser stub
+vazio) e encoding (UTF-8 valido, sem mojibake). Nasceu de uma auditoria que mediu o motivo: das 466
+Tasks aprovadas com Artifact, 20 dos 100 HTML que existiam em disco tinham travessao e 5 tinham
+emoji - o Gate em prosa aprovava defeito que uma maquina pega de graca. FAIL de maquina e resultado
+NORMAL do Gate, nunca um acidente a esconder. Artifact que nao da pra verificar por caminho (URL,
+prosa, string sem arquivo real) vira CONCERN, NUNCA PASS - ausencia de prova nao e prova de
+qualidade. `scripts/register-task.ps1` chama o gate-check ao fechar Task com `-GateVerdict` e
+`-Artifact`, grava o resultado em `gate_check` e avisa em FAIL - nunca bloqueia o registro nem
+sobrescreve o veredito humano (`-GateVerdict` continua sendo quem decide).
+
 ## Resultado (verdict)
 
 Tres saidas possiveis, e nada entre elas. Todo verdict e registrado na Memory COM evidencia -

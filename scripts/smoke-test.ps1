@@ -64,6 +64,57 @@ function ReadText([string]$path) {
   }
 }
 
+# ReadTextDetailed (TASK-782, achado da coordenadora sobre o GUARD-NUM do README): ReadText()
+# acima devolve string vazia tanto pra "arquivo ausente" quanto pra "erro de leitura" (lock,
+# permissao) - quem chama nao consegue distinguir os 2 casos do 3o (leu, mas o CONTEUDO nao bate).
+# So usada onde a distincao IMPORTA pra mensagem do Check (nao substitui ReadText() nos outros
+# ~200 chamadores, mudanca cirurgica). Devolve Status: Missing|Error|Ok.
+function ReadTextDetailed([string]$path) {
+  if (-not (Test-Path -LiteralPath $path)) {
+    return [PSCustomObject]@{ Status = "Missing"; Text = ""; Message = "arquivo nao encontrado: " + $path }
+  }
+  $utf8 = New-Object System.Text.UTF8Encoding($false)
+  try {
+    $t = [System.IO.File]::ReadAllText($path, $utf8)
+    return [PSCustomObject]@{ Status = "Ok"; Text = $t; Message = "" }
+  } catch {
+    return [PSCustomObject]@{ Status = "Error"; Text = ""; Message = "erro ao ler " + $path + ": " + $_.Exception.Message }
+  }
+}
+
+# ReadTextDetailed - prova pelo negativo dos 3 casos (TASK-782), fixture isolada em $env:TEMP.
+$rtdFixRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("readtextdetailed-fx-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Force -Path $rtdFixRoot | Out-Null
+try {
+  $rtdUtf8 = New-Object System.Text.UTF8Encoding($false)
+
+  # (a) Missing: caminho que nao existe -> Status=Missing, mensagem cita o caminho.
+  $rtdMissingPath = Join-Path $rtdFixRoot "nao-existe.txt"
+  $rtdA = ReadTextDetailed $rtdMissingPath
+  Check "ReadTextDetailed: arquivo ausente -> Status=Missing, mensagem cita o caminho (prova pelo negativo 1/3)" (($rtdA.Status -eq "Missing") -and ($rtdA.Message -match [regex]::Escape($rtdMissingPath)))
+
+  # (b) Ok mas conteudo nao bate: arquivo real, texto que nao contem a frase esperada.
+  $rtdOkPath = Join-Path $rtdFixRoot "existe-mas-nao-bate.txt"
+  [System.IO.File]::WriteAllText($rtdOkPath, "conteudo qualquer, sem a frase esperada", $rtdUtf8)
+  $rtdB = ReadTextDetailed $rtdOkPath
+  Check "ReadTextDetailed: arquivo existe e le certo -> Status=Ok, texto devolvido integro (prova pelo negativo 2/3)" (($rtdB.Status -eq "Ok") -and ($rtdB.Text -eq "conteudo qualquer, sem a frase esperada"))
+
+  # (c) Error: arquivo TRAVADO por outro handle (FileStream exclusivo, sem FileShare) - simula
+  # lock de outro processo, a mesma condicao que a coordenadora suspeitou (corrida de bateria em
+  # paralelo). ReadAllText tem que lancar, e o catch tem que virar Status=Error, nunca Missing/Ok.
+  $rtdLockPath = Join-Path $rtdFixRoot "travado.txt"
+  [System.IO.File]::WriteAllText($rtdLockPath, "conteudo original", $rtdUtf8)
+  $rtdLockStream = [System.IO.File]::Open($rtdLockPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+  try {
+    $rtdC = ReadTextDetailed $rtdLockPath
+    Check "ReadTextDetailed: arquivo travado por outro handle (FileShare.None) -> Status=Error, nunca Missing/Ok silencioso (prova pelo negativo 3/3)" ($rtdC.Status -eq "Error") ("Status devolvido: " + $rtdC.Status)
+  } finally {
+    $rtdLockStream.Close()
+  }
+} finally {
+  Remove-Item -LiteralPath $rtdFixRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 
 Write-Host "=== Alia Flow Smoke Test ==="
 Write-Host ("root: " + $root)
@@ -5408,6 +5459,146 @@ $leakedPathsMissing = @($leakedPaths13 | Where-Object { $rootGitignoreTxt -notma
 Check "Guard: .gitignore da oficina cobre os 13 caminhos internos que vazavam no repo publico (TASK-691)" ($leakedPathsMissing.Count -eq 0) ("faltando: " + ($leakedPathsMissing -join ", "))
 
 
+
+# --- Gate-check: a porta de saida em maquina (TASK-782) ---
+# 4 checks, todos provados pelo negativo (fixture isolada em $env:TEMP, nunca em studio.example).
+# (d) e o unico que toca um arquivo REAL do motor (scripts/gate-check.ps1) - renomeia, prova o
+# fail-soft, desfaz no finally (mesmo metodo do proprio WARDEN: quebra, confere, desfaz).
+$gcFixRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("gatecheck-fx-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Force -Path $gcFixRoot | Out-Null
+try {
+  $utf8Gc = New-Object System.Text.UTF8Encoding($false)
+  $gcEmDash = [char]0x2014
+  $gcOkBody = "<html><body><h1>Titulo</h1><p>" + ("conteudo real de verdade " * 40) + "</p></body></html>"
+  $gcDashBody = $gcOkBody.Replace("Titulo", "Titulo " + $gcEmDash + " com travessao")
+  [System.IO.File]::WriteAllText((Join-Path $gcFixRoot "dash.html"), $gcDashBody, $utf8Gc)
+  $gcScript = Join-Path $root "scripts\gate-check.ps1"
+
+  # (a) HTML com travessao -> FAIL
+  $gcOutA = & $gcScript -Artifact (Join-Path $gcFixRoot "dash.html") -NoLog -Json
+  $gcObjA = ($gcOutA | Out-String).Trim() | ConvertFrom-Json
+  Check "Gate-check: HTML com travessao reprova (prova pelo negativo)" ($gcObjA.verdict -eq "FAIL")
+
+  # (b) arquivo inexistente -> FAIL no check "existe"
+  $gcOutB = & $gcScript -Artifact (Join-Path $gcFixRoot "nao-existe.html") -NoLog -Json
+  $gcObjB = ($gcOutB | Out-String).Trim() | ConvertFrom-Json
+  $gcExisteB = $gcObjB.checks | Where-Object { $_.nome -eq "existe" }
+  Check "Gate-check: artifact inexistente reprova no check existe" (($gcObjB.verdict -eq "FAIL") -and ($gcExisteB.estado -eq "FAIL"))
+
+  # (c) artifact URL -> CONCERN, nunca PASS (prova nao verificavel por caminho)
+  $gcOutC = & $gcScript -Artifact "https://exemplo.invalido/pagina" -NoLog -Json
+  $gcObjC = ($gcOutC | Out-String).Trim() | ConvertFrom-Json
+  Check "Gate-check: artifact URL vira CONCERN, nunca PASS" ($gcObjC.verdict -eq "CONCERN")
+
+  # (e) BUG 1 (achado pela Alia, TASK-782): caminho relativo tem que resolver contra o diretorio de
+  # TRABALHO (cwd), nunca contra a pasta do script - rodar de um cwd DIFERENTE do script com um
+  # caminho relativo valido tem que dar PASS no check existe.
+  $gcCwdBefore = Get-Location
+  try {
+    Set-Location -LiteralPath $gcFixRoot
+    $gcOutE = & $gcScript -Artifact "dash.html" -Kind code -NoLog -Json
+    $gcObjE = ($gcOutE | Out-String).Trim() | ConvertFrom-Json
+    $gcExisteE = $gcObjE.checks | Where-Object { $_.nome -eq "existe" }
+    Check "Gate-check: caminho relativo resolve contra o cwd, nunca contra a pasta do script (prova pelo negativo do BUG 1)" ($gcExisteE.estado -eq "PASS")
+  } finally {
+    Set-Location -LiteralPath $gcCwdBefore
+  }
+
+  # (f) marca e DIRIGIDO POR DADO (TASK-782): nenhuma cor/Client real do motor - fixture com
+  # brand-rules.json FICTICIO (nomes/cores inventados, nunca a paleta real de nenhum operador).
+  # Uma heuristica por tonalidade (sem lista/fonte) ja foi removida daqui por dar alarme falso.
+  New-Item -ItemType Directory -Force -Path (Join-Path $gcFixRoot "opportunities") | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $gcFixRoot "studio") | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $gcFixRoot "clients\acme\artifacts") | Out-Null
+  $gcBrandRules = [ordered]@{
+    surfaces = @(
+      [ordered]@{ name = "cliente-exemplo-ambiguo"; pathPattern = "/clients/acme/artifacts/"; forbidden = @("#123456"); level = "concern"; motivo = "confirmar com o time" },
+      [ordered]@{ name = "operacao"; pathPattern = "/opportunities/|/docs/"; forbidden = @("#123456"); level = "fail"; motivo = "cor proibida em superficie de operacao (fixture)" }
+    )
+  }
+  [System.IO.File]::WriteAllText((Join-Path $gcFixRoot "studio\brand-rules.json"), ($gcBrandRules | ConvertTo-Json -Depth 5), $utf8Gc)
+
+  $gcApprovedBody = $gcOkBody.Replace("Titulo", "Titulo com cor aprovada #abcabc")
+  [System.IO.File]::WriteAllText((Join-Path $gcFixRoot "opportunities\aprovado.html"), $gcApprovedBody, $utf8Gc)
+  $gcOutF = & $gcScript -Artifact (Join-Path $gcFixRoot "opportunities\aprovado.html") -StudioDir $gcFixRoot -NoLog -Json
+  $gcObjF = ($gcOutF | Out-String).Trim() | ConvertFrom-Json
+  $gcMarcaF = $gcObjF.checks | Where-Object { $_.nome -eq "marca" }
+  Check "Gate-check: peca com cor FORA da lista proibida do brand-rules.json (fixture) NAO alarma marca (prova do nao-alarme)" ($gcMarcaF.estado -eq "PASS")
+
+  # (f2) sem brand-rules.json nenhum (StudioDir sem o arquivo) -> SKIP, NUNCA FAIL.
+  $gcOutF2 = & $gcScript -Artifact (Join-Path $gcFixRoot "opportunities\aprovado.html") -NoLog -Json
+  $gcObjF2 = ($gcOutF2 | Out-String).Trim() | ConvertFrom-Json
+  $gcMarcaF2 = $gcObjF2.checks | Where-Object { $_.nome -eq "marca" }
+  Check "Gate-check: sem brand-rules.json nenhum, marca vira SKIP (nunca FAIL) - motor sai limpo pra qualquer operador" ($gcMarcaF2.estado -eq "SKIP")
+
+  # (g) achado da coordenadora sobre MINIMO (auditoria a mao dos 103 FAIL): arquivo GRANDE com
+  # pouco texto visivel (slide/post com bastante markup/imagem em volta) nao e stub.
+  $gcBigPadding = ("<!-- " + ("x" * 3000) + " -->")
+  $gcBigLittleTextBody = "<html><body><h1>Oi</h1><p>pouco texto</p>" + $gcBigPadding + "</body></html>"
+  [System.IO.File]::WriteAllText((Join-Path $gcFixRoot "grande-pouco-texto.html"), $gcBigLittleTextBody, $utf8Gc)
+  $gcOutG = & $gcScript -Artifact (Join-Path $gcFixRoot "grande-pouco-texto.html") -NoLog -Json
+  $gcObjG = ($gcOutG | Out-String).Trim() | ConvertFrom-Json
+  $gcMinimoG = $gcObjG.checks | Where-Object { $_.nome -eq "minimo" }
+  Check "Gate-check: arquivo GRANDE com pouco texto visivel NAO alarma minimo (prova do nao-alarme)" ($gcMinimoG.estado -eq "PASS")
+
+  # (h) achado da coordenadora sobre ENCODING: arquivo UTF-8 valido que CONTEM a string "Ã"
+  # (documento que fala sobre o assunto) nao pode alarmar - so decodificacao que falha de verdade.
+  $gcAContent = "Documento sobre o caractere Ã e o defeito de mojibake, tudo em UTF-8 valido."
+  [System.IO.File]::WriteAllText((Join-Path $gcFixRoot "fala-sobre-a-til.md"), $gcAContent, $utf8Gc)
+  $gcOutH = & $gcScript -Artifact (Join-Path $gcFixRoot "fala-sobre-a-til.md") -NoLog -Json
+  $gcObjH = ($gcOutH | Out-String).Trim() | ConvertFrom-Json
+  $gcEncodingH = $gcObjH.checks | Where-Object { $_.nome -eq "encoding" }
+  Check "Gate-check: arquivo UTF-8 valido contendo a string Ã NAO alarma encoding (prova do nao-alarme)" ($gcEncodingH.estado -eq "PASS")
+
+  # (i) mesma cor proibida (fixture), superficie AMBIGUA (nivel concern no brand-rules.json) vira
+  # CONCERN; a MESMA peca em superficie INEQUIVOCA (nivel fail) vira FAIL. Prova que o NIVEL vem do
+  # DADO (brand-rules.json), nunca de logica fixa no script.
+  $gcForbiddenBody = $gcOkBody.Replace("conteudo", "cor #123456 conteudo")
+  [System.IO.File]::WriteAllText((Join-Path $gcFixRoot "clients\acme\artifacts\exemplo.html"), $gcForbiddenBody, $utf8Gc)
+  [System.IO.File]::WriteAllText((Join-Path $gcFixRoot "opportunities\exemplo2.html"), $gcForbiddenBody, $utf8Gc)
+  $gcOutI1 = & $gcScript -Artifact (Join-Path $gcFixRoot "clients\acme\artifacts\exemplo.html") -StudioDir $gcFixRoot -NoLog -Json
+  $gcObjI1 = ($gcOutI1 | Out-String).Trim() | ConvertFrom-Json
+  $gcOutI2 = & $gcScript -Artifact (Join-Path $gcFixRoot "opportunities\exemplo2.html") -StudioDir $gcFixRoot -NoLog -Json
+  $gcObjI2 = ($gcOutI2 | Out-String).Trim() | ConvertFrom-Json
+  Check "Gate-check: nivel concern do brand-rules.json (fixture) vira CONCERN, nivel fail (mesma cor, outra superficie) vira FAIL" (($gcObjI1.verdict -eq "CONCERN") -and ($gcObjI2.verdict -eq "FAIL"))
+
+  # (j) achado da coordenadora sobre EMOJI (auditoria a mao, 5 de 7 falsos): visto (checkmark,
+  # U+2713) usado como marcador de lista e elemento tipografico, NAO emoji - nao pode reprovar.
+  # Pictograma de verdade (ex. U+1F3AF alvo) continua reprovando.
+  $gcCheckBody = $gcOkBody.Replace("Titulo", "Titulo com marcador " + [char]0x2713 + " de lista")
+  [System.IO.File]::WriteAllText((Join-Path $gcFixRoot "checkmark.html"), $gcCheckBody, $utf8Gc)
+  $gcRealEmojiBody = $gcOkBody.Replace("Titulo", "Titulo com " + [char]::ConvertFromUtf32(0x1F3AF))
+  [System.IO.File]::WriteAllText((Join-Path $gcFixRoot "realemoji.html"), $gcRealEmojiBody, $utf8Gc)
+  $gcOutJ1 = & $gcScript -Artifact (Join-Path $gcFixRoot "checkmark.html") -NoLog -Json
+  $gcObjJ1 = ($gcOutJ1 | Out-String).Trim() | ConvertFrom-Json
+  $gcEmojiJ1 = $gcObjJ1.checks | Where-Object { $_.nome -eq "emoji" }
+  $gcOutJ2 = & $gcScript -Artifact (Join-Path $gcFixRoot "realemoji.html") -NoLog -Json
+  $gcObjJ2 = ($gcOutJ2 | Out-String).Trim() | ConvertFrom-Json
+  $gcEmojiJ2 = $gcObjJ2.checks | Where-Object { $_.nome -eq "emoji" }
+  Check "Gate-check: visto (checkmark) como marcador de lista NAO reprova emoji (prova do nao-alarme); pictograma de verdade continua reprovando" (($gcEmojiJ1.estado -ne "FAIL") -and ($gcEmojiJ2.estado -eq "FAIL"))
+
+  # (d) gate-check ausente/quebrado -> register-task fecha a Task igual (fail-soft)
+  $gcBakName = (Split-Path -Leaf $gcScript) + ".fx-bak"
+  Rename-Item -LiteralPath $gcScript -NewName $gcBakName -ErrorAction Stop
+  try {
+    $fxSquadDir = Join-Path $gcFixRoot "clients\fx\squad"
+    New-Item -ItemType Directory -Force -Path $fxSquadDir | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $fxSquadDir "squad.yaml"), "members:`n  - id: dev`n", $utf8Gc)
+    $fxState = Join-Path $gcFixRoot "state.json"
+    [System.IO.File]::WriteAllText($fxState, '{"studio":"fixture","tasks":[]}', $utf8Gc)
+    $regScript = Join-Path $root "scripts\register-task.ps1"
+    & $regScript -Client fx -Title "fixture gate-check ausente" -Project "fx" -Type pesquisa -Specialist dev -Artifact (Join-Path $gcFixRoot "dash.html") -Status done -GateVerdict PASS -StateFile $fxState *> $null
+    $gcRegExit = $LASTEXITCODE
+    $fxAfter = (Get-Content -LiteralPath $fxState -Raw | ConvertFrom-Json)
+    Check "Register-task: gate-check ausente nao impede o registro (fail-soft)" (($gcRegExit -eq 0) -and (@($fxAfter.tasks).Count -eq 1))
+  } finally {
+    Rename-Item -LiteralPath (Join-Path $root ("scripts\" + $gcBakName)) -NewName (Split-Path -Leaf $gcScript) -ErrorAction SilentlyContinue
+  }
+} finally {
+  Remove-Item -LiteralPath $gcFixRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+
 # --- Numero publico: README.md (produto) e GUARD-NUM (oficina) - cada um trava so contra o
 # total REAL do CONTEXTO onde faz sentido (M5) ---
 # Dois numeros diferentes e legitimos, nunca somar (engine/governance/client-truth.md, LEI 2):
@@ -5425,11 +5616,15 @@ Check "Guard: .gitignore da oficina cobre os 13 caminhos internos que vazavam no
 # oficina - inflava o numero do README pro valor da oficina (180), o que reprovava o proprio
 # smoke DENTRO do pacote (o produto tem so 161 checks - CLAIMS.md e o que ele guarda nao viajam).
 # v1.42.5 separou: cada numero trava so contra o total do contexto onde e medido de verdade.
-# Fica perto do fim de proposito: nada depois deste bloco chama Check(), entao o total que o
-# smoke VAI reportar em "Checks: X PASS, Y FAIL" e exatamente ($script:pass + $script:fail) ATE
-# aqui, mais o UNICO Check() real deste bloco (README no pacote/publico OU GUARD-NUM na oficina -
-# nunca os dois ao mesmo tempo, $numChecksNesteBloco e sempre 1) - calculado UMA vez antes de
-# rodar, assim compara contra o MESMO total final previsto, nao contra o total parcial no meio.
+# MOVIDO PRO FIM DE VERDADE (TASK-782, achado do CANON): ate a 1.83.0 este bloco ficava ANTES do
+# bloco de gate-check, que chegou depois e adicionou 11 Check() sem que ninguem notasse - o guard
+# comparou 509 (parcial, ANTES do gate-check) contra 509 do CLAIMS.md e passou verde, enquanto o
+# total real no fim era 520. A causa nao era so a posicao: era o mecanismo permitir isso em
+# silencio. Dois consertos, nao um: (1) este bloco agora roda por ULTIMO de verdade (so falta o
+# proprio resumo "Checks: N PASS" depois dele), entao $expectedFinalCount usa o total FINAL, nao
+# um parcial; (2) o self-check logo abaixo prova ISSO estruturalmente, lendo o proprio arquivo
+# fonte e reprovando se algum Check()/Warn() novo for inserido depois deste bloco no futuro -
+# nao basta mover uma vez, tem que ficar impossivel esquecer de novo.
 Write-Host ""
 Write-Host "-- Numero publico: README.md (produto) + GUARD-NUM (oficina) vs total real do contexto (M5) --"
 $claimsPath = Join-Path $root "docs\CLAIMS.md"
@@ -5446,14 +5641,22 @@ $claimsExists = Test-Path -LiteralPath $claimsPath
 # por engano. $rootHasGit decide aqui, ANTES do total esperado, pra $expectedFinalCount previr
 # certo se o README vira Check real ou Warn.
 $rootHasGit = Test-Path -LiteralPath (Join-Path $root ".git")
-$numChecksNesteBloco = if ($claimsExists) { 1 } elseif ($rootHasGit) { 1 } else { 2 }  # oficina: 1 Check real (GUARD-NUM, README e so Warn); pacote/publico SEM .git: 2 Checks reais (README bate com o total + nenhum placeholder {{VERIFICACOES}} sobra, TASK-624); pacote/produto COM .git: 1 Check real (so o placeholder - README vira Warn, TASK-663)
+$numChecksNesteBloco = $(if ($claimsExists) { 1 } elseif ($rootHasGit) { 1 } else { 2 }) + 2  # oficina: 1 Check real (GUARD-NUM, README e so Warn); pacote/publico SEM .git: 2 Checks reais (README bate com o total + nenhum placeholder {{VERIFICACOES}} sobra, TASK-624); pacote/produto COM .git: 1 Check real (so o placeholder - README vira Warn, TASK-663); +2 SEMPRE (TASK-782): o self-check estrutural do GUARD-NUM + o check de visibilidade do README, os 2 rodam incondicional em todo contexto - contagem errada aqui e o MESMO furo que esta linha existe pra fechar
 $expectedFinalCount = $script:pass + $script:fail + $numChecksNesteBloco
 
 
 $readmePath = Join-Path $root "README.md"
-$readmeTxt = ReadText $readmePath
+$readmeRead = ReadTextDetailed $readmePath
+$readmeTxt = $readmeRead.Text
+# TASK-782 (achado da coordenadora): motivo ESPECIFICO por situacao, nunca um "-1" generico e
+# calado. 3 casos, 3 mensagens: ausente, erro de leitura, ou leu certo mas a frase nao bate.
+$readmeMotivoBase = switch ($readmeRead.Status) {
+  "Missing" { "README nao encontrado em " + $readmePath }
+  "Error"   { $readmeRead.Message }
+  default   { "" }  # "Ok": motivo especifico so decidido depois do regex (frase bate ou nao)
+}
 # Formato NOVO aprovado pelo CEO (README publico, 14/09/2026): "N verificacoes deterministicas
-# passam hoje" - aceita grafia acentuada e grafia lisa (c/\u00e7, o/\u00f5, i/\u00ed), mesma
+# passam hoje" - aceita grafia acentuada e grafia lisa (c/ç, o/õ, i/í), mesma
 # tecnica das outras checks deste arquivo (sequencia unicode do .NET regex, portavel
 # independente do encoding do .ps1). Formato LEGADO "(N na versao atual)" continua aceito - so
 # um dos dois precisa bater; se NENHUM bater, $readmeM.Success fica false e o Check abaixo
@@ -5474,9 +5677,17 @@ if ($UpdateReadme -and $readmeMToken.Success) {
 $readmeM = if ($readmeMNovo.Success) { $readmeMNovo } else { $readmeMLegado }
 $readmeVal = -1
 if ($readmeM.Success) { $readmeVal = [int]$readmeM.Groups[1].Value }
+if (($readmeRead.Status -eq "Ok") -and (-not $readmeM.Success)) {
+  $readmeMotivoBase = "frase de verificacoes nao encontrada no README (" + $readmePath + ")"
+}
+# Check INCONDICIONAL (nunca vira Warn, roda em todo contexto): prova que o BLOCO FINAL enxerga o
+# README no caminho esperado - o pedido direto da coordenadora, depois do FAIL "README.md diz -1"
+# que nao dizia POR QUE. Se isso reprovar, a mensagem cita o Status e o motivo especifico (arquivo
+# ausente, erro de leitura, ou o caminho resolvido) - nunca mais um -1 calado.
+Check "Numero publico: bloco final enxerga o README.md no caminho esperado (prova de visibilidade)" ($readmeRead.Status -eq "Ok") ("Status=" + $readmeRead.Status + "; caminho=" + $readmePath + $(if ($readmeMotivoBase) { "; motivo=" + $readmeMotivoBase } else { "" }))
 
 if ($claimsExists) {
-  Warn "Numero publico: README.md - contexto oficina tem mais checks que o produto, nunca vai bater; trava real e no pacote" $readmeM.Success ("README.md diz " + $readmeVal + "; verificado a serio por package-release.ps1 dentro do pacote/repo publico")
+  Warn "Numero publico: README.md - contexto oficina tem mais checks que o produto, nunca vai bater; trava real e no pacote" $readmeM.Success ($(if ($readmeM.Success) { "README.md diz " + $readmeVal } else { $readmeMotivoBase }) + "; verificado a serio por package-release.ps1 dentro do pacote/repo publico")
 } else {
   if ($UpdateReadme -and $readmeM.Success -and ($readmeVal -ne $expectedFinalCount)) {
     # Causa raiz do fossil (161 -> 179 -> 185): o numero era escrito a mao, muda toda vez que um
@@ -5502,7 +5713,7 @@ if ($claimsExists) {
   if ($rootHasGit) {
     Warn ("Numero publico: README.md - contexto COM .git (nao e onde -UpdateReadme escreveu o numero, TASK-663): README.md diz " + $readmeVal + "; total real DESTE contexto = " + $expectedFinalCount) (($readmeM.Success) -and ($readmeVal -eq $expectedFinalCount)) "comparacao so e blindada no contexto SEM .git onde -UpdateReadme escreve (package-release.ps1 linha 303+307); aqui os dois numeros sao legitimos e podem diferir por design"
   } else {
-    Check "Numero publico: README.md (formato novo ou legado) bate com o total real executado pelo smoke" (($readmeM.Success) -and ($readmeVal -eq $expectedFinalCount)) ("README.md diz " + $readmeVal + "; total real que o smoke vai reportar = " + $expectedFinalCount)
+    Check "Numero publico: README.md (formato novo ou legado) bate com o total real executado pelo smoke" (($readmeM.Success) -and ($readmeVal -eq $expectedFinalCount)) $(if (-not $readmeM.Success) { $readmeMotivoBase } else { "README.md diz " + $readmeVal + "; total real que o smoke vai reportar = " + $expectedFinalCount })
   }
   Check "Release: nenhum placeholder {{VERIFICACOES}} sobra no README (marcador publicado e vergonha na vitrine)" (-not ([regex]::IsMatch($readmeTxt, '\{\{VERIFICACOES\}\}')))
 }
@@ -5535,7 +5746,23 @@ if ($env:ALIA_SKIP_L57_SELFCHECK -eq "1") {
   # script inteiro (pior que um FAIL: nenhum check depois deste rodava). Pulado com honestidade.
   Warn "Numero publico: GUARD-NUM vs total real - pulado (CLAIMS.md ausente, doc interno)" $false "CLAIMS.md nao viaja no pacote/repo publico por LEI; nada a checar aqui"
 }
-
+# GUARD-NUM-FIM-DA-BATERIA (TASK-782): daqui pra baixo SO pode existir o self-check imediatamente
+# abaixo. Qualquer Check()/Warn() novo inserido depois desta linha (exceto ele mesmo) faz o
+# GUARD-NUM acima voltar a comparar contra um total PARCIAL sem que ninguem perceba - o mesmo
+# furo que o CANON achou na 1.83.0. A prova de que a comparacao continua correndo por ultimo e
+# ela se vigiar: le o PROPRIO arquivo fonte, acha este marcador, e reprova se sobrar Check(/Warn(
+# depois dele que nao seja este self-check.
+$selfSrcTxt = [System.IO.File]::ReadAllText($PSCommandPath)
+$selfMarkerIdx = $selfSrcTxt.IndexOf("# GUARD-NUM-FIM-DA-BATERIA")
+# auto-referencia: procurar pelo marcador de fim por STRING LITERAL contigua acharia a si mesma
+# nesta linha de codigo (que precisa mencionar o texto do marcador) antes do marcador real la
+# embaixo - por isso concatenado em 2 pedacos aqui, pra so existir INTEIRO em UM lugar do arquivo:
+# o comentario marcador de verdade, no fim de tudo.
+$selfCheckEndIdx = $selfSrcTxt.IndexOf("# FIM-DO-GUARD-NUM" + "-SELFCHECK")
+$restoDoArquivo = if ($selfMarkerIdx -ge 0 -and $selfCheckEndIdx -gt $selfMarkerIdx) { $selfSrcTxt.Substring($selfCheckEndIdx) } else { "" }
+$checksDepoisDoGuard = [regex]::Matches($restoDoArquivo, '(?m)^\s*(Check|Warn)\s+"')
+Check "GUARD-NUM: nenhum Check()/Warn() novo depois do guard de numero publico (prova estrutural, TASK-782)" (($selfMarkerIdx -ge 0) -and ($selfCheckEndIdx -gt $selfMarkerIdx) -and ($checksDepoisDoGuard.Count -eq 0)) ($checksDepoisDoGuard.Count.ToString() + " chamada(s) de Check/Warn encontrada(s) depois do guard - mova de volta pro fim, ou o numero publico (GUARD-NUM/README) vai comparar contra total PARCIAL de novo")
+# FIM-DO-GUARD-NUM-SELFCHECK
 
 
 # --- Resultado ---
