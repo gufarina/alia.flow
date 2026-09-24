@@ -18,6 +18,39 @@ testado na instancia viva (a instancia aplicada) antes de fechar. Um update = um
 reversivel. Fluxo: alterar engine -> bump VERSION -> entrada no CHANGELOG -> smoke-test-studio
 ALL GREEN -> tag.
 
+## [2.0.0] - 2026-09-24
+
+A Alia Flow 2.0 chega mais rapida e mais economica, com numeros que voce confere. Ela responde na
+hora: cada acao, que antes esperava de 426 a 1.050 milissegundos, agora leva 60 milissegundos. O
+texto que o motor carrega para comecar a trabalhar caiu 61% (de 18.873 para 7.343 bytes). A
+conferencia completa, que levava 279 segundos em 611 checagens, agora leva de 4,1 a 4,6 segundos.
+
+Toda entrega agora fecha com prova registrada: antes isso acontecia em pouco mais de 1 a cada 3
+tarefas (36,5%); na 2.0 e obrigatorio, sem prova a tarefa nao fecha.
+
+Nos mesmos pedidos reais, depois da dieta de tokens: num prototipo real de cliente, a 1.84
+reprovou (190 mil tokens, aumentou o raio que era para diminuir) e a 2.0 gastou 34% menos (125 mil
+tokens), com ressalva (o raio da tarefa ficou 1px acima do atual). No texto publico de uma pagina,
+a 1.84 ficou com ressalva (310 mil tokens, numeros sem fonte) e a 2.0 gastou 27% menos (227 mil
+tokens), aprovada de primeira. Ressalva sobre os dois numeros: a 2.0 rodou primeiro em cada par (a
+vantagem de cache ficou com a 1.84) e o brief da 2.0 no segundo pedido ja trazia a licao
+"infografico abstrato reprova".
+
+Como usar: a pasta v2/ chega junto deste pacote, ao lado do motor atual (que continua sendo o que
+responde por padrao). Abra uma copia do seu estudio, rode a 2.0 nela e compare com seus proprios
+olhos. Aprovado, a troca do seu estudio de verdade e um comando (`python v2/bin/migrate.py
+apply --source v2 --target <sua instancia>`), com backup automatico e um comando de volta
+(`python v2/bin/migrate.py undo --target <sua instancia>`).
+
+O que a 2.0 ainda nao faz: o modo gerente de time (Gateway) nao foi provado ao vivo; Codex e
+OpenCode seguem so contrato, sem sessao real ponta a ponta; a Laya (roteamento aprendido) perdeu
+nos 5 testes com dado real e fica opcional, nunca decidindo sozinha.
+
+Quem ja tem o Alia Flow instalado: rode `scripts/update-online.ps1` (ou `atualizar-alia.bat`) DUAS
+vezes em sequencia para receber a pasta v2/ (a primeira rodada atualiza o proprio script de
+atualizacao; a segunda traz a 2.0 - o motor atual em uso hoje nao e tocado). Prova da 2.0:
+`python v2/proof/check.py`.
+
 ## [1.83.0] - 2026-09-21
 
 O Quality Gate ganhou uma porta de saída em máquina. Antes do julgamento em prosa, seis checagens

@@ -42,7 +42,7 @@ $zipUrl = "https://github.com/$repo/archive/refs/heads/$branch.zip"
 $isCheck = $Check -or $DryRun
 
 # --- O que e PRODUTO (atualiza) vs o que e do OPERADOR (nunca aparece aqui, nunca e tocado) ---
-$engineDirs   = @("engine","scripts","skills","onboarding","optional-mcps")
+$engineDirs   = @("engine","scripts","skills","onboarding","optional-mcps","v2")
 # .claude/docs/.opencode/.agents entram como MERGE (nao espelho), mesmo conceito de update-engine.ps1
 # (v1.65.0): soma o que o pacote traz, NUNCA apaga arquivo que so existe localmente (customizacao
 # do operador, ex: Specialist gerado por squad-bridge). Buraco B/C (TASK-621): Copy-Engine antigo

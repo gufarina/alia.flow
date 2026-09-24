@@ -91,7 +91,7 @@ if ($Check) {
 Write-Host ""
 
 # --- O que e PRODUTO (atualiza) vs o que e SEU (nunca aparece aqui, logo nunca e tocado) ---
-$engineDirs   = @("engine","scripts","skills","onboarding","optional-mcps")          # 100% produto: espelha
+$engineDirs   = @("engine","scripts","skills","onboarding","optional-mcps","v2")     # 100% produto: espelha
 # .opencode e .agents entram como MERGE (nao espelho) de proposito, v1.65.0: o produto atualiza o
 # comando /alia e a skill $alia, mas .opencode/agent/ pode conter Specialists que a INSTANCIA gerou
 # localmente (squad-bridge -Mode opencode) - espelhar apagaria material do operador.
@@ -181,7 +181,7 @@ foreach ($d in $engineDirs) {
   $dst = Join-Path $root $d
   # rsi/_archive e rsi/_candidates sao ESTADO LOCAL DA INSTANCIA (lineage de RSI desta
   # instalacao), nao motor - nunca propagados nem apagados pelo espelho (ver engine/rsi/rsi.md).
-  $excl = if ($d -eq "engine") { @("rsi\_archive","rsi\_candidates") } else { @() }
+  $excl = if ($d -eq "engine") { @("rsi\_archive","rsi\_candidates") } elseif ($d -eq "v2") { @("proof\__pycache__","proof\_sandbox","proof\_sandbox2","proof\_sandbox_check","proof\_sandbox_task") } else { @() }
   $diff = Get-MirrorDiff $src $dst $excl
   $n = $diff.New.Count; $c = $diff.Changed.Count; $r = $diff.Removed.Count
   Write-Host ("    [motor]   " + $d + "\ (espelho diff-only): " + $n + " NOVO, " + $c + " ALTERADO, " + $r + " REMOVIDO")
@@ -294,7 +294,21 @@ if ($Check) {
 
 Write-Host "3/3 Validando esta instancia depois do update..."
 Write-Host ""
-& (Join-Path $root "scripts\smoke-test-studio.ps1")
+# TASK-782 (achado da coordenadora): a validacao pos-update chamava scripts/smoke-test-studio.ps1,
+# que e o espelho de teste PRIVADO do Studio Farina (titulo do proprio arquivo: "Smoke Test -
+# Studio Farina") - nunca viaja no pacote/produto (esta na lista de caminhos internos do .gitignore
+# e de check-public-surface.ps1). Quem instala a 1.83.0 nao tem esse arquivo: a copia dava certo e
+# a validacao morria com "comando nao encontrado", fazendo update bom parecer update quebrado.
+# Medido: smoke-test.ps1 (generico, sem dado de nenhum Client, viaja em TODO pacote) ja e desenhado
+# pra rodar tanto na oficina quanto contra uma "instancia ja aplicada" (comentarios do proprio
+# arquivo, secao README/GUARD-NUM) - e a validacao certa aqui, nao um remendo do studio-farina.
+$validationScript = Join-Path $root "scripts\smoke-test.ps1"
+if (-not (Test-Path -LiteralPath $validationScript)) {
+  Write-Host ("[RESSALVA] Validacao pos-update NAO RODOU nesta instancia: arquivo ausente -> " + $validationScript)
+  Write-Host "=== MOTOR ATUALIZADO (copia concluida). Validacao pos-update pulada - veja a ressalva acima. Seus clientes e dados intactos. ==="
+  exit 0
+}
+& $validationScript
 $rc = $LASTEXITCODE
 Write-Host ""
 if ($rc -eq 0) {
