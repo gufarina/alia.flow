@@ -11,11 +11,42 @@ from __future__ import annotations
 import json
 import os
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-
-
 def project_dir() -> str:
-    return os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
+    """CLAUDE_PROJECT_DIR explicito primeiro, senao a ancestral mais proxima do cwd com
+    state.json, senao o cwd (ultimo recurso) - NUNCA a posicao deste arquivo no disco (mesma
+    regra de studio_root(), que e so outro nome para esta funcao)."""
+    return studio_root()
+
+
+def find_ancestor_with_state_json(start: str | None = None) -> str | None:
+    """Sobe a arvore de pastas a partir de `start` (default cwd) procurando a ancestral MAIS
+    PROXIMA que tenha state.json. Nunca deriva de onde o ARQUIVO deste modulo mora em disco -
+    o motor (v2/) e copiado para profundidades diferentes (oficina em clients/alia-flow-lab/v2,
+    raiz do studio em v2/, produto publico em v2/), e a posicao do script no disco nunca diz
+    onde o studio vive (achado do CEO, 24/09/2026: client.py apontava squads_dir para
+    C:\\Users\\<usuario>\\.claude\\squads depois de uma migracao, porque a conta era feita a
+    partir de __file__)."""
+    d = os.path.abspath(start or os.getcwd())
+    for _ in range(20):
+        if os.path.isfile(os.path.join(d, "state.json")):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    return None
+
+
+def studio_root() -> str:
+    """Raiz do studio: CLAUDE_PROJECT_DIR explicito primeiro, senao a ancestral mais proxima
+    do cwd com state.json, senao o cwd (ultimo recurso) - NUNCA a posicao do script no disco."""
+    project = os.environ.get("CLAUDE_PROJECT_DIR")
+    if project:
+        return project
+    found = find_ancestor_with_state_json()
+    if found:
+        return found
+    return os.getcwd()
 
 
 def ledger_path() -> str:
@@ -25,10 +56,7 @@ def ledger_path() -> str:
     explicit = os.environ.get("ALIA_LEDGER_PATH")
     if explicit:
         return explicit
-    project = os.environ.get("CLAUDE_PROJECT_DIR")
-    if project:
-        return os.path.join(project, "activity.jsonl")
-    return os.path.join(_HERE, "..", "..", "studio", "activity.jsonl")
+    return os.path.join(project_dir(), "activity.jsonl")
 
 
 def state_path() -> str:
@@ -37,10 +65,7 @@ def state_path() -> str:
     explicit = os.environ.get("ALIA_STATE_PATH")
     if explicit:
         return explicit
-    project = os.environ.get("CLAUDE_PROJECT_DIR")
-    if project:
-        return os.path.join(project, "state.json")
-    return os.path.join(_HERE, "..", "..", "studio", "state.json")
+    return os.path.join(project_dir(), "state.json")
 
 
 def current_task_path() -> str:

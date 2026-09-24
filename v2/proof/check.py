@@ -289,6 +289,26 @@ check("nenhum arquivo do motor v2 usa travessao (regra da casa)", len(ofensores)
 
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
+print("\n=== guarda (TASK-810): client.py resolve STUDIO_ROOT pelo cwd/CLAUDE_PROJECT_DIR, nunca pela posicao do script ===")
+_raiz_teste = _sandbox_tempdir("alia-v2-check-studioroot-")
+_studio_fake = os.path.join(_raiz_teste, "studio-fake")
+_cwd_fundo = os.path.join(_studio_fake, "a", "b", "c")
+os.makedirs(_cwd_fundo, exist_ok=True)
+with open(os.path.join(_studio_fake, "state.json"), "w", encoding="utf-8") as fh:
+    fh.write("{}")
+_script_em_outro_lugar = os.path.join(_raiz_teste, "onde-o-motor-mora", "v2")
+os.makedirs(os.path.join(_script_em_outro_lugar, "bin"), exist_ok=True)
+os.makedirs(os.path.join(_script_em_outro_lugar, "lib"), exist_ok=True)
+shutil.copyfile(os.path.join(V2, "bin", "client.py"), os.path.join(_script_em_outro_lugar, "bin", "client.py"))
+shutil.copyfile(os.path.join(V2, "lib", "paths.py"), os.path.join(_script_em_outro_lugar, "lib", "paths.py"))
+_env = dict(os.environ)
+_env.pop("CLAUDE_PROJECT_DIR", None)
+_proc = subprocess.run([sys.executable, os.path.join(_script_em_outro_lugar, "bin", "client.py"), "list"],
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=_cwd_fundo, env=_env)
+_saida = json.loads(_proc.stdout.decode("utf-8"))
+check("client.py rodado de OUTRA profundidade acha a raiz pelo cwd (state.json), nao pela posicao do script",
+      _saida.get("squads_dir", "") == os.path.join(_studio_fake, ".claude", "squads"), str(_saida))
+
 print("\n=== guarda: nenhum _sandbox* sobrevive dentro de v2/ ===")
 # Causa raiz do vazamento medido pelo CEO (24/09): test_task.py recriava
 # proof/_sandbox_task/ DENTRO de v2/ com uma COPIA do state.json real, e o

@@ -43,8 +43,11 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 V2 = os.path.dirname(HERE)
-ALIA_FLOW_LAB = os.path.dirname(V2)
-STUDIO_ROOT = os.path.dirname(os.path.dirname(ALIA_FLOW_LAB))
+sys.path.insert(0, os.path.join(V2, "lib"))
+import paths as _paths  # noqa: E402  (v2/lib/paths.py - raiz do studio via CLAUDE_PROJECT_DIR ou
+# a ancestral do cwd com state.json, NUNCA via posicao do script: v2/ e copiado para
+# profundidades diferentes - oficina, raiz do studio, produto - achado do CEO 24/09/2026)
+STUDIO_ROOT = _paths.studio_root()
 
 DEFAULT_SQUADS_DIR = os.path.join(STUDIO_ROOT, ".claude", "squads")
 DEFAULT_AGENTS_DIR = os.path.join(STUDIO_ROOT, ".claude", "agents")
