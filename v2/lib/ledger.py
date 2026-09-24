@@ -48,15 +48,19 @@ def _index_path(path: str) -> str:
 
 
 def _load_index(path: str) -> dict:
+    """`agent_ids` vive como `set()` EM MEMORIA (nunca lista) - checar pertencimento numa
+    lista que so cresce e O(n) por chamada, O(n^2) num rebuild de N eventos (era o gargalo
+    real por tras da prova de 50 mil linhas, TASK-812/2.0.1: 50 mil checagens contra uma
+    lista de ate 50 mil itens). No disco continua lista (JSON nao serializa set)."""
     idx_path = _index_path(path)
     if not os.path.exists(idx_path):
-        return {"agent_ids": [], "session_prefixes": {}}
+        return {"agent_ids": set(), "session_prefixes": {}}
     try:
         with open(idx_path, "r", encoding="utf-8") as fh:
             data = json.load(fh)
     except (json.JSONDecodeError, OSError):
-        return {"agent_ids": [], "session_prefixes": {}}
-    data.setdefault("agent_ids", [])
+        return {"agent_ids": set(), "session_prefixes": {}}
+    data["agent_ids"] = set(data.get("agent_ids") or [])
     data.setdefault("session_prefixes", {})
     return data
 
@@ -64,32 +68,52 @@ def _load_index(path: str) -> dict:
 def _save_index(path: str, idx: dict) -> None:
     idx_path = _index_path(path)
     os.makedirs(os.path.dirname(idx_path) or ".", exist_ok=True)
+    on_disk = dict(idx)
+    on_disk["agent_ids"] = sorted(idx.get("agent_ids") or [])
     with open(idx_path, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump(idx, fh, ensure_ascii=False)
+        json.dump(on_disk, fh, ensure_ascii=False)
 
 
-def _update_index(path: str, event: dict) -> None:
-    idx = _load_index(path)
+def _apply_event_to_index(idx: dict, event: dict) -> None:
+    """Mutacao PURA em memoria, sem I/O - reusada por _update_index (1 evento, tempo real,
+    load+apply+save) e por _rebuild_index (N eventos, um load/save so no fim). Antes desta
+    separacao, _rebuild_index chamava a versao com I/O por evento - com 50 mil linhas isso
+    era 50 mil leituras+escritas do idx.json (achado do CEO/prova de performance, 2.0.1)."""
     if event.get("event") == "post_agent" and event.get("agent_id"):
-        if event["agent_id"] not in idx["agent_ids"]:
-            idx["agent_ids"].append(event["agent_id"])
+        idx["agent_ids"].add(event["agent_id"])
     session_id = event.get("session_id")
     agent_type = event.get("agent_type")
     if session_id and agent_type:
         lst = idx["session_prefixes"].setdefault(session_id, [])
         if agent_type not in lst:
             lst.append(agent_type)
+    # TASK-812/2.0.1: a trava de fim (Stop) precisa da ULTIMA entrega (post_agent) de cada
+    # sessao sem escanear o ledger inteiro a cada Stop - so o indice, O(1).
+    if event.get("event") == "post_agent" and session_id:
+        idx["_post_agent_seq"] = idx.get("_post_agent_seq", 0) + 1
+        idx.setdefault("session_last_post_agent", {})[session_id] = {
+            "task_id": event.get("task_id"),
+            "seq": idx["_post_agent_seq"],
+        }
+
+
+def _update_index(path: str, event: dict) -> None:
+    idx = _load_index(path)
+    _apply_event_to_index(idx, event)
     _save_index(path, idx)
 
 
 def _rebuild_index(path: str) -> dict:
     """Reconstroi o indice lendo o ledger 1 unica vez (ledger antigo, gravado antes deste
-    indice existir, ou indice apagado). Depois desta chamada, o indice fica ao lado do
-    ledger e as proximas leituras nunca mais escaneiam o arquivo inteiro."""
+    indice existir, ou indice apagado). Aplica todo evento EM MEMORIA e so grava o idx.json
+    UMA VEZ no fim - N leituras+escritas do sidecar por rebuild (uma por evento) virava o
+    proprio gargalo que o indice existe pra evitar; medido com ledger de 50 mil linhas."""
+    idx = _load_index(path)
     for ev in read_events(path):
         if ev.get("event") in ("pre_agent", "post_agent"):
-            _update_index(path, ev)
-    return _load_index(path)
+            _apply_event_to_index(idx, ev)
+    _save_index(path, idx)
+    return idx
 
 
 def read_events(path: str) -> list[dict]:
@@ -133,6 +157,27 @@ def session_has_agent_prefix(path: str, session_id: str, prefix: str) -> bool:
         if str(agent_type).lower().startswith(prefix):
             return True
     return False
+
+
+def session_last_post_agent(path: str, session_id: str) -> dict | None:
+    """Ultima entrega (post_agent) desta sessao - {"task_id":..., "seq": N} - lida SO do
+    indice (nunca o ledger inteiro). None se a sessao nunca teve um post_agent. `seq` e um
+    contador monotonico global de post_agent (identifica UMA entrega, nunca se repete)."""
+    idx = _load_index(path) if os.path.exists(_index_path(path)) else _rebuild_index(path)
+    return idx.get("session_last_post_agent", {}).get(session_id)
+
+
+def delivery_already_notified(path: str, session_id: str, seq: int) -> bool:
+    """True se a trava de fim ja avisou sobre ESTA entrega (seq) desta sessao - "uma vez por
+    entrega", nunca repete o aviso pra mesma entrega mesmo que o Stop dispare de novo."""
+    idx = _load_index(path) if os.path.exists(_index_path(path)) else _rebuild_index(path)
+    return idx.get("session_notified_seq", {}).get(session_id) == seq
+
+
+def mark_delivery_notified(path: str, session_id: str, seq: int) -> None:
+    idx = _load_index(path) if os.path.exists(_index_path(path)) else _rebuild_index(path)
+    idx.setdefault("session_notified_seq", {})[session_id] = seq
+    _save_index(path, idx)
 
 
 if __name__ == "__main__":

@@ -1,17 +1,25 @@
 #!/usr/bin/env python3
 """Despachante unico do motor 2.0 (modulo 8, guard; modulo 4, ledger).
 
-Le UM evento de hook do Claude Code pelo stdin (JSON) e faz 2 coisas, nunca
+Le UM evento de hook do Claude Code pelo stdin (JSON) e faz 3 coisas, nunca
 mais que isso:
 
 1. Ledger (PreToolUse/PostToolUse/SubagentStop de Agent e Task): grava em
    activity.jsonl quem executou e, se o payload trouxer uso, o custo.
 2. Guard (PreToolUse de Write, Edit, Bash, Agent, Task): as 4 negacoes do
    modulo 8. So PreToolUse decide; os outros eventos so alimentam o ledger.
+3. Trava de fim (Stop, TASK-812): se ESTA sessao tocou uma Task (evidencia no
+   ledger - session_id e task_id gravados juntos por um evento real - nunca o
+   campo "session" do state.json, quase sempre vazio) que segue sem
+   gate_verdict, bloqueia o Stop 1 vez citando o id da Task. stop_hook_active
+   nunca bloqueia de novo (anti-laco): deixa parar e grava "encerrou_sem_gate"
+   no ledger, a divida visivel. Desliga com ALIA_END_LOCK_OFF=1 ou o arquivo
+   .claude/end-lock.off (mesmo padrao do graph-gate.off).
 
 Nunca deixa excecao crua vazar: todo caminho de erro cai no except geral no
 fim do arquivo, loga em activity.jsonl como "dispatch_error" e devolve uma
-decisao segura (deny quando o evento e PreToolUse ou nao da pra saber).
+decisao segura (deny quando o evento e PreToolUse ou nao da pra saber; Stop
+sempre libera - um hook quebrado nunca prende o operador).
 
 So biblioteca padrao. UTF-8 explicito em toda leitura/escrita/print.
 """
@@ -241,7 +249,23 @@ ARTIFACT_TASK_RE = re.compile(r"/artifacts/(TASK-\d+)/", re.IGNORECASE)
 NEGATION4_COORDINATION_EXEMPT = "/artifacts/coordination/"
 
 
+# achado do CEO, 24/09/2026: a FONTE do motor (a oficina, clients/alia-flow-lab/) nunca e o
+# kernel PROTEGIDO - e exatamente onde a lei manda o kernel EVOLUIR (fonte -> migrate.py ->
+# instancia). Proteger a fonte pelo mesmo nome de arquivo do kernel da instancia travava a
+# propria evolucao do motor pelo caminho certo (so sobrava editar direto na instancia, o
+# atalho que a lei proibe). A protecao vale para o kernel da INSTANCIA (raiz do studio, v2/ da
+# instancia, engine/ da instancia) - nunca para a fonte.
+SOURCE_PATH_MARKER = "/clients/alia-flow-lab/"
+
+
+def _is_source_path(path: str) -> bool:
+    p = "/" + _norm(path).lower().lstrip("/")
+    return SOURCE_PATH_MARKER in p
+
+
 def _is_kernel_path(path: str) -> bool:
+    if _is_source_path(path):
+        return False
     p = _norm(path).lower()
     if "/engine/" in p or p.endswith("/engine") or p == "engine":
         return True
@@ -402,6 +426,172 @@ def handle_pretooluse_guard(event: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Trava de fim (Stop, TASK-812) - bloqueia 1x quando a sessao tocou uma Task
+# que segue sem gate_verdict. Evidencia SEMPRE do ledger (session_id e task_id
+# gravados juntos por um evento real desta sessao), nunca do campo "session"
+# do Task no state.json - Tasks nascidas por register-task.ps1 quase sempre
+# tem esse campo vazio, e confiar nele bloquearia a sessao errada por causa de
+# uma Task aberta que ela nunca tocou.
+# ---------------------------------------------------------------------------
+
+def _end_lock_off() -> bool:
+    if os.environ.get("ALIA_END_LOCK_OFF") == "1":
+        return True
+    return os.path.exists(os.path.join(_project_dir(), ".claude", "end-lock.off"))
+
+
+def _load_state_for_stop() -> dict | None:
+    """Le state.json so pra checar gate_verdict. Qualquer erro (arquivo
+    ausente, JSON quebrado) devolve None - quem chama trata None como "nao da
+    pra dizer" e a trava SEMPRE libera nesse caso (falha aberta)."""
+    try:
+        with open(paths.state_path(), "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+# ---------------------------------------------------------------------------
+# Guarda de idioma (Stop, TASK-813, mandato do CEO 24/09/2026): a resposta final ao Operator
+# tem que ser em portugues do Brasil - regra escrita no kernel nao segurou (a coordenadora
+# respondeu em ingles varias vezes). Sem modelo: conta palavra de ligacao (stopword) EN contra
+# PT na ULTIMA mensagem do assistente do transcript, ignorando bloco de codigo e
+# caminho/URL (ambos citam token em ingles de forma legitima). Sinal fraco (poucas stopwords
+# reconhecidas) falha ABERTO - nunca bloqueia por falta de dado.
+# ---------------------------------------------------------------------------
+
+_EN_STOPWORDS = {
+    "the", "is", "are", "was", "were", "and", "but", "with", "this", "that",
+    "these", "those", "have", "has", "had", "will", "would", "should", "could",
+    "your", "not", "can", "for", "there", "here", "what", "when", "which",
+    "about", "into", "than", "then", "them", "their", "been", "being", "does",
+}
+_PT_STOPWORDS = {
+    "o", "a", "os", "as", "e", "ou", "mas", "com", "isso", "isto", "essa", "esse",
+    "essas", "esses", "aquela", "aquele", "tem", "tinha", "vai", "voce", "seu",
+    "sua", "eu", "nos", "eles", "elas", "nao", "pode", "para", "em", "no", "na",
+    "ser", "se", "entao", "faz", "aqui", "ate", "que", "por", "uma", "um", "dos",
+    "das", "ja", "so", "mais", "tambem", "sem", "foi", "sao", "como",
+}
+_CODE_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
+_PATH_OR_URL_RE = re.compile(r"(https?://\S+|(?:[A-Za-z]:)?[./\\][\w./\\-]*\w)")
+
+
+def _texto_sem_codigo_e_caminho(texto: str) -> str:
+    texto = _CODE_BLOCK_RE.sub(" ", texto)
+    texto = _PATH_OR_URL_RE.sub(" ", texto)
+    return texto
+
+
+def _ultima_mensagem_assistente(transcript_path: str) -> str | None:
+    if not transcript_path or not os.path.exists(transcript_path):
+        return None
+    ultima = None
+    try:
+        with open(transcript_path, "r", encoding="utf-8") as fh:
+            for raw in fh:
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    rec = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                if rec.get("type") != "assistant":
+                    continue
+                msg = rec.get("message")
+                if not isinstance(msg, dict):
+                    continue
+                content = msg.get("content")
+                texto = ""
+                if isinstance(content, str):
+                    texto = content
+                elif isinstance(content, list):
+                    partes = [b.get("text", "") for b in content
+                              if isinstance(b, dict) and b.get("type") == "text"]
+                    texto = "\n".join(partes)
+                if texto.strip():
+                    ultima = texto
+    except OSError:
+        return None
+    return ultima
+
+
+def _resposta_predominante_em_ingles(texto: str) -> bool:
+    limpo = _texto_sem_codigo_e_caminho(texto).lower()
+    palavras = re.findall(r"[a-zà-ú]+", limpo)
+    en = sum(1 for w in palavras if w in _EN_STOPWORDS)
+    pt = sum(1 for w in palavras if w in _PT_STOPWORDS)
+    if en + pt < 3:
+        return False  # sinal fraco demais - falha aberto, nunca bloqueia por falta de dado
+    return en > pt
+
+
+# ---------------------------------------------------------------------------
+# Aviso de entrega sem veredito (Stop, TASK-812/2.0.1, redesenhado apos objecoes do Canon/
+# Gauge): NUNCA bloqueia (usa additionalContext, nao decision:block - nao aparece como erro
+# pro Operator) e NUNCA varre o ledger inteiro (so o indice .idx.json, O(1), via
+# ledger.session_last_post_agent). Dispara so quando: (a) nada em voo em background_tasks,
+# (b) uma entrega de Specialist (post_agent) voltou NESTA sessao, (c) a Task dessa entrega
+# segue sem gate_verdict, (d) esta entrega especifica ainda nao foi avisada (uma vez por
+# entrega, nunca repete pro mesmo post_agent). Nunca olha Task de outra sessao/conversa - so
+# a ULTIMA entrega desta sessao entra na conta.
+# ---------------------------------------------------------------------------
+
+def _aviso_entrega_sem_veredito(event: dict) -> str | None:
+    if event.get("background_tasks"):
+        return None  # algo ainda em voo - Stop nao interrompe antes de terminar
+    session_id = event.get("session_id")
+    if not session_id:
+        return None
+    entrega = ledger.session_last_post_agent(_ledger_path(), session_id)
+    if not entrega or not entrega.get("task_id"):
+        return None
+    task_id = entrega["task_id"]
+    seq = entrega.get("seq")
+
+    state = _load_state_for_stop()
+    if state is None:
+        return None
+    tasks_by_id = {t.get("id"): t for t in state.get("tasks", []) if t.get("id")}
+    task = tasks_by_id.get(task_id)
+    if task is None or task.get("gate_verdict"):
+        return None
+
+    if seq is not None and ledger.delivery_already_notified(_ledger_path(), session_id, seq):
+        return None
+    if seq is not None:
+        ledger.mark_delivery_notified(_ledger_path(), session_id, seq)
+    return (f"{task_id} voltou sem veredito do Gate - rode o Gate ou feche com veredito "
+            "antes de encerrar.")
+
+
+def handle_stop(event: dict) -> dict:
+    # guarda de idioma (TASK-813) e independente do interruptor ALIA_END_LOCK_OFF/end-lock.off
+    # - aquele interruptor e so da trava de fim (TASK-812, gate_verdict), um kill-switch
+    # separado, nunca desliga a exigencia de portugues por engano.
+    stop_hook_active = bool(event.get("stop_hook_active"))
+    if not stop_hook_active:
+        ultima = _ultima_mensagem_assistente(event.get("transcript_path"))
+        if ultima and _resposta_predominante_em_ingles(ultima):
+            return {"decision": "block",
+                     "reason": "Resposta em ingles: reescreva em portugues do Brasil"}
+
+    if _end_lock_off():
+        return {}
+    if stop_hook_active:
+        # anti-laco: a 2a chamada do host (depois de um bloqueio de idioma) sempre deixa
+        # parar - nunca dispara o aviso de entrega de novo na mesma volta.
+        return {}
+
+    aviso = _aviso_entrega_sem_veredito(event)
+    if aviso:
+        return {"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": aviso}}
+    return {}
+
+
+# ---------------------------------------------------------------------------
 # Roteamento principal
 # ---------------------------------------------------------------------------
 
@@ -454,6 +644,10 @@ def main() -> int:
         if hook == "SubagentStop":
             handle_subagent_stop(event)
             _write_stdout({})
+            return 0
+
+        if hook == "Stop":
+            _write_stdout(handle_stop(event))
             return 0
 
         _write_stdout({})

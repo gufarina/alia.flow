@@ -25,7 +25,10 @@
   protocolo) - isso fica com quem delega, nao com quem executa.
 - [hooks/dispatch.py](hooks/dispatch.py) + [lib/ledger.py](lib/ledger.py) - o despachante unico
   (I1/I4, Warden). PreToolUse/PostToolUse/SubagentStop de Agent/Task viram evento no ledger; as 4
-  negacoes do guard rodam so no PreToolUse.
+  negacoes do guard rodam so no PreToolUse. Stop (TASK-812, a trava de fim): bloqueia 1 vez
+  quando ESTA sessao tocou (evidencia no ledger) uma Task que segue sem gate_verdict;
+  stop_hook_active nunca bloqueia de novo (anti-laco) e grava "encerrou_sem_gate"; desliga com
+  ALIA_END_LOCK_OFF=1 ou .claude/end-lock.off.
 - [bin/task.py](bin/task.py) - CLI `task open/close/context` (I2, Warden). Sempre sobre `--state`
   explicito (copia), nunca resolve o state.json real por conta propria.
 - [proof/check.py](proof/check.py) - a conferencia rapida UNICA (I9, Warden): roda as baterias de

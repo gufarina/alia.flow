@@ -13,8 +13,9 @@ Uso (rode de qualquer lugar):
 O que o apply copia para dentro de <target>:
   AGENTS.md (raiz)          <- <source>/AGENTS.md
   CLAUDE.md (raiz)          <- sempre "@AGENTS.md" (contrato do kernel)
+  VERSION (raiz)            <- dirname(<source>)/VERSION, quando existe (a linha de status le daqui)
   v2/                       <- <source> inteira (exceto __pycache__ e proof/_sandbox*)
-  .claude/settings.json     <- hooks do despachante amarrados (PreToolUse/PostToolUse/SubagentStop)
+  .claude/settings.json     <- hooks do despachante amarrados (PreToolUse/PostToolUse/SubagentStop/Stop)
 
 Backup: <target>/_backups/v2-migrate-<timestamp>/ recebe copia de CADA arquivo/pasta que
 o apply for sobrescrever ou criar, mais manifest.json com a lista completa (criados vs
@@ -52,6 +53,16 @@ SETTINGS_HOOKS = {
             }
         ],
         "SubagentStop": [
+            {
+                "matcher": "",
+                "hooks": [{
+                    "type": "command",
+                    "command": "python \"${CLAUDE_PROJECT_DIR}/v2/hooks/dispatch.py\"",
+                    "timeout": 10,
+                }],
+            }
+        ],
+        "Stop": [
             {
                 "matcher": "",
                 "hooks": [{
@@ -101,6 +112,14 @@ def cmd_apply(source: str, target: str) -> int:
     # AGENTS.md + CLAUDE.md na raiz
     _backup_and_note("AGENTS.md")
     shutil.copy2(os.path.join(source, "AGENTS.md"), os.path.join(target, "AGENTS.md"))
+
+    # VERSION (TASK-813, achado do CEO 24/09/2026): a linha de status ficava presa na versao
+    # velha porque o apply nunca gravava VERSION no alvo. Mora um nivel ACIMA de <source>
+    # (source = <repo>/v2; VERSION = <repo>/VERSION) - so copia quando existe na fonte.
+    version_src = os.path.join(os.path.dirname(source), "VERSION")
+    if os.path.isfile(version_src):
+        _backup_and_note("VERSION")
+        shutil.copy2(version_src, os.path.join(target, "VERSION"))
 
     claude_path = os.path.join(target, "CLAUDE.md")
     if os.path.exists(claude_path):

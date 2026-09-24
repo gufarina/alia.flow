@@ -93,6 +93,12 @@ check("test_risk.py sai verde", rc == 0, f"{dt*1000:.0f} ms")
 if rc != 0:
     print(out[-2000:])
 
+print("\n=== bateria: flow/slice.py (TASK-812 item B, fatiar tarefa grande) ===")
+rc, out, dt = run_script(os.path.join(V2, "flow", "test_slice.py"))
+check("test_slice.py sai verde", rc == 0, f"{dt*1000:.0f} ms")
+if rc != 0:
+    print(out[-2000:])
+
 print("\n=== bateria: learn/ (I8, refletor/curador/promocao) ===")
 rc, out, dt = run_script(os.path.join(HERE, "test_learn.py"))
 check("test_learn.py sai verde", rc == 0, f"{dt*1000:.0f} ms")

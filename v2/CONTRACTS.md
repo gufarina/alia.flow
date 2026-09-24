@@ -13,6 +13,6 @@ do `proof/check.py`, nao repetido aqui).
 | gate | 6 criterios + goal-backward | Canon | criterio rotulado passa | travessao ou rotulo ausente, FAIL |
 | memoria | playbook, RSI, validade, linhagem | Archive | patterns real, zero item sem causa | sem sinal, nada muda |
 | context | brief por indice, mapa sob demanda | Gauge | brief de 3 Tasks cabe no teto | mapa injetado sem pedido, FAIL |
-| guard | despachante unico | Warden | escrita legitima passa | 4 negacoes barram (kernel, segredo, publicacao, dominio sem delegacao) |
+| guard | despachante unico | Warden | escrita legitima passa + Stop sem Task tocada passa | 4 negacoes barram (kernel, segredo, publicacao, dominio sem delegacao) + Stop com Task tocada sem gate_verdict bloqueia 1x (TASK-812) |
 | proof | conferencia rapida, 1 catraca | Warden | bateria roda ate o alvo (30s) | quebrar cada modulo, FAIL |
 | release | pacote e migracao com backup | Courier | migracao em copia muda so campo novo | restaurar devolve o hash original |

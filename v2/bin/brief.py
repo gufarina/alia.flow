@@ -32,6 +32,12 @@ import os
 import re
 import sys
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+V2 = os.path.dirname(HERE)
+sys.path.insert(0, os.path.join(V2, "flow"))
+import slice as slice_mod  # noqa: E402  (v2/flow/slice.py - so pure/stdlib, nao quebra o
+# desacoplamento de lib/ e risk.py que este arquivo mantem de proposito)
+
 TETO_LINHAS = 120
 TETO_EMBUTIR_BYTES = 2048
 CAMPOS_CHECKLIST = ("client", "project", "objetivo", "paths", "consumidor", "destino", "exemplo_falha")
@@ -108,6 +114,29 @@ def cmd_open(args: argparse.Namespace) -> dict:
             return _err("Task nao encontrada", id_recebido=args.id,
                         ids_abertos=[t.get("id") for t in state.get("tasks", []) if t.get("status") == "open"])
         brief = _brief_from_task(task)
+        # TASK-812 item B: fatia que depende da anterior so abre brief depois do Gate da
+        # anterior dar PASS (slice.pode_comecar_fatia) - le so o que a propria Task ja carrega
+        # (fatia_id, fatia_de), nunca importa risk.py/ledger.py (desacoplamento de proposito).
+        if task.get("depende_da_anterior"):
+            fatia_id = str(task.get("fatia_id") or "")
+            m_fatia = re.match(r"^fatia-(\d+)$", fatia_id)
+            indice = (int(m_fatia.group(1)) - 1) if m_fatia else 0
+            grupo_id = task.get("fatia_de")
+            num_atual = None
+            m_num = re.match(r"^TASK-(\d+)$", str(task.get("id") or ""))
+            if m_num:
+                num_atual = int(m_num.group(1))
+            anterior = None
+            if num_atual is not None:
+                id_anterior = f"TASK-{num_atual - 1:03d}"
+                anterior = next((t for t in state.get("tasks", [])
+                                  if t.get("id") == id_anterior
+                                  and (t.get("fatia_de") == grupo_id or t.get("id") == grupo_id)), None)
+            veredito_anterior = anterior.get("gate_verdict") if anterior else None
+            if not slice_mod.pode_comecar_fatia(indice, veredito_anterior):
+                return _err("fatia anterior sem PASS ainda",
+                             fatia_anterior=anterior.get("id") if anterior else None,
+                             veredito_anterior=veredito_anterior)
     else:
         return _err("informe --brief <json> OU --state <path> + --id <task_id>")
 

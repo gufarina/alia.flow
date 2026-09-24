@@ -246,6 +246,32 @@ out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", 
                            "tool_input": {"command": "cat v2/AGENTS.md"}})
 check("positivo: Bash so LENDO AGENTS.md (sem gatilho de redirecionamento) NAO acusa", out == {}, str(out))
 
+# 1c) TASK-811 (achado do CEO, 24/09/2026): a protecao do kernel vale para a INSTANCIA, nunca
+# para a FONTE (a oficina, clients/alia-flow-lab/) - senao o kernel nao pode mais evoluir pelo
+# caminho da lei (fonte -> migrate.py -> instancia). Prova nos DOIS sentidos.
+# registra delegacao (4a negacao e ortogonal a esta prova - alia-flow-lab-warden visto na
+# sessao satisfaz o delegation-gate, senao a escrita cairia numa negacao DIFERENTE)
+run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Agent", "session_id": "s2",
+              "tool_use_id": "tu-src1", "tool_input": {"subagent_type": "alia-flow-lab-warden",
+              "prompt": "conserta o guard do kernel"}})
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s2",
+                           "tool_input": {"file_path": "C:/studio-farina/clients/alia-flow-lab/v2/AGENTS.md", "content": "x"}})
+check("positivo: escrita na FONTE (clients/alia-flow-lab/v2/AGENTS.md) NAO e negada", out == {}, str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s2",
+                           "tool_input": {"file_path": "clients/alia-flow-lab/engine/constitution.md", "content": "x"}})
+check("positivo: escrita em clients/alia-flow-lab/engine/ (fonte) NAO e negada", out == {}, str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
+                           "tool_input": {"command": "echo x >> clients/alia-flow-lab/v2/CLAUDE.md"}})
+check("positivo: Bash >> na FONTE (clients/alia-flow-lab/v2/CLAUDE.md) NAO e negado", out == {}, str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s2",
+                           "tool_input": {"file_path": "C:/studio-farina/v2/AGENTS.md", "content": "x"}})
+check("nega escrita no kernel da INSTANCIA (raiz do studio/v2/AGENTS.md) - a protecao continua viva",
+      out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s2",
+                           "tool_input": {"file_path": "C:/studio-farina/engine/constitution.md", "content": "x"}})
+check("nega escrita no engine/ da INSTANCIA - a protecao continua viva",
+      out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+
 # 2) segredo
 out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s2",
                            "tool_input": {"file_path": "C:/studio/docs/notes.md", "content": "AKIA1234567890ABCDEF"}})
@@ -373,6 +399,202 @@ out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write",
                            "tool_input": {"file_path": "C:/studio/clients/acme/squad/knowledge/x.md", "content": "y"}})
 check("Write feito de DENTRO do sub-agente (agent_id presente) nunca e negado pela 4a negacao",
       out == {}, str(out))
+
+# ---------------------------------------------------------------------------
+print("\n=== Stop: aviso de entrega sem veredito (TASK-812/2.0.1, additionalContext + indice) ===")
+LEDGER = fresh_sandbox()
+STATE_STOP = os.path.join(SANDBOX, "state_stop.json")
+with open(STATE_STOP, "w", encoding="utf-8") as fh:
+    json.dump({"tasks": [
+        {"id": "TASK-812", "status": "open", "client": "alia-flow-lab"},
+        {"id": "TASK-811", "status": "open", "client": "acme-saas"},
+        {"id": "TASK-813", "status": "review", "client": "alia-flow-lab", "gate_verdict": "FAIL"},
+    ]}, fh)
+
+
+def run_stop(event_extra: dict, env_extra: dict | None = None) -> tuple[dict, float, int]:
+    env = {"ALIA_STATE_PATH": STATE_STOP}
+    if env_extra:
+        env.update(env_extra)
+    ev = {"hook_event_name": "Stop", "transcript_path": "/x.jsonl"}
+    ev.update(event_extra)
+    return run_dispatch(ev, env_extra=env)
+
+
+def entrega_concluida(session_id: str, tu_id: str, agent_id: str, prompt: str) -> None:
+    """Simula uma entrega de Specialist voltando (PostToolUse Agent status=completed) -
+    o gatilho novo do aviso de Stop, nao mais so 'sessao tocou' (pre_agent)."""
+    pre = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "session_id": session_id,
+           "tool_use_id": tu_id, "tool_input": {"subagent_type": "alia-flow-lab-warden", "prompt": prompt}}
+    post = {"hook_event_name": "PostToolUse", "tool_name": "Agent", "session_id": session_id, "tool_use_id": tu_id,
+            "tool_input": pre["tool_input"],
+            "tool_response": {"status": "completed", "agentId": f"agent-{tu_id}", "totalTokens": 100,
+                               "totalDurationMs": 50, "totalToolUseCount": 1,
+                               "usage": {"input_tokens": 80, "output_tokens": 20}}}
+    run_dispatch(pre)
+    run_dispatch(post)
+
+
+# 1) positivo: sessao sem entrega nenhuma -> passa, sem saida, dentro do alvo de tempo
+out, dt, rc = run_stop({"session_id": "s-end-none"})
+check("Stop passa (sem saida) quando a sessao nao teve entrega nenhuma", out == {}, str(out))
+check("Stop responde abaixo de 300 ms", dt < 300, f"{dt:.1f} ms")
+
+# 2) negativo: entrega de Specialist voltou citando TASK-812, que segue sem gate_verdict ->
+# additionalContext (NUNCA decision:block - nao pode aparecer como erro pro Operator)
+entrega_concluida("s-end1", "tu-e1", "agent-e1", "TASK-812 implementa a trava de fim")
+out, dt, rc = run_stop({"session_id": "s-end1"})
+ctx = out.get("hookSpecificOutput", {}).get("additionalContext", "")
+check("Stop avisa via additionalContext (nunca decision:block) quando a entrega segue sem gate_verdict",
+      "decision" not in out and "TASK-812" in ctx, str(out))
+check("motivo cita so TASK-812, nunca TASK-811 (a sessao nao tocou TASK-811)",
+      "TASK-811" not in ctx, str(out))
+
+# prova negativa central (o erro mais provavel, citado no brief): TASK-811 esta open no
+# state.json mas esta sessao nunca teve entrega nenhuma - nao pode avisar por causa dela
+out_outra, _, _ = run_stop({"session_id": "s-end-nunca-tocou-nada"})
+check("prova negativa: sessao sem entrega nenhuma nao avisa so pq TASK-811/812 estao open",
+      out_outra == {}, str(out_outra))
+
+# 3) uma vez por entrega: o MESMO post_agent (seq) nao avisa de novo, mesmo sem stop_hook_active
+out_repete, _, _ = run_stop({"session_id": "s-end1"})
+check("prova negativa: a MESMA entrega nao avisa 2 vezes (uma vez por entrega)",
+      out_repete == {}, str(out_repete))
+
+# 3b) uma NOVA entrega da MESMA Task ainda sem veredito volta a avisar (entrega nova, seq novo)
+entrega_concluida("s-end1", "tu-e1b", "agent-e1b", "TASK-812 2a rodada, ainda sem gate")
+out_nova, _, _ = run_stop({"session_id": "s-end1"})
+check("positivo: uma NOVA entrega da mesma Task ainda sem veredito avisa de novo",
+      "TASK-812" in out_nova.get("hookSpecificOutput", {}).get("additionalContext", ""), str(out_nova))
+
+# 4) stop_hook_active=true nunca dispara o aviso (anti-laco - so a chamada seguinte do host)
+entrega_concluida("s-end-loop", "tu-eloop", "agent-eloop", "TASK-812 outra sessao")
+out_loop, _, _ = run_stop({"session_id": "s-end-loop", "stop_hook_active": True})
+check("stop_hook_active=true nunca dispara o aviso", out_loop == {}, str(out_loop))
+
+# 5) nada em voo: background_tasks nao vazio segura o aviso (algo ainda rodando)
+entrega_concluida("s-end-bg", "tu-ebg", "agent-ebg", "TASK-812 com trabalho em voo")
+out_bg, _, _ = run_stop({"session_id": "s-end-bg", "background_tasks": [{"id": "bg1"}]})
+check("background_tasks nao vazio segura o aviso (nada em voo e pre-requisito)", out_bg == {}, str(out_bg))
+out_bg_livre, _, _ = run_stop({"session_id": "s-end-bg"})
+check("mesma sessao, sem background_tasks, avisa normalmente",
+      "TASK-812" in out_bg_livre.get("hookSpecificOutput", {}).get("additionalContext", ""), str(out_bg_livre))
+
+# 6) positivo: Task com gate_verdict ja registrado (mesmo status != done, ex.: review/FAIL)
+# nao avisa - "sem gate_verdict" e o criterio, nunca o status
+entrega_concluida("s-end2", "tu-e2", "agent-e2", "TASK-813 corrige o achado do Gate")
+out_verdito, _, _ = run_stop({"session_id": "s-end2"})
+check("Task com gate_verdict ja registrado (review/FAIL) nao dispara aviso", out_verdito == {}, str(out_verdito))
+
+# 7) interruptor de emergencia: variavel de ambiente
+entrega_concluida("s-end-off1", "tu-eoff1", "agent-eoff1", "TASK-812 com trava desligada")
+out_env_off, _, _ = run_stop({"session_id": "s-end-off1"}, env_extra={"ALIA_END_LOCK_OFF": "1"})
+check("ALIA_END_LOCK_OFF=1 desliga o aviso mesmo com Task sem veredito", out_env_off == {}, str(out_env_off))
+
+# 7b) interruptor de emergencia: arquivo .claude/end-lock.off (mesmo padrao do graph-gate.off)
+_lock_root = _sandbox_tempdir("alia-v2-run-proofs-lock-")
+os.makedirs(os.path.join(_lock_root, ".claude"), exist_ok=True)
+with open(os.path.join(_lock_root, ".claude", "end-lock.off"), "w", encoding="utf-8") as fh:
+    fh.write("off")
+entrega_concluida("s-end-off2", "tu-eoff2", "agent-eoff2", "TASK-812 com arquivo de desligamento")
+out_file_off, _, _ = run_stop({"session_id": "s-end-off2"}, env_extra={"CLAUDE_PROJECT_DIR": _lock_root})
+check("arquivo .claude/end-lock.off desliga o aviso", out_file_off == {}, str(out_file_off))
+
+# 8) falha aberta: state.json quebrado ou ausente nunca prende o operador
+_state_quebrado = os.path.join(SANDBOX, "state_quebrado.json")
+with open(_state_quebrado, "w", encoding="utf-8") as fh:
+    fh.write("{ isso nao fecha")
+entrega_concluida("s-end-bad1", "tu-ebad1", "agent-ebad1", "TASK-812 com state quebrado")
+out_json_bad, _, rc_json_bad = run_stop({"session_id": "s-end-bad1"}, env_extra={"ALIA_STATE_PATH": _state_quebrado})
+check("state.json quebrado: Stop nunca avisa nem derruba (falha aberta), rc=0",
+      out_json_bad == {} and rc_json_bad == 0, f"{out_json_bad} rc={rc_json_bad}")
+
+entrega_concluida("s-end-bad2", "tu-ebad2", "agent-ebad2", "TASK-812 sem state.json")
+out_no_state, _, rc_no_state = run_stop(
+    {"session_id": "s-end-bad2"}, env_extra={"ALIA_STATE_PATH": os.path.join(SANDBOX, "nao-existe.json")})
+check("state.json ausente: Stop nunca avisa nem derruba (falha aberta)",
+      out_no_state == {} and rc_no_state == 0, str(out_no_state))
+
+# 9) performance: indice (.idx.json) nunca varre o ledger inteiro - prova com 50 mil linhas
+_perf_dir = _sandbox_tempdir("alia-v2-run-proofs-perf-")
+_perf_ledger = os.path.join(_perf_dir, "activity.jsonl")
+with open(_perf_ledger, "w", encoding="utf-8") as fh:
+    for i in range(50_000):
+        fh.write(json.dumps({"v": 1, "ts": i, "event": "post_agent", "session_id": f"s-fill-{i % 500}",
+                              "agent_id": f"agent-fill-{i}", "task_id": f"TASK-FILL-{i}",
+                              "tokens_total": 10}) + "\n")
+sys.path.insert(0, os.path.join(V2, "lib"))
+import ledger as _ledger_mod  # noqa: E402
+_t0_idx = time.perf_counter()
+_ledger_mod.session_last_post_agent(_perf_ledger, "s-fill-1")  # constroi o indice 1x (custo pago aqui)
+_dt_build_ms = (time.perf_counter() - _t0_idx) * 1000
+
+_perf_state = os.path.join(_perf_dir, "state.json")
+with open(_perf_state, "w", encoding="utf-8") as fh:
+    json.dump({"tasks": [{"id": "TASK-90001", "status": "open"}]}, fh)
+run_dispatch({"hook_event_name": "PostToolUse", "tool_name": "Agent", "session_id": "s-perf",
+              "tool_use_id": "tu-perf", "tool_input": {"prompt": "TASK-90001 entrega"},
+              "tool_response": {"status": "completed", "agentId": "agent-perf", "totalTokens": 10,
+                                 "totalDurationMs": 5, "totalToolUseCount": 1,
+                                 "usage": {"input_tokens": 8, "output_tokens": 2}}},
+             env_extra={"ALIA_LEDGER_PATH": _perf_ledger})
+out_perf, dt_perf, _ = run_dispatch({"hook_event_name": "Stop", "session_id": "s-perf",
+                                      "transcript_path": "/x.jsonl"},
+                                     env_extra={"ALIA_LEDGER_PATH": _perf_ledger, "ALIA_STATE_PATH": _perf_state})
+check("Stop com ledger de 50 mil linhas (indice ja construido) responde abaixo de 300 ms",
+      dt_perf < 300, f"{dt_perf:.1f} ms (indice construido em {_dt_build_ms:.1f} ms)")
+check("Stop com 50 mil linhas ainda acha a entrega certa (TASK-PERF-1)",
+      "TASK-90001" in out_perf.get("hookSpecificOutput", {}).get("additionalContext", ""), str(out_perf))
+
+# ---------------------------------------------------------------------------
+print("\n=== Stop: guarda de idioma (TASK-813, mandato do CEO 24/09/2026) ===")
+
+
+def _transcript_com_resposta(texto: str) -> str:
+    caminho = os.path.join(SANDBOX, f"transcript_lang_{abs(hash(texto))}.jsonl")
+    with open(caminho, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"type": "assistant", "message": {"content": [
+            {"type": "text", "text": texto}]}}) + "\n")
+    return caminho
+
+
+TEXTO_INGLES = (
+    "I checked the repository and the tests are passing now. This was caused by a missing "
+    "environment variable that blocked the deploy. I would recommend merging this change "
+    "today because it fixes the blocker for the release, and there is no risk to the rest "
+    "of the system."
+)
+TEXTO_PORTUGUES_COM_TERMOS_TECNICOS = (
+    "Rodei o check.py e o commit ficou verde no repositorio. O problema era uma variavel de "
+    "ambiente que faltava no dispatch.py e travava o push. Recomendo fazer o merge hoje "
+    "porque isso resolve o bloqueio do release sem risco para o resto do sistema."
+)
+
+_transcript_en = _transcript_com_resposta(TEXTO_INGLES)
+out_en, dt_en, rc_en = run_stop({"session_id": "s-lang-en", "transcript_path": _transcript_en},
+                                 env_extra={"ALIA_END_LOCK_OFF": "1"})
+check("bloqueia resposta predominantemente em ingles",
+      out_en.get("decision") == "block" and "ingles" in out_en.get("reason", "").lower(), str(out_en))
+# "custo alvo abaixo de 100 ms" e do ALGORITMO da guarda (ler transcript + contar stopword),
+# nao do spawn do processo python.exe - esse custo fixo (~90-115 ms neste host, medido acima
+# em "I1(c) mediana") e o mesmo pra QUALQUER chamada do dispatch.py, guarda nenhuma controla
+# isso. Mede as 2 coisas separadas: o algoritmo em processo (sem subprocess) e o round-trip
+# completo (mesmo teto de 300 ms usado pro resto do Stop neste arquivo).
+sys.path.insert(0, os.path.join(V2, "hooks"))
+import dispatch as _dispatch_mod  # noqa: E402
+_t0_algo = time.perf_counter()
+_dispatch_mod._resposta_predominante_em_ingles(TEXTO_INGLES)
+_dt_algo_ms = (time.perf_counter() - _t0_algo) * 1000
+check("algoritmo da guarda de idioma (sem spawn de processo) abaixo de 100 ms (alvo do contrato)",
+      _dt_algo_ms < 100, f"{_dt_algo_ms:.2f} ms")
+check("round-trip completo (spawn + guarda) abaixo de 300 ms (mesmo teto do resto do Stop)",
+      dt_en < 300, f"{dt_en:.1f} ms")
+
+_transcript_pt = _transcript_com_resposta(TEXTO_PORTUGUES_COM_TERMOS_TECNICOS)
+out_pt, dt_pt, rc_pt = run_stop({"session_id": "s-lang-pt", "transcript_path": _transcript_pt},
+                                 env_extra={"ALIA_END_LOCK_OFF": "1"})
+check("prova negativa: portugues com termos tecnicos em ingles (check.py, commit, push, "
+      "dispatch.py, merge, release) NAO e barrado", out_pt == {}, str(out_pt))
 
 print("\n=== resultado ===")
 if FAILS:

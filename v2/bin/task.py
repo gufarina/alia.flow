@@ -40,6 +40,7 @@ sys.path.insert(0, os.path.join(V2, "lib"))
 import ledger  # noqa: E402  (v2/lib/ledger.py)
 import paths  # noqa: E402  (v2/lib/paths.py - resolvedor unico de ledger/Task corrente)
 import task_model  # noqa: E402  (v2/lib/task_model.py - a entidade Task)
+import slice as slice_mod  # noqa: E402  (v2/flow/slice.py - fatiar tarefa grande, TASK-812 B)
 
 
 def _now() -> str:
@@ -122,6 +123,29 @@ def cmd_open(args: argparse.Namespace) -> dict:
             extra["projects_validos"] = projects_by_client
             extra["squad_valido"] = squad_by_client
         return _err(exc.msg, **extra)
+
+    # TASK-812 item B (Shopify 02, flow/slice.py): tarefa grande nao abre 1 Task so - fatia
+    # em pedacos com criterio de aceite proprio, cada fatia (exceto a 1a) so comeca depois do
+    # Gate da anterior passar (slice.pode_comecar_fatia, checado por bin/brief.py).
+    avaliacao = slice_mod.is_tarefa_grande(brief)
+    if avaliacao["grande"]:
+        fatias = slice_mod.fatiar(brief)
+        primeiro_num = int(_next_task_id(state).split("-", 1)[1])
+        grupo_id = f"TASK-{primeiro_num:03d}"
+        novas_tasks = []
+        for i, fatia in enumerate(fatias):
+            campos_fatia = dict(task_fields)
+            campos_fatia["title"] = fatia["objetivo"]
+            campos_fatia["criterio_aceite"] = fatia["criterio_aceite"]
+            campos_fatia["fatia_id"] = fatia["id"]
+            campos_fatia["depende_da_anterior"] = fatia["depende_da_anterior"]
+            campos_fatia["fatia_de"] = grupo_id
+            nova = {"id": f"TASK-{primeiro_num + i:03d}", "created": _now(), **campos_fatia}
+            novas_tasks.append(nova)
+        state.setdefault("tasks", []).extend(novas_tasks)
+        _save_state(args.state, state)
+        paths.write_current_task(novas_tasks[0]["id"], session_id=args.session or None)
+        return _ok(tasks=novas_tasks, fatiada=True, motivos=avaliacao["motivos"])
 
     task_id = _next_task_id(state)
     new_task = {"id": task_id, "created": _now(), **task_fields}
