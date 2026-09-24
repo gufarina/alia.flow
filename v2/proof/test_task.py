@@ -36,7 +36,30 @@ _STATE_CANDIDATES = [
     os.path.abspath(os.path.join(V2, "..", "state.json")),
     os.path.abspath(os.path.join(V2, "..", "..", "..", "state.json")),
 ]
-REAL_STATE = next((p for p in _STATE_CANDIDATES if os.path.exists(p)), _STATE_CANDIDATES[0])
+REAL_STATE = next((p for p in _STATE_CANDIDATES if os.path.exists(p)), None)
+FIXTURE_GERADA = REAL_STATE is None
+if FIXTURE_GERADA:
+    # O repositorio publico NUNCA tem state.json de operador (LEI: dado de Client nao versiona -
+    # engine/governance/public-surface.md) - sem isto, quem instala do zero via git via a prova
+    # falhar (achado do CEO, 24/09/2026, produto 79ed8cb). Fixture minima e sintetica, so com o
+    # Client de exemplo publico (acme-saas/acme-pulse, studio.example/), prova o MESMO contrato
+    # de task.py sem exigir nenhum dado real de operador.
+    _fixture_dir = _sandbox_tempdir("alia-v2-test-task-fixture-")
+    REAL_STATE = os.path.join(_fixture_dir, "state.json")
+    _fixture_state = {
+        "studio": "Studio Exemplo",
+        "clients": [
+            {"id": "acme-saas", "squad": {"gateway": "gateway", "specialists": ["bruno", "rex"]}},
+        ],
+        "tasks": [
+            {"id": "TASK-FIXTURE-001", "client": "acme-saas", "project": "acme-pulse",
+             "status": "done", "operator_order": True},
+        ],
+    }
+    with open(REAL_STATE, "w", encoding="utf-8") as fh:
+        json.dump(_fixture_state, fh, ensure_ascii=False, indent=2)
+    print("[INFO] sem state.json de operador (repo publico) - usando fixture sintetica do "
+          "Client de exemplo (acme-saas)")
 
 FAILS = []
 
@@ -69,7 +92,7 @@ def run_task(*args) -> tuple[dict, int]:
     return out, proc.returncode
 
 
-assert os.path.exists(REAL_STATE), f"state.json real nao encontrado em {REAL_STATE}"
+assert os.path.exists(REAL_STATE), f"state.json nao encontrado nem fixture gerada em {REAL_STATE}"
 hash_before = sha256(REAL_STATE)
 
 if os.path.exists(SANDBOX):
