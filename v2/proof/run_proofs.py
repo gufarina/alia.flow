@@ -246,6 +246,22 @@ out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", 
                            "tool_input": {"command": "cat v2/AGENTS.md"}})
 check("positivo: Bash so LENDO AGENTS.md (sem gatilho de redirecionamento) NAO acusa", out == {}, str(out))
 
+# 1b-bis (achado do CEO, 24/09/2026, falso positivo no studio vivo): 2>&1 (duplicacao de
+# descritor) e mencao de LEITURA ao kernel (cat, grep, python lendo) em outro trecho do
+# MESMO comando nunca contam como escrita.
+_cmd_leitura_real = ('cat VERSION; grep -c -i "fale sempre em portugu" AGENTS.md; '
+                     'python v2/proof/check.py 2>&1 | tail -1')
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
+                           "tool_input": {"command": _cmd_leitura_real}})
+check("positivo: comando exato do falso positivo (leitura + 2>&1) NAO acusa", out == {}, str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
+                           "tool_input": {"command": "echo x > AGENTS.md"}})
+check("nega Bash com > (nao so >>) na INSTANCIA", out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
+                           "tool_input": {"command": "cp a AGENTS.md"}})
+check("nega Bash cp a AGENTS.md (destino = ultimo argumento) na INSTANCIA",
+      out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+
 # 1c) TASK-811 (achado do CEO, 24/09/2026): a protecao do kernel vale para a INSTANCIA, nunca
 # para a FONTE (a oficina, clients/alia-flow-lab/) - senao o kernel nao pode mais evoluir pelo
 # caminho da lei (fonte -> migrate.py -> instancia). Prova nos DOIS sentidos.

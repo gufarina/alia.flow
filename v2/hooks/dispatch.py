@@ -238,10 +238,53 @@ KERNEL_FILES = ("agents.md", "claude.md", "contracts.md")
 
 # gatilhos de redirecionamento que o Bash pode usar para escrever num arquivo (>, >>, tee,
 # cp, mv, e os equivalentes de PowerShell Out-File/Set-Content).
-BASH_REDIRECT_TRIGGER = re.compile(
-    r"(>>|>|\btee\b|\bcp\b|\bmv\b|\bcopy\b|\bmove\b|\bOut-File\b|\bSet-Content\b)",
-    re.IGNORECASE,
-)
+# achado do CEO, 24/09/2026 (falso positivo no studio vivo): `2>&1` (duplicacao de descritor,
+# nunca escreve arquivo) casava com o `>` generico e qualquer mencao de LEITURA ao kernel em
+# outro trecho do mesmo comando (`cat AGENTS.md`, `grep ... AGENTS.md`) virava negacao. So o
+# ALVO real de escrita conta agora - ver _extract_write_targets.
+_FD_DUP_RE = re.compile(r"\d>&\d|>&\d")
+_WRITE_OP_RE = re.compile(r"(?<![0-9])(>>|>)(?!&)")
+_CP_MV_RE = re.compile(r"^(cp|mv|copy|move|copy-item|move-item)\b", re.IGNORECASE)
+_OUTFILE_SETCONTENT_RE = re.compile(r"^(out-file|set-content)\b", re.IGNORECASE)
+
+
+def _extract_write_targets(command: str) -> list[str]:
+    """So os tokens que sao de fato ALVO de escrita: destino de `>`/`>>` (nunca `2>&1`/`>&N`,
+    duplicacao de descritor), `tee <alvo>`, ultimo argumento (ou `-Destination`) de
+    cp/mv/copy/move/Copy-Item/Move-Item, e `-Path`/`-FilePath` (ou 1o posicional) de
+    Out-File/Set-Content. Leitura (cat, grep, python lendo o arquivo) nunca aparece aqui."""
+    alvos: list[str] = []
+    sem_fd = _FD_DUP_RE.sub(" ", command)
+    for m in _WRITE_OP_RE.finditer(sem_fd):
+        resto = sem_fd[m.end():].lstrip().split()
+        if resto:
+            alvos.append(resto[0].strip("'\""))
+    for clausula in re.split(r"[;&|]+", command):
+        c = clausula.strip()
+        if not c:
+            continue
+        m_tee = re.match(r"tee\b\s+(?:-a\s+)?(\S+)", c, re.IGNORECASE)
+        if m_tee:
+            alvos.append(m_tee.group(1).strip("'\""))
+            continue
+        if _CP_MV_RE.match(c):
+            m_dest = re.search(r"-Destination\s+(\S+)", c, re.IGNORECASE)
+            if m_dest:
+                alvos.append(m_dest.group(1).strip("'\""))
+            else:
+                nao_flag = [p for p in c.split()[1:] if not p.startswith("-")]
+                if nao_flag:
+                    alvos.append(nao_flag[-1].strip("'\""))
+            continue
+        if _OUTFILE_SETCONTENT_RE.match(c):
+            m_path = re.search(r"-(?:Path|FilePath)\s+(\S+)", c, re.IGNORECASE)
+            if m_path:
+                alvos.append(m_path.group(1).strip("'\""))
+            else:
+                nao_flag = [p for p in c.split()[1:] if not p.startswith("-")]
+                if nao_flag:
+                    alvos.append(nao_flag[0].strip("'\""))
+    return alvos
 
 # so artifacts/<task_id>/ isenta a 4a negacao, e so quando o proprio PostToolUse ja marcou
 # no ledger que um sub-agente escreveu naquele task_id (nao mais /artifacts/ inteiro).
@@ -275,20 +318,10 @@ def _is_kernel_path(path: str) -> bool:
 
 def _bash_targets_kernel(command: str) -> bool:
     """Bash grava em engine/ ou num arquivo do kernel sem passar por Write/Edit (achado da
-    revisao independente): varre os TOKENS do comando atras de um gatilho de redirecionamento
-    (>, >>, tee, cp, mv, Out-File, Set-Content) e confere se algum token do comando aponta
-    para o kernel. Varre o comando inteiro, nao so o token colado ao gatilho, porque cp/mv
-    levam o destino no fim e PowerShell aceita `-FilePath X` antes do alvo."""
-    if not BASH_REDIRECT_TRIGGER.search(command):
-        return False
-    tokens = re.split(r"[\s|;&]+", command)
-    for tok in tokens:
-        tok_clean = tok.strip("'\"")
-        if not tok_clean:
-            continue
-        if _is_kernel_path(tok_clean):
-            return True
-    return False
+    revisao independente): confere so os ALVOS DE ESCRITA extraidos por
+    _extract_write_targets - nunca menciona de leitura (cat, grep, python lendo o kernel)
+    em outro trecho do mesmo comando."""
+    return any(_is_kernel_path(alvo) for alvo in _extract_write_targets(command))
 
 
 def _has_secret(text: str) -> bool:
