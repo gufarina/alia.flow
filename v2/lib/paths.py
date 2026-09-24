@@ -49,6 +49,15 @@ def studio_root() -> str:
     return os.getcwd()
 
 
+def check_marker_path() -> str:
+    """Caminho FIXO do marcador de check verde: <studio_root()>/.alia/check-ok.json. Gravado
+    por proof/check.py quando fecha verde; lido por hooks/dispatch.py na negacao de publicacao
+    sem check. Nunca por variavel de ambiente - ALIA_CHECK_MARKER_PATH morreu (achado do CEO,
+    24/09/2026): ninguem setava essa variavel fora dos proprios testes, entao TODO `git push`
+    nascia negado para sempre no studio vivo."""
+    return os.path.join(studio_root(), ".alia", "check-ok.json")
+
+
 def ledger_path() -> str:
     """Caminho unico do activity.jsonl. Ordem: ALIA_LEDGER_PATH explicito (provas e sandboxes)
     -> CLAUDE_PROJECT_DIR/activity.jsonl (uso real) -> studio/activity.jsonl relativo a este

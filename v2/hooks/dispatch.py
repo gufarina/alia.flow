@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -317,6 +318,50 @@ def handle_post_write_artifact_marker(event: dict) -> None:
     })
 
 
+CHECK_MARKER_MAX_AGE_S = 30 * 60  # 30 minutos (mandato do CEO, 24/09/2026)
+
+
+def _current_git_head(repo_dir: str) -> str | None:
+    try:
+        proc = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_dir,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.decode("utf-8", "replace").strip()
+
+
+def _check_marker_valido() -> bool:
+    """[MEDIDO, achado do CEO 24/09/2026] A negacao antiga exigia ALIA_CHECK_MARKER_PATH -
+    ninguem setava essa variavel de ambiente fora dos proprios testes, entao TODO `git push` a
+    partir do studio vivo nascia negado para sempre. Agora o marcador vive num caminho FIXO
+    (paths.check_marker_path(), gravado por proof/check.py quando fecha verde) e libera a
+    publicacao so se: (1) o arquivo existe, (2) tem menos de 30 minutos, e (3) quando o
+    marcador registrou um HEAD de git, o HEAD atual do repo bate com o HEAD gravado (prova de
+    que o check verde foi contra O QUE VAI SER publicado, nao contra um commit velho)."""
+    marker = paths.check_marker_path()
+    if not os.path.exists(marker):
+        return False
+    try:
+        idade_s = time.time() - os.path.getmtime(marker)
+    except OSError:
+        return False
+    if idade_s > CHECK_MARKER_MAX_AGE_S or idade_s < 0:
+        return False
+    try:
+        with open(marker, "r", encoding="utf-8") as fh:
+            dados = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return False
+    head_gravado = dados.get("head")
+    if head_gravado:
+        repo_dir = os.path.dirname(os.path.dirname(marker))
+        if _current_git_head(repo_dir) != head_gravado:
+            return False
+    return True
+
+
 def handle_pretooluse_guard(event: dict) -> dict:
     tool_name = event.get("tool_name")
     tool_input = event.get("tool_input") or {}
@@ -348,9 +393,9 @@ def handle_pretooluse_guard(event: dict) -> dict:
             return _deny("guard: Bash redireciona/copia para o kernel (AGENTS.md, "
                          "CLAUDE.md, CONTRACTS.md ou engine/) - negado")
         if PUBLISH_PATTERNS.search(command):
-            marker = os.environ.get("ALIA_CHECK_MARKER_PATH")
-            if not marker or not os.path.exists(marker):
-                return _deny("guard: publicacao sem check (marcador de check ausente)")
+            if not _check_marker_valido():
+                return _deny("guard: publicacao sem check (marcador de check ausente, "
+                             "vencido ha mais de 30 min, ou HEAD divergente)")
         return _no_decision()
 
     return _no_decision()

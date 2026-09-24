@@ -79,7 +79,10 @@ def sha256(path: str) -> str:
 
 
 def run_task(*args) -> tuple[dict, int]:
-    env = dict(os.environ)
+    # Ambiente LIMPO: nunca herda CLAUDE_PROJECT_DIR nem ALIA_* do host (achado do CEO,
+    # 24/09/2026 - CLAUDE_PROJECT_DIR do studio vivo vazava dado real pro teste em sandbox).
+    env = {k: v for k, v in os.environ.items()
+           if k != "CLAUDE_PROJECT_DIR" and not k.startswith("ALIA_")}
     # nunca deixa `open` escrever a Task corrente fora da sandbox (lib/paths.py).
     env["ALIA_CURRENT_TASK_PATH"] = os.path.join(SANDBOX, ".alia-current-task.json")
     proc = subprocess.run([sys.executable, TASK_PY, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)

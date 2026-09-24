@@ -10,6 +10,7 @@ from __future__ import annotations
 import atexit
 import json
 import os
+from datetime import datetime, timezone
 import shutil
 import statistics
 import subprocess
@@ -57,12 +58,21 @@ def fresh_sandbox() -> str:
 REAL_STUDIO_LEDGER = os.path.abspath(os.path.join(V2, "..", "studio", "activity.jsonl"))
 
 
+def _clean_env(extra: dict | None = None) -> dict:
+    """Ambiente LIMPO pro subprocesso de teste: nunca herda CLAUDE_PROJECT_DIR nem ALIA_* do
+    host (achado do CEO, 24/09/2026 - check.py rodando com CLAUDE_PROJECT_DIR apontado pro
+    studio vivo dava FAIL aqui, porque o dispatch.py filho enxergava dado real do studio em vez
+    do sandbox de teste). `extra` sobrescreve por cima - so a variavel que o proprio teste pede."""
+    env = {k: v for k, v in os.environ.items()
+           if k != "CLAUDE_PROJECT_DIR" and not k.startswith("ALIA_")}
+    if extra:
+        env.update(extra)
+    return env
+
+
 def run_dispatch(event: dict | str, env_extra: dict | None = None) -> tuple[dict, float, int]:
     assert os.path.abspath(LEDGER) != REAL_STUDIO_LEDGER, "NUNCA gravar no ledger real do studio"
-    env = dict(os.environ)
-    env["ALIA_LEDGER_PATH"] = LEDGER
-    if env_extra:
-        env.update(env_extra)
+    env = _clean_env({"ALIA_LEDGER_PATH": LEDGER, **(env_extra or {})})
     payload = event if isinstance(event, str) else json.dumps(event, ensure_ascii=False)
     t0 = time.perf_counter()
     proc = subprocess.run(
@@ -247,20 +257,63 @@ out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write",
                            "tool_input": {"file_path": "C:/studio/docs/notes.md", "content": "texto comum sem segredo"}})
 check("positivo: segredo NAO acusa texto comum", out == {}, str(out))
 
-# 3) publicacao sem check
-marker = os.path.join(SANDBOX, "check-passed.marker")
-if os.path.exists(marker):
-    os.remove(marker)
+# 3) publicacao sem check (TASK-810: marcador vive em caminho FIXO sob CLAUDE_PROJECT_DIR,
+# nunca em variavel ALIA_CHECK_MARKER_PATH - ninguem setava essa variavel no studio vivo e
+# TODO git push nascia negado para sempre; achado do CEO, 24/09/2026)
+_pub_root = _sandbox_tempdir("alia-v2-run-proofs-pub-")
+# pasta PROPRIA (nunca dentro de SANDBOX): o teste de HEAD divergente cria um repo git de
+# verdade aqui embaixo, e o Windows deixa objetos do git read-only - um rmtree NO MEIO do
+# script (fresh_sandbox(), chamado pelos testes seguintes) derrubava o processo inteiro com
+# PermissionError. Isolado, a limpeza fica so no atexit (ignore_errors=True, best-effort).
+_marker = os.path.join(_pub_root, ".alia", "check-ok.json")
+if os.path.exists(_marker):
+    os.remove(_marker)
 out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
                            "tool_input": {"command": "git push origin main"}},
-                          env_extra={"ALIA_CHECK_MARKER_PATH": marker})
-check("nega publicacao sem check", out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
-with open(marker, "w", encoding="utf-8") as fh:
-    fh.write("ok")
+                          env_extra={"CLAUDE_PROJECT_DIR": _pub_root})
+check("nega publicacao sem marcador de check", out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+
+os.makedirs(os.path.dirname(_marker), exist_ok=True)
+with open(_marker, "w", encoding="utf-8") as fh:
+    json.dump({"ts": datetime.now(timezone.utc).isoformat(), "head": None}, fh)
 out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
                            "tool_input": {"command": "git push origin main"}},
-                          env_extra={"ALIA_CHECK_MARKER_PATH": marker})
-check("positivo: publicacao com check presente passa", out == {}, str(out))
+                          env_extra={"CLAUDE_PROJECT_DIR": _pub_root})
+check("positivo: publicacao com marcador fresco (sem HEAD gravado) passa", out == {}, str(out))
+
+# prova negativa: marcador VENCIDO (mtime > 30 min) volta a negar
+_velho = time.time() - (31 * 60)
+os.utime(_marker, (_velho, _velho))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
+                           "tool_input": {"command": "git push origin main"}},
+                          env_extra={"CLAUDE_PROJECT_DIR": _pub_root})
+check("nega publicacao com marcador vencido (> 30 min)", out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+
+# prova negativa: marcador fresco mas HEAD gravado diverge do HEAD atual do repo alvo
+_git_ok = subprocess.run(["git", "init", "-q"], cwd=_pub_root).returncode == 0
+if _git_ok:
+    subprocess.run(["git", "config", "user.email", "test@test.local"], cwd=_pub_root)
+    subprocess.run(["git", "config", "user.name", "test"], cwd=_pub_root)
+    with open(os.path.join(_pub_root, "f.txt"), "w", encoding="utf-8") as fh:
+        fh.write("x")
+    subprocess.run(["git", "add", "f.txt"], cwd=_pub_root)
+    subprocess.run(["git", "commit", "-q", "-m", "x"], cwd=_pub_root)
+    _head_real = subprocess.run(["git", "rev-parse", "HEAD"], cwd=_pub_root,
+                                 stdout=subprocess.PIPE).stdout.decode().strip()
+    with open(_marker, "w", encoding="utf-8") as fh:
+        json.dump({"ts": datetime.now(timezone.utc).isoformat(), "head": "0" * 40}, fh)
+    out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
+                               "tool_input": {"command": "git push origin main"}},
+                              env_extra={"CLAUDE_PROJECT_DIR": _pub_root})
+    check("nega publicacao com HEAD gravado divergente do HEAD atual", out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+    with open(_marker, "w", encoding="utf-8") as fh:
+        json.dump({"ts": datetime.now(timezone.utc).isoformat(), "head": _head_real}, fh)
+    out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
+                               "tool_input": {"command": "git push origin main"}},
+                              env_extra={"CLAUDE_PROJECT_DIR": _pub_root})
+    check("positivo: publicacao com HEAD gravado igual ao HEAD atual passa", out == {}, str(out))
+else:
+    print("[INFO] git indisponivel neste ambiente - prova de HEAD divergente pulada (marcador+idade ja provados acima)")
 
 # 4) Write/Edit em clients/<id>/ pela sessao principal sem Agent <id>-* visto
 LEDGER = fresh_sandbox()

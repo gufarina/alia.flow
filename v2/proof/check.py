@@ -50,9 +50,22 @@ def check(name: str, cond: bool, detail: str = "") -> None:
         FAILS.append(name)
 
 
+def _clean_env(extra: dict | None = None) -> dict:
+    """Ambiente LIMPO pro subprocesso de teste: nunca herda CLAUDE_PROJECT_DIR nem ALIA_* do
+    host (achado do CEO, 24/09/2026 - check.py rodado com CLAUDE_PROJECT_DIR apontando pro
+    studio vivo fazia run_proofs.py FAIL, porque o dispatch.py filho enxergava dado real do
+    studio em vez do sandbox de teste). `extra` sobrescreve por cima."""
+    env = {k: v for k, v in os.environ.items()
+           if k != "CLAUDE_PROJECT_DIR" and not k.startswith("ALIA_")}
+    if extra:
+        env.update(extra)
+    return env
+
+
 def run_script(path: str) -> tuple[int, str, float]:
     t0 = time.perf_counter()
-    proc = subprocess.run([sys.executable, path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = subprocess.run([sys.executable, path], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                           env=_clean_env())
     dt = time.perf_counter() - t0
     out = proc.stdout.decode("utf-8", "replace") + proc.stderr.decode("utf-8", "replace")
     return proc.returncode, out, dt
@@ -60,7 +73,8 @@ def run_script(path: str) -> tuple[int, str, float]:
 
 def run_py(args: list[str]) -> tuple[int, str, float]:
     t0 = time.perf_counter()
-    proc = subprocess.run([sys.executable, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = subprocess.run([sys.executable, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                           env=_clean_env())
     dt = time.perf_counter() - t0
     out = proc.stdout.decode("utf-8", "replace") + proc.stderr.decode("utf-8", "replace")
     return proc.returncode, out, dt
@@ -301,8 +315,7 @@ os.makedirs(os.path.join(_script_em_outro_lugar, "bin"), exist_ok=True)
 os.makedirs(os.path.join(_script_em_outro_lugar, "lib"), exist_ok=True)
 shutil.copyfile(os.path.join(V2, "bin", "client.py"), os.path.join(_script_em_outro_lugar, "bin", "client.py"))
 shutil.copyfile(os.path.join(V2, "lib", "paths.py"), os.path.join(_script_em_outro_lugar, "lib", "paths.py"))
-_env = dict(os.environ)
-_env.pop("CLAUDE_PROJECT_DIR", None)
+_env = _clean_env()
 _proc = subprocess.run([sys.executable, os.path.join(_script_em_outro_lugar, "bin", "client.py"), "list"],
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=_cwd_fundo, env=_env)
 _saida = json.loads(_proc.stdout.decode("utf-8"))
@@ -329,4 +342,31 @@ check("tempo total ate 30 s (alvo do contrato)", DT_TOTAL <= 30, f"{DT_TOTAL:.2f
 if FAILS:
     print(f"FALHOU: {len(FAILS)} prova(s): {FAILS}")
     sys.exit(1)
+
+# ---------------------------------------------------------------------------
+# Marcador de check verde (TASK-810, achado do CEO 24/09/2026): a negacao de publicacao do
+# dispatch.py antes exigia ALIA_CHECK_MARKER_PATH - ninguem setava essa variavel fora dos
+# proprios testes, entao TODO `git push` nascia negado para sempre. Agora, so quando TODAS as
+# provas acima passam, grava-se um marcador num caminho FIXO (paths.check_marker_path(), nunca
+# variavel de ambiente) com data/hora e o HEAD do repo alvo (se houver git) - a negacao aceita
+# so um marcador com menos de 30 minutos e (quando gravou HEAD) HEAD identico ao atual.
+sys.path.insert(0, os.path.join(V2, "lib"))
+import paths as _paths  # noqa: E402
+import datetime as _dt  # noqa: E402
+
+_marker_path = _paths.check_marker_path()
+_repo_dir = os.path.dirname(os.path.dirname(_marker_path))
+_head = None
+try:
+    _proc_head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=_repo_dir,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if _proc_head.returncode == 0:
+        _head = _proc_head.stdout.decode("utf-8", "replace").strip()
+except OSError:
+    _head = None
+os.makedirs(os.path.dirname(_marker_path), exist_ok=True)
+with open(_marker_path, "w", encoding="utf-8") as _fh:
+    json.dump({"ts": _dt.datetime.now(_dt.timezone.utc).isoformat(), "head": _head}, _fh)
+print(f"[MEDIDO] marcador de check verde gravado: {_marker_path} (head={_head})")
+
 print("TODAS AS PROVAS PASSARAM")
