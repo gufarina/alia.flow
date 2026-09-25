@@ -20,7 +20,7 @@ ALL GREEN -> tag.
 
 ## [2.0.2] - 2026-09-25
 
-A 2.0.2 saiu em 25/09 às 00:12 e trouxe seis mudanças:
+A 2.0.2 saiu em 25/09 às 00:15 e trouxe seis mudanças:
 
 - Histórico de versões obrigatório: a conferência automática reprova versão nova sem entrada neste
   histórico, e nenhuma versão é publicada sem revisão aprovada.
