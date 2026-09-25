@@ -14,6 +14,7 @@ O que o apply copia para dentro de <target>:
   AGENTS.md (raiz)          <- <source>/AGENTS.md
   CLAUDE.md (raiz)          <- sempre "@AGENTS.md" (contrato do kernel)
   VERSION (raiz)            <- dirname(<source>)/VERSION, quando existe (a linha de status le daqui)
+  CHANGELOG.md (raiz)       <- dirname(<source>)/CHANGELOG.md, quando existe
   v2/                       <- <source> inteira (exceto __pycache__ e proof/_sandbox*)
   .claude/settings.json     <- hooks do despachante amarrados (PreToolUse/PostToolUse/SubagentStop/Stop)
 
@@ -34,7 +35,7 @@ SETTINGS_HOOKS = {
     "hooks": {
         "PreToolUse": [
             {
-                "matcher": "Write|Edit|Bash|Agent|Task",
+                "matcher": "Write|Edit|Bash|PowerShell|Agent|Task",
                 "hooks": [{
                     "type": "command",
                     "command": "python \"${CLAUDE_PROJECT_DIR}/v2/hooks/dispatch.py\"",
@@ -120,6 +121,14 @@ def cmd_apply(source: str, target: str) -> int:
     if os.path.isfile(version_src):
         _backup_and_note("VERSION")
         shutil.copy2(version_src, os.path.join(target, "VERSION"))
+
+    # CHANGELOG.md (TASK-823, achado do CEO 24/09/2026): mesmo problema do VERSION acima - o
+    # apply nunca copiava o CHANGELOG, entao o alvo migrado ficava preso na versao antiga do
+    # historico. Mora no mesmo nivel do VERSION (um nivel ACIMA de <source>).
+    changelog_src = os.path.join(os.path.dirname(source), "CHANGELOG.md")
+    if os.path.isfile(changelog_src):
+        _backup_and_note("CHANGELOG.md")
+        shutil.copy2(changelog_src, os.path.join(target, "CHANGELOG.md"))
 
     claude_path = os.path.join(target, "CLAUDE.md")
     if os.path.exists(claude_path):

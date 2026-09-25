@@ -30,7 +30,9 @@
   stop_hook_active nunca bloqueia de novo (anti-laco) e grava "encerrou_sem_gate"; desliga com
   ALIA_END_LOCK_OFF=1 ou .claude/end-lock.off.
 - [bin/task.py](bin/task.py) - CLI `task open/close/context` (I2, Warden). Sempre sobre `--state`
-  explicito (copia), nunca resolve o state.json real por conta propria.
+  explicito (copia), nunca resolve o state.json real por conta propria. `close` exige evidencia de
+  veredito no ledger (`review_verdict` ou o `gate_check` que nasce de `bin/gate.py`, TASK-825) e
+  recusa se o `--veredito` digitado divergir do `gate_check` mais recente da Task.
 - [proof/check.py](proof/check.py) - a conferencia rapida UNICA (I9, Warden): roda as baterias de
   cada modulo, mais kernel (hash/bytes), LAW-MAP (lei sem destino), decide (I7), checagem cruzada
   do ledger e 1 catraca generica (travessao). Alvo 30s, medido ~4s.

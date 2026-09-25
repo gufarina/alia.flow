@@ -111,6 +111,12 @@ check("test_task.py sai verde", rc == 0, f"{dt*1000:.0f} ms")
 if rc != 0:
     print(out[-3000:])
 
+print("\n=== bateria: bin/migrate.py (D1, achado do Gate do NEXUS: apply/undo sem prova automatica) ===")
+rc, out, dt = run_script(os.path.join(HERE, "test_migrate.py"))
+check("test_migrate.py sai verde", rc == 0, f"{dt*1000:.0f} ms")
+if rc != 0:
+    print(out[-3000:])
+
 # ---------------------------------------------------------------------------
 print("\n=== decide (I7): porta abstem sem Laya ===")
 sys.path.insert(0, os.path.join(V2, "lib"))
@@ -341,6 +347,30 @@ for root, dirs, _files in os.walk(V2):
             sandboxes_em_v2.append(os.path.relpath(os.path.join(root, d), V2))
 check("nenhum diretorio _sandbox* dentro de v2/ (sandbox de teste vive em tempfile, fora do motor)",
       len(sandboxes_em_v2) == 0, str(sandboxes_em_v2))
+
+# ---------------------------------------------------------------------------
+print("\n=== cadeado de versao (TASK-822): VERSION == primeira entrada do CHANGELOG.md ===")
+import paths  # noqa: E402 (resolvedor de lib/paths.py)
+_raiz_cadeado = paths.instance_root()
+_version_cadeado_path = os.path.join(_raiz_cadeado, "VERSION")
+_changelog_cadeado_path = os.path.join(_raiz_cadeado, "CHANGELOG.md")
+_changelog_existe = os.path.isfile(_changelog_cadeado_path)
+check(f"CHANGELOG.md existe na raiz da instancia ({_raiz_cadeado})", _changelog_existe, _changelog_cadeado_path)
+_version_cadeado = ""
+if os.path.isfile(_version_cadeado_path):
+    with open(_version_cadeado_path, "r", encoding="utf-8") as fh:
+        _version_cadeado = fh.read().strip()
+_changelog_topo = None
+if _changelog_existe:
+    with open(_changelog_cadeado_path, "r", encoding="utf-8") as fh:
+        for _linha_ch in fh:
+            _m_topo = re.match(r"^##\s*\[(.+?)\]", _linha_ch.strip())
+            if _m_topo:
+                _changelog_topo = _m_topo.group(1).strip()
+                break
+check(f"VERSION ({_version_cadeado}) bate com a primeira entrada do CHANGELOG.md ({_changelog_topo})",
+      _changelog_existe and _version_cadeado != "" and _version_cadeado == _changelog_topo,
+      f"VERSION={_version_cadeado} topo={_changelog_topo}")
 
 DT_TOTAL = time.perf_counter() - T0
 print(f"\n=== resultado ({DT_TOTAL:.2f} s) ===")

@@ -2,8 +2,10 @@
 """Prova do I2 (v2/bin/task.py), roda sem rede, so contra COPIA do state.json.
 
 Uso: python test_task.py
-Nunca abre o state.json real para escrita - so leitura, para tirar a copia e o hash
-"antes"; a comparacao de hash "depois" confere que ninguem tocou o original.
+Nunca abre o state.json VIVO do estudio para escrita, e (conserto FLAKE, 24/09) nem para hash:
+o teste le o conteudo real uma unica vez, no boot, e daí em diante so enxerga um state.json
+SENTINELA que ele mesmo cria numa sandbox propria - qualquer sessao aberta em paralelo que
+escreva no arquivo vivo do estudio nao derruba mais esta prova.
 """
 from __future__ import annotations
 
@@ -36,16 +38,22 @@ _STATE_CANDIDATES = [
     os.path.abspath(os.path.join(V2, "..", "state.json")),
     os.path.abspath(os.path.join(V2, "..", "..", "..", "state.json")),
 ]
-REAL_STATE = next((p for p in _STATE_CANDIDATES if os.path.exists(p)), None)
-FIXTURE_GERADA = REAL_STATE is None
+_LIVE_STATE = next((p for p in _STATE_CANDIDATES if os.path.exists(p)), None)
+FIXTURE_GERADA = _LIVE_STATE is None
+
+# state.json SENTINELA (conserto FLAKE, 24/09): a prova de "nada tocou o state real" nunca mais
+# hashea o arquivo VIVO do estudio - qualquer sessao aberta em paralelo escreve nele e derrubava
+# o check.py ao acaso (achado do Nexus). O teste le o conteudo real UMA VEZ (copia, nunca escreve)
+# para dentro de uma sandbox exclusiva, e esse sentinela vira REAL_STATE para o resto do arquivo -
+# nenhuma linha depois desta le ou hasheia o caminho vivo de novo.
+_sentinel_dir = _sandbox_tempdir("alia-v2-test-task-sentinel-")
+REAL_STATE = os.path.join(_sentinel_dir, "state.json")
 if FIXTURE_GERADA:
     # O repositorio publico NUNCA tem state.json de operador (LEI: dado de Client nao versiona -
     # engine/governance/public-surface.md) - sem isto, quem instala do zero via git via a prova
     # falhar (achado do CEO, 24/09/2026, produto 79ed8cb). Fixture minima e sintetica, so com o
     # Client de exemplo publico (acme-saas/acme-pulse, studio.example/), prova o MESMO contrato
     # de task.py sem exigir nenhum dado real de operador.
-    _fixture_dir = _sandbox_tempdir("alia-v2-test-task-fixture-")
-    REAL_STATE = os.path.join(_fixture_dir, "state.json")
     _fixture_state = {
         "studio": "Studio Exemplo",
         "clients": [
@@ -60,6 +68,8 @@ if FIXTURE_GERADA:
         json.dump(_fixture_state, fh, ensure_ascii=False, indent=2)
     print("[INFO] sem state.json de operador (repo publico) - usando fixture sintetica do "
           "Client de exemplo (acme-saas)")
+else:
+    shutil.copyfile(_LIVE_STATE, REAL_STATE)
 
 FAILS = []
 
@@ -243,6 +253,25 @@ out, rc = run_task("--state", COPY, "close", "--id", correcao_id, "--artifact", 
 check("close de Task de correcao com --root-cause fecha (evidencia = gate_check)", out.get("ok") is True, str(out))
 check("evidencia registrada veio do gate_check", (out.get("task") or {}).get("evidencia_veredito") == "gate_check", str(out.get("task")))
 
+print("\n=== I2 prova negativa (TASK-825/826 B3): review_verdict PASS antes + gate_check FAIL depois no "
+      "ledger - close PASS e recusado (o mais recente vence, nao so quem apareceu primeiro) ===")
+brief_ordem = json.dumps({
+    "client": CLIENTE, "project": "teste-i2", "objetivo": "prova a ordem review_verdict depois gate_check",
+    "paths": "v2/lib/task_model.py", "consumidor": "WARDEN", "destino": "interno",
+    "exemplo_falha": "review_verdict velho autoriza close por cima de gate_check mais novo",
+})
+out, rc = run_task("--state", COPY, "open", "--brief", brief_ordem)
+check("Task da prova de ordem abre normalmente", out.get("ok") is True, str(out))
+ordem_id = (out.get("task") or {}).get("id")
+LEDGER_ORDEM = os.path.join(SANDBOX, "activity-ordem.jsonl")
+with open(LEDGER_ORDEM, "w", encoding="utf-8") as fh:
+    fh.write(json.dumps({"event": "review_verdict", "task_id": ordem_id, "revisor": "WARDEN", "veredito": "PASS"}) + "\n")
+    fh.write(json.dumps({"event": "gate_check", "task_id": ordem_id, "veredito": "FAIL"}) + "\n")
+out_ordem, rc_ordem = run_task("--state", COPY, "close", "--id", ordem_id, "--artifact", "x.md",
+                                "--veredito", "PASS", "--ledger", LEDGER_ORDEM)
+check("close PASS e recusado: gate_check MAIS RECENTE diverge, mesmo com review_verdict PASS mais antigo no ledger",
+      out_ordem.get("ok") is False, str(out_ordem))
+
 print("\n=== I2 prova negativa (TASK-804): close com veredito FAIL grava o criterio reprovado ===")
 brief_fail = json.dumps({
     "client": CLIENTE, "project": "teste-i2", "objetivo": "Task que vai reprovar de proposito",
@@ -279,13 +308,177 @@ new_tasks_by_id = {t["id"]: t for t in copy_after["tasks"]}
 unchanged_ok = all(new_tasks_by_id.get(tid) == t for tid, t in old_tasks_by_id.items())
 check("nenhuma Task pre-existente foi alterada", unchanged_ok, "diff em Tasks antigas")
 added_ids = set(new_tasks_by_id) - set(old_tasks_by_id)
-check("so 4 Tasks novas acrescentadas (teste-i2, a de correcao, a de FAIL e a de fatia valida)", len(added_ids) == 4, str(added_ids))
+check("so 5 Tasks novas acrescentadas (teste-i2, a de correcao, a de FAIL, a de fatia valida e a de ordem review/gate)", len(added_ids) == 5, str(added_ids))
 check("Task nova tem status done (fechada com PASS)", new_tasks_by_id[new_id]["status"] == "done", str(new_tasks_by_id[new_id]))
 
-print("\n=== I2 prova: original nunca tocado (hash igual antes/depois de tudo) ===")
+print("\n=== I2 prova: sentinela nunca tocado (hash igual antes/depois de tudo) ===")
 hash_after = sha256(REAL_STATE)
-check("hash do state.json real igual antes e depois de toda a bateria", hash_before == hash_after,
+check("hash do state.json sentinela igual antes e depois de toda a bateria", hash_before == hash_after,
       f"antes={hash_before[:12]} depois={hash_after[:12]}")
+
+print("\n=== I2 prova negativa (conserto FLAKE): escrever no sentinela muda o hash - o mecanismo "
+      "pegaria a escrita indevida se ela acontecesse de verdade ===")
+with open(REAL_STATE, "r", encoding="utf-8") as fh:
+    _bytes_sentinela_intacto = fh.read()
+with open(REAL_STATE, "a", encoding="utf-8") as fh:
+    fh.write("\n")  # simula codigo escrevendo no sentinela por engano
+hash_sentinela_sujo = sha256(REAL_STATE)
+check("sentinela alterado diverge do hash limpo (a escrita indevida seria pega)",
+      hash_sentinela_sujo != hash_after, f"limpo={hash_after[:12]} sujo={hash_sentinela_sujo[:12]}")
+with open(REAL_STATE, "w", encoding="utf-8") as fh:
+    fh.write(_bytes_sentinela_intacto)  # desfaz a escrita, sentinela volta ao estado provado acima
+check("sentinela restaurado volta ao hash limpo (PASS de volta)", sha256(REAL_STATE) == hash_after, "")
+
+# ---------------------------------------------------------------------------
+# TASK-825: o produtor v2/bin/gate.py - valida o parecer contra o contrato do gate (6
+# criterios + goal-backward) e grava o evento gate_check que task.py close exige.
+GATE_PY = os.path.join(V2, "bin", "gate.py")
+ROTULOS_GATE = ("funciona", "aderente-ddd", "frugal", "rastreavel", "simplicidade",
+                "fundamentada", "goal-backward")
+
+
+def run_gate(*args) -> tuple[dict, int]:
+    env = {k: v for k, v in os.environ.items()
+           if k != "CLAUDE_PROJECT_DIR" and not k.startswith("ALIA_")}
+    proc = subprocess.run([sys.executable, GATE_PY, *args], stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, env=env)
+    out = {}
+    if proc.stdout:
+        try:
+            out = json.loads(proc.stdout.decode("utf-8"))
+        except json.JSONDecodeError:
+            out = {"_raw": proc.stdout.decode("utf-8", "replace"), "_stderr": proc.stderr.decode("utf-8", "replace")}
+    return out, proc.returncode
+
+
+def _parecer(veredito: str, excluir: tuple = ()) -> str:
+    """Parecer de gate minimo e valido: os 7 rotulos (6 criterios + goal-backward), cada um
+    com resultado PASS e uma linha de evidencia logo abaixo, mais a linha de veredito."""
+    linhas = []
+    for rotulo in ROTULOS_GATE:
+        if rotulo in excluir:
+            continue
+        linhas.append(f"{rotulo}: PASS")
+        linhas.append(f"evidencia: [MEDIDO fixture de teste do gate.py, criterio {rotulo}]")
+    linhas.append(f"veredito: {veredito}")
+    return "\n".join(linhas) + "\n"
+
+
+print("\n=== I5 (gate.py) prova positiva: parecer valido grava gate_check e close passa ===")
+brief_gate = json.dumps({
+    "client": CLIENTE, "project": "teste-gate", "objetivo": "provar o gate.py ate fechar com veredito",
+    "paths": "v2/bin/gate.py", "consumidor": "WARDEN", "destino": "interno",
+    "exemplo_falha": "fechar sem passar pelo gate.py",
+})
+out, rc = run_task("--state", COPY, "open", "--brief", brief_gate)
+check("Task para o teste do gate.py abre normalmente", out.get("ok") is True, str(out))
+gate_task_id = (out.get("task") or {}).get("id")
+
+PARECER_VALIDO = os.path.join(SANDBOX, "parecer_valido.md")
+with open(PARECER_VALIDO, "w", encoding="utf-8") as fh:
+    fh.write(_parecer("PASS"))
+LEDGER_GATE = os.path.join(SANDBOX, "activity-gate.jsonl")
+out_gate, rc_gate = run_gate("--task", gate_task_id, "--parecer", PARECER_VALIDO,
+                              "--session", "s-gate", "--ledger", LEDGER_GATE)
+check("gate.py com parecer valido grava o evento (ok=True)", out_gate.get("ok") is True, str(out_gate))
+with open(LEDGER_GATE, "r", encoding="utf-8") as fh:
+    eventos_gate = [json.loads(l) for l in fh if l.strip()]
+check("exatamente 1 evento gate_check gravado", len(eventos_gate) == 1 and eventos_gate[0].get("event") == "gate_check",
+      str(eventos_gate))
+check("evento gate_check tem os 7 rotulos de criterio",
+      len(eventos_gate[0].get("criterios", {})) == 7, str(eventos_gate[0].get("criterios")))
+
+out_close, rc_close = run_task("--state", COPY, "close", "--id", gate_task_id, "--artifact", "v2/bin/gate.py",
+                                "--veredito", "PASS", "--ledger", LEDGER_GATE)
+check("close com evidencia vinda do gate.py fecha a Task (ok=True)", out_close.get("ok") is True, str(out_close))
+check("Task fechada tem status done", (out_close.get("task") or {}).get("status") == "done", str(out_close.get("task")))
+
+print("\n=== I5 prova negativa: rotulo faltando no parecer nao grava evento ===")
+PARECER_SEM_ROTULO = os.path.join(SANDBOX, "parecer_sem_rotulo.md")
+with open(PARECER_SEM_ROTULO, "w", encoding="utf-8") as fh:
+    fh.write(_parecer("PASS", excluir=("frugal",)))
+LEDGER_GATE_ROTULO = os.path.join(SANDBOX, "activity-gate-rotulo.jsonl")
+out_rotulo, rc_rotulo = run_gate("--task", gate_task_id, "--parecer", PARECER_SEM_ROTULO, "--ledger", LEDGER_GATE_ROTULO)
+check("gate.py recusa parecer sem o rotulo 'frugal' (ok=False)", out_rotulo.get("ok") is False, str(out_rotulo))
+check("mensagem cita o criterio ausente", any("frugal" in p for p in out_rotulo.get("problemas", [])),
+      str(out_rotulo.get("problemas")))
+check("nenhum evento gravado (arquivo de ledger nem chega a existir)", not os.path.exists(LEDGER_GATE_ROTULO), "")
+
+print("\n=== I5 prova negativa: travessao no parecer nao grava evento ===")
+PARECER_TRAVESSAO = os.path.join(SANDBOX, "parecer_travessao.md")
+with open(PARECER_TRAVESSAO, "w", encoding="utf-8") as fh:
+    fh.write(_parecer("PASS") + "nota" + chr(0x2014) + "texto com travessao\n")
+LEDGER_GATE_TRAV = os.path.join(SANDBOX, "activity-gate-travessao.jsonl")
+out_trav, rc_trav = run_gate("--task", gate_task_id, "--parecer", PARECER_TRAVESSAO, "--ledger", LEDGER_GATE_TRAV)
+check("gate.py recusa parecer com travessao (ok=False)", out_trav.get("ok") is False, str(out_trav))
+check("mensagem cita o travessao", any("travessao" in p for p in out_trav.get("problemas", [])),
+      str(out_trav.get("problemas")))
+check("nenhum evento gravado", not os.path.exists(LEDGER_GATE_TRAV), "")
+
+print("\n=== I5 prova negativa (TASK-825/826 B2): criterio FAIL com veredito PASS e recusado ===")
+
+
+def _parecer_com_valores(valores: dict, veredito: str) -> str:
+    """Mesmo formato de _parecer, mas com o valor por rotulo customizado (default PASS)."""
+    linhas = []
+    for rotulo in ROTULOS_GATE:
+        linhas.append(f"{rotulo}: {valores.get(rotulo, 'PASS')}")
+        linhas.append(f"evidencia: [MEDIDO fixture de teste do gate.py, criterio {rotulo}]")
+    linhas.append(f"veredito: {veredito}")
+    return "\n".join(linhas) + "\n"
+
+
+PARECER_CRITERIO_FAIL_VEREDITO_PASS = os.path.join(SANDBOX, "parecer_criterio_fail_veredito_pass.md")
+with open(PARECER_CRITERIO_FAIL_VEREDITO_PASS, "w", encoding="utf-8") as fh:
+    fh.write(_parecer_com_valores({"frugal": "FAIL"}, "PASS"))
+LEDGER_GATE_CFVP = os.path.join(SANDBOX, "activity-gate-cfvp.jsonl")
+out_cfvp, rc_cfvp = run_gate("--task", gate_task_id, "--parecer", PARECER_CRITERIO_FAIL_VEREDITO_PASS, "--ledger", LEDGER_GATE_CFVP)
+check("gate.py recusa parecer com criterio 'frugal' FAIL e veredito PASS (ok=False)", out_cfvp.get("ok") is False, str(out_cfvp))
+check("nenhum evento gravado (parecer com FAIL disfarcado de PASS nunca vira gate_check)", not os.path.exists(LEDGER_GATE_CFVP), "")
+
+print("\n=== I5 prova negativa (TASK-825/826 B2): criterio CONCERN com veredito PASS e recusado ===")
+PARECER_CONCERN_VEREDITO_PASS = os.path.join(SANDBOX, "parecer_concern_veredito_pass.md")
+with open(PARECER_CONCERN_VEREDITO_PASS, "w", encoding="utf-8") as fh:
+    fh.write(_parecer_com_valores({"rastreavel": "CONCERN"}, "PASS"))
+LEDGER_GATE_CCVP = os.path.join(SANDBOX, "activity-gate-ccvp.jsonl")
+out_ccvp, rc_ccvp = run_gate("--task", gate_task_id, "--parecer", PARECER_CONCERN_VEREDITO_PASS, "--ledger", LEDGER_GATE_CCVP)
+check("gate.py recusa parecer com criterio 'rastreavel' CONCERN e veredito PASS (ok=False)", out_ccvp.get("ok") is False, str(out_ccvp))
+check("nenhum evento gravado (CONCERN nunca vira PASS)", not os.path.exists(LEDGER_GATE_CCVP), "")
+
+print("\n=== I5 prova negativa: close sem nenhum evento no ledger continua falhando ===")
+brief_gate2 = json.dumps({
+    "client": CLIENTE, "project": "teste-gate", "objetivo": "Task que vai testar veredito divergente do gate_check",
+    "paths": "v2/bin/gate.py", "consumidor": "WARDEN", "destino": "interno",
+    "exemplo_falha": "fechar sem qualquer evidencia no ledger",
+})
+out, rc = run_task("--state", COPY, "open", "--brief", brief_gate2)
+gate_task_id2 = (out.get("task") or {}).get("id")
+LEDGER_GATE_VAZIO = os.path.join(SANDBOX, "activity-gate-vazio.jsonl")
+out_sem_evento, rc_sem_evento = run_task("--state", COPY, "close", "--id", gate_task_id2, "--artifact", "x.md",
+                                          "--veredito", "PASS", "--ledger", LEDGER_GATE_VAZIO)
+check("close sem evento algum no ledger continua falhando", out_sem_evento.get("ok") is False, str(out_sem_evento))
+
+print("\n=== I5 prova negativa: veredito digitado divergente do gate_check mais recente e recusado ===")
+PARECER_FAIL = os.path.join(SANDBOX, "parecer_fail.md")
+with open(PARECER_FAIL, "w", encoding="utf-8") as fh:
+    fh.write(_parecer("FAIL"))
+LEDGER_GATE_FAIL = os.path.join(SANDBOX, "activity-gate-fail.jsonl")
+out_gate_fail, rc_gate_fail = run_gate("--task", gate_task_id2, "--parecer", PARECER_FAIL, "--ledger", LEDGER_GATE_FAIL)
+check("gate.py grava gate_check com veredito FAIL",
+      out_gate_fail.get("ok") is True and out_gate_fail.get("event", {}).get("veredito") == "FAIL", str(out_gate_fail))
+
+out_divergente, rc_divergente = run_task("--state", COPY, "close", "--id", gate_task_id2, "--artifact", "x.md",
+                                          "--veredito", "PASS", "--ledger", LEDGER_GATE_FAIL)
+check("close com --veredito PASS divergente do gate_check FAIL e recusado", out_divergente.get("ok") is False,
+      str(out_divergente))
+
+out_convergente, rc_convergente = run_task("--state", COPY, "close", "--id", gate_task_id2, "--artifact", "x.md",
+                                            "--veredito", "FAIL", "--criterio-reprovado", "frugal",
+                                            "--ledger", LEDGER_GATE_FAIL)
+check("close com --veredito FAIL igual ao gate_check fecha (Task vai para review)",
+      out_convergente.get("ok") is True, str(out_convergente))
+check("Task fica em review (veredito FAIL nunca fecha done)",
+      (out_convergente.get("task") or {}).get("status") == "review", str(out_convergente.get("task")))
 
 print("\n=== resultado ===")
 if FAILS:

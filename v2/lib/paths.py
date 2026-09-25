@@ -49,6 +49,18 @@ def studio_root() -> str:
     return os.getcwd()
 
 
+def instance_root() -> str:
+    """Raiz da instancia DESTE v2/ especifico: um nivel ACIMA da pasta v2/ que contem este
+    arquivo (paths.py mora em <instancia>/v2/lib/paths.py). migrate.py sempre copia VERSION e
+    CHANGELOG.md exatamente nesse nivel (TASK-822/823) - por construcao, e sempre a MESMA
+    posicao relativa a v2/, diferente de studio_root() (que segue cwd/CLAUDE_PROJECT_DIR e pode
+    apontar para OUTRA instancia quando este v2/ vive aninhado, caso da oficina dentro do
+    proprio studio)."""
+    lib_dir = os.path.dirname(os.path.abspath(__file__))
+    v2_dir = os.path.dirname(lib_dir)
+    return os.path.dirname(v2_dir)
+
+
 def check_marker_path() -> str:
     """Caminho FIXO do marcador de check verde: <studio_root()>/.alia/check-ok.json. Gravado
     por proof/check.py quando fecha verde; lido por hooks/dispatch.py na negacao de publicacao

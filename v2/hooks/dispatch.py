@@ -244,21 +244,38 @@ KERNEL_FILES = ("agents.md", "claude.md", "contracts.md")
 # ALVO real de escrita conta agora - ver _extract_write_targets.
 _FD_DUP_RE = re.compile(r"\d>&\d|>&\d")
 _WRITE_OP_RE = re.compile(r"(?<![0-9])(>>|>)(?!&)")
-_CP_MV_RE = re.compile(r"^(cp|mv|copy|move|copy-item|move-item)\b", re.IGNORECASE)
-_OUTFILE_SETCONTENT_RE = re.compile(r"^(out-file|set-content)\b", re.IGNORECASE)
+# TASK-824 (conserto, regressao apontada pelo Gate do NEXUS): cp/mv/rm nao podem compartilhar a
+# mesma extracao de alvo - cada familia tem semantica diferente de qual argumento e ESCRITA. cp
+# so escreve no DESTINO (-Destination ou ultimo posicional); -Path/-LiteralPath ali e a ORIGEM
+# (leitura), nunca alvo. mv apaga a origem ao mover, entao origem E destino sao alvo de escrita.
+# rm/del/erase/remove-item sao os mais amplos: TODO -Path/-LiteralPath e TODO posicional e alvo,
+# porque cada caminho citado e apagado. rd/rmdir ficam de fora de proposito (a lei protege
+# ARQUIVO do kernel, nunca pasta).
+_CP_RE = re.compile(r"^(cp|copy|copy-item)\b", re.IGNORECASE)
+_MV_RE = re.compile(r"^(mv|move|move-item)\b", re.IGNORECASE)
+_RM_RE = re.compile(r"^(rm|del|erase|remove-item)\b", re.IGNORECASE)
+_OUTFILE_SETCONTENT_RE = re.compile(r"^(out-file|set-content|add-content|clear-content|tee-object)\b", re.IGNORECASE)
+_NEWITEM_RE = re.compile(r"^new-item\b", re.IGNORECASE)
+_IOFILE_WRITE_RE = re.compile(r"\[(?:system\.)?io\.file\]::write\w*\s*\(\s*['\"]([^'\"]+)['\"]", re.IGNORECASE)
+_SED_INPLACE_RE = re.compile(r"^sed\b", re.IGNORECASE)
 
 
 def _extract_write_targets(command: str) -> list[str]:
     """So os tokens que sao de fato ALVO de escrita: destino de `>`/`>>` (nunca `2>&1`/`>&N`,
-    duplicacao de descritor), `tee <alvo>`, ultimo argumento (ou `-Destination`) de
-    cp/mv/copy/move/Copy-Item/Move-Item, e `-Path`/`-FilePath` (ou 1o posicional) de
-    Out-File/Set-Content. Leitura (cat, grep, python lendo o arquivo) nunca aparece aqui."""
+    duplicacao de descritor), `tee <alvo>`, ultimo argumento (ou `-Destination`/`-Path`) de
+    cp/mv/rm/copy/move/Copy-Item/Move-Item/Remove-Item, `-Path`/`-FilePath` (ou 1o posicional) de
+    Out-File/Set-Content/Add-Content/Clear-Content/Tee-Object, `-Path` de New-Item (so quando cria
+    ARQUIVO: tem -Value ou nao e -ItemType Directory), 1o argumento de [IO.File]::Write* /
+    [System.IO.File]::Write*, e o ultimo argumento nao-flag de `sed -i`. Leitura (cat, grep, python
+    lendo o arquivo) nunca aparece aqui - so o ALVO real de escrita (TASK-824)."""
     alvos: list[str] = []
     sem_fd = _FD_DUP_RE.sub(" ", command)
     for m in _WRITE_OP_RE.finditer(sem_fd):
         resto = sem_fd[m.end():].lstrip().split()
         if resto:
             alvos.append(resto[0].strip("'\""))
+    for m_iofile in _IOFILE_WRITE_RE.finditer(command):
+        alvos.append(m_iofile.group(1).strip("'\""))
     for clausula in re.split(r"[;&|]+", command):
         c = clausula.strip()
         if not c:
@@ -267,7 +284,8 @@ def _extract_write_targets(command: str) -> list[str]:
         if m_tee:
             alvos.append(m_tee.group(1).strip("'\""))
             continue
-        if _CP_MV_RE.match(c):
+        if _CP_RE.match(c):
+            # so o DESTINO e alvo de escrita - -Path/-LiteralPath aqui e a origem, so leitura
             m_dest = re.search(r"-Destination\s+(\S+)", c, re.IGNORECASE)
             if m_dest:
                 alvos.append(m_dest.group(1).strip("'\""))
@@ -275,6 +293,27 @@ def _extract_write_targets(command: str) -> list[str]:
                 nao_flag = [p for p in c.split()[1:] if not p.startswith("-")]
                 if nao_flag:
                     alvos.append(nao_flag[-1].strip("'\""))
+            continue
+        if _MV_RE.match(c):
+            # mover apaga a origem - origem e destino contam como alvo de escrita.
+            # TASK-824 (conserto): todo argumento que nao e flag conta SEMPRE como alvo (origem
+            # ou destino, os dois sao escrita), somado aos valores de -Destination/-Path -
+            # forma mista (um posicional + uma flag) tambem precisa marcar o posicional.
+            m_dest = re.search(r"-Destination\s+(\S+)", c, re.IGNORECASE)
+            m_origem = re.search(r"-(?:Path|LiteralPath)\s+(\S+)", c, re.IGNORECASE)
+            if m_dest:
+                alvos.append(m_dest.group(1).strip("'\""))
+            if m_origem:
+                alvos.append(m_origem.group(1).strip("'\""))
+            nao_flag = [p for p in c.split()[1:] if not p.startswith("-")]
+            alvos.extend(p.strip("'\"") for p in nao_flag)
+            continue
+        if _RM_RE.match(c):
+            # remover e destrutivo - todo -Path/-LiteralPath e todo posicional e alvo
+            for m_path in re.finditer(r"-(?:Path|LiteralPath)\s+(\S+)", c, re.IGNORECASE):
+                alvos.append(m_path.group(1).strip("'\""))
+            nao_flag = [p for p in c.split()[1:] if not p.startswith("-")]
+            alvos.extend(p.strip("'\"") for p in nao_flag)
             continue
         if _OUTFILE_SETCONTENT_RE.match(c):
             m_path = re.search(r"-(?:Path|FilePath)\s+(\S+)", c, re.IGNORECASE)
@@ -284,6 +323,28 @@ def _extract_write_targets(command: str) -> list[str]:
                 nao_flag = [p for p in c.split()[1:] if not p.startswith("-")]
                 if nao_flag:
                     alvos.append(nao_flag[0].strip("'\""))
+            continue
+        if _NEWITEM_RE.match(c):
+            m_itemtype = re.search(r"-ItemType\s+(\S+)", c, re.IGNORECASE)
+            tem_valor = re.search(r"-Value\s+", c, re.IGNORECASE) is not None
+            e_diretorio = bool(m_itemtype) and m_itemtype.group(1).strip("'\"").lower() in ("directory", "dir")
+            if e_diretorio and not tem_valor:
+                continue  # cria pasta vazia - nunca escreve dentro de um arquivo do kernel
+            m_path = re.search(r"-Path\s+(\S+)", c, re.IGNORECASE)
+            if m_path:
+                alvos.append(m_path.group(1).strip("'\""))
+            else:
+                nao_flag = [p for p in c.split()[1:] if not p.startswith("-")]
+                if nao_flag:
+                    alvos.append(nao_flag[0].strip("'\""))
+            continue
+        if _SED_INPLACE_RE.match(c):
+            partes = c.split()
+            tem_inplace = any(p.startswith("-i") for p in partes[1:])
+            if tem_inplace:
+                nao_flag = [p for p in partes[1:] if not p.startswith("-")]
+                if nao_flag:
+                    alvos.append(nao_flag[-1].strip("'\""))
     return alvos
 
 # so artifacts/<task_id>/ isenta a 4a negacao, e so quando o proprio PostToolUse ja marcou
@@ -442,7 +503,10 @@ def handle_pretooluse_guard(event: dict) -> dict:
             )
         return _no_decision()
 
-    if tool_name == "Bash":
+    if tool_name in ("Bash", "PowerShell"):
+        # PowerShell (TASK-824, achado do CEO 24/09/2026): o terminal nativo desta maquina
+        # Windows passava sem nenhuma das 4 negacoes porque o guard so olhava "Bash". O campo
+        # do evento e o mesmo (command), entao PowerShell recebe exatamente o mesmo tratamento.
         command = str(tool_input.get("command") or "")
         if _has_secret(command):
             return _deny("guard: segredo detectado no comando")
@@ -660,7 +724,7 @@ def main() -> int:
                 handle_pre_agent(event)
                 _write_stdout(_no_decision())
                 return 0
-            if tool_name in ("Write", "Edit", "Bash"):
+            if tool_name in ("Write", "Edit", "Bash", "PowerShell"):
                 _write_stdout(handle_pretooluse_guard(event))
                 return 0
             _write_stdout(_no_decision())

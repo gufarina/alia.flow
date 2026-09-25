@@ -246,6 +246,62 @@ out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", 
                            "tool_input": {"command": "cat v2/AGENTS.md"}})
 check("positivo: Bash so LENDO AGENTS.md (sem gatilho de redirecionamento) NAO acusa", out == {}, str(out))
 
+# 1b-ps (TASK-824, achado do CEO 24/09/2026): a ferramenta PowerShell (terminal principal
+# desta maquina Windows) passava sem nenhuma das 4 negacoes - o guard so olhava "Bash". O
+# campo do evento e o mesmo (command), entao PowerShell recebe exatamente o mesmo tratamento.
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "session_id": "s2",
+                           "tool_input": {"command": "Set-Content -Path v2/AGENTS.md -Value x"}})
+check("nega PowerShell Set-Content para AGENTS.md (kernel)", out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "session_id": "s2",
+                           "tool_input": {"command": "Get-Content v2/AGENTS.md"}})
+check("positivo: PowerShell so LENDO AGENTS.md (Get-Content, sem gatilho de escrita) NAO acusa", out == {}, str(out))
+
+# 1b-verbos (TASK-824, conserto: _extract_write_targets so reconhecia parte dos comandos de
+# escrita). Cada verbo novo com ALVO no kernel nega; leitura do kernel no mesmo comando com
+# escrita fora do kernel passa (a mesma regra do 1b-bis, agora tambem para os verbos novos).
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "session_id": "s2",
+                           "tool_input": {"command": "Add-Content -Path v2/AGENTS.md -Value x"}})
+check("nega PowerShell Add-Content para AGENTS.md (kernel)", out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "session_id": "s2",
+                           "tool_input": {"command": "Clear-Content -Path v2/CLAUDE.md"}})
+check("nega PowerShell Clear-Content para CLAUDE.md (kernel)", out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "session_id": "s2",
+                           "tool_input": {"command": "New-Item -Path v2/CONTRACTS.md -Value x -Force"}})
+check("nega PowerShell New-Item com -Value para CONTRACTS.md (kernel)", out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "session_id": "s2",
+                           "tool_input": {"command": "New-Item -ItemType File -Path v2/AGENTS.md"}})
+check("nega PowerShell New-Item -ItemType File para AGENTS.md (kernel)", out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "session_id": "s2",
+                           "tool_input": {"command": "New-Item -ItemType Directory -Path v2/AGENTS.md"}})
+check("positivo: New-Item -ItemType Directory sem -Value NAO acusa (cria pasta, nunca escreve em arquivo)", out == {}, str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "session_id": "s2",
+                           "tool_input": {"command": "Remove-Item -Path v2/AGENTS.md"}})
+check("nega PowerShell Remove-Item para AGENTS.md (kernel)", out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "session_id": "s2",
+                           "tool_input": {"command": "Get-Content v2/CLAUDE.md | Tee-Object -FilePath v2/CONTRACTS.md"}})
+check("nega PowerShell Tee-Object para CONTRACTS.md (kernel), mesmo lendo CLAUDE.md no mesmo comando", out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "session_id": "s2",
+                           "tool_input": {"command": "[IO.File]::WriteAllText('v2/AGENTS.md', 'x')"}})
+check("nega PowerShell [IO.File]::WriteAllText para AGENTS.md (kernel)", out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "session_id": "s2",
+                           "tool_input": {"command": "[System.IO.File]::WriteAllLines('v2/CLAUDE.md', 'x')"}})
+check("nega PowerShell [System.IO.File]::WriteAllLines para CLAUDE.md (kernel)", out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
+                           "tool_input": {"command": "rm v2/AGENTS.md"}})
+check("nega Bash rm para AGENTS.md (kernel)", out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
+                           "tool_input": {"command": "sed -i 's/a/b/' v2/AGENTS.md"}})
+check("nega Bash sed -i para AGENTS.md (kernel)", out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
+                           "tool_input": {"command": "sed -n '1p' v2/AGENTS.md"}})
+check("positivo: Bash sed sem -i (so leitura) NAO acusa", out == {}, str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "session_id": "s2",
+                           "tool_input": {"command": "Get-Content v2/AGENTS.md; Add-Content -Path docs/notes.md -Value x"}})
+check("positivo: leitura do kernel (Get-Content) + Add-Content fora do kernel no mesmo comando NAO acusa", out == {}, str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
+                           "tool_input": {"command": "cat v2/AGENTS.md && rm docs/scratch.txt"}})
+check("positivo: leitura do kernel (cat) + rm fora do kernel no mesmo comando NAO acusa", out == {}, str(out))
+
 # 1b-bis (achado do CEO, 24/09/2026, falso positivo no studio vivo): 2>&1 (duplicacao de
 # descritor) e mencao de LEITURA ao kernel (cat, grep, python lendo) em outro trecho do
 # MESMO comando nunca contam como escrita.
@@ -260,6 +316,55 @@ check("nega Bash com > (nao so >>) na INSTANCIA", out["hookSpecificOutput"]["per
 out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
                            "tool_input": {"command": "cp a AGENTS.md"}})
 check("nega Bash cp a AGENTS.md (destino = ultimo argumento) na INSTANCIA",
+      out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+
+# 1b-cp-mv-rm (TASK-824, regressao do Gate do NEXUS): dispatch.py:282 buscava
+# -(?:Destination|Path|LiteralPath) com re.search, que pega o PRIMEIRO que aparece no comando -
+# misturava origem (leitura) com destino (escrita) de Copy-Item/Move-Item, e Move-Item/rm nao
+# marcavam a origem como alvo. As provas abaixo isolam cada familia.
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "session_id": "s2",
+                           "tool_input": {"command": "Copy-Item -Path docs/a.md -Destination v2/AGENTS.md"}})
+check("nega Copy-Item -Path docs -Destination kernel (destino no kernel)",
+      out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "session_id": "s2",
+                           "tool_input": {"command": "Copy-Item -Path v2/AGENTS.md -Destination docs/bak.md"}})
+check("positivo: Copy-Item -Path kernel -Destination docs passa (-Path e origem, so leitura)",
+      out == {}, str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "session_id": "s2",
+                           "tool_input": {"command": "Move-Item -Path v2/AGENTS.md -Destination docs/bak2.md"}})
+check("nega Move-Item -Path kernel -Destination docs (mover apaga a origem, tambem e escrita)",
+      out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
+                           "tool_input": {"command": "rm v2/AGENTS.md docs/x.txt"}})
+check("nega rm kernel docs/x.txt (todo posicional e alvo, nao so o ultimo)",
+      out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
+                           "tool_input": {"command": "cp docs/a.md v2/AGENTS.md"}})
+check("nega cp docs/a.md v2/AGENTS.md (destino = ultimo posicional, no kernel)",
+      out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
+                           "tool_input": {"command": "cp v2/AGENTS.md docs/b.md"}})
+check("positivo: cp v2/AGENTS.md docs/b.md passa (origem no kernel e so leitura)",
+      out == {}, str(out))
+
+# 1b-mv-mista (TASK-824, Gate do NEXUS): "if not m_dest and not m_origem" so capturava o
+# posicional quando NEM -Destination NEM -Path/-LiteralPath apareciam no comando - a forma
+# MISTA (um posicional + uma flag) deixava o outro lado do mv sem marcar como alvo de escrita.
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "session_id": "s2",
+                           "tool_input": {"command": "Move-Item v2/AGENTS.md -Destination docs/bak.md"}})
+check("nega Move-Item <kernel posicional> -Destination docs (forma mista 1, origem sem flag)",
+      out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "session_id": "s2",
+                           "tool_input": {"command": "Move-Item -Path docs/x.md v2/AGENTS.md"}})
+check("nega Move-Item -Path docs <kernel posicional> (forma mista 2, destino sem flag)",
+      out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "session_id": "s2",
+                           "tool_input": {"command": "Move-Item docs/a.md -Destination docs/b.md"}})
+check("positivo: Move-Item docs -Destination docs (nenhum lado no kernel) passa",
+      out == {}, str(out))
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
+                           "tool_input": {"command": "mv v2/AGENTS.md docs/bak.md"}})
+check("nega Bash mv v2/AGENTS.md docs/bak.md (forma pura sem flag, origem no kernel)",
       out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
 
 # 1c) TASK-811 (achado do CEO, 24/09/2026): a protecao do kernel vale para a INSTANCIA, nunca
@@ -314,6 +419,12 @@ out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", 
                            "tool_input": {"command": "git push origin main"}},
                           env_extra={"CLAUDE_PROJECT_DIR": _pub_root})
 check("nega publicacao sem marcador de check", out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+
+# TASK-824: o mesmo "git push" via PowerShell (nao so Bash) tem que ser negado sem marcador.
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "session_id": "s2",
+                           "tool_input": {"command": "git push origin main"}},
+                          env_extra={"CLAUDE_PROJECT_DIR": _pub_root})
+check("nega publicacao via PowerShell sem marcador de check", out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
 
 os.makedirs(os.path.dirname(_marker), exist_ok=True)
 with open(_marker, "w", encoding="utf-8") as fh:

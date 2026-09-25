@@ -173,6 +173,17 @@ def _fonte_evidencia_veredito(task_id: str, events: list[dict]) -> Optional[str]
     return None
 
 
+def _gate_check_mais_recente(task_id: str, events: list[dict]) -> Optional[dict]:
+    """Devolve o evento gate_check MAIS RECENTE deste task_id (o ledger e so-acrescimo,
+    entao o ultimo da lista que casa e o mais novo). None se nunca houve gate_check para
+    esta Task."""
+    mais_recente = None
+    for ev in events:
+        if ev.get("task_id") == task_id and ev.get("event") == "gate_check":
+            mais_recente = ev
+    return mais_recente
+
+
 def fechar(task: dict, veredito: str, artifact: str, events: list[dict],
            root_cause: str = "", criterio_reprovado: str = "") -> dict:
     """Aplica a transicao de fechamento. Levanta TaskError se: a Task ja esta done (nao reabre
@@ -197,6 +208,19 @@ def fechar(task: dict, veredito: str, artifact: str, events: list[dict],
             "gate-check no ledger para este task_id) - texto digitado no --veredito nao basta",
             task_id=task.get("id"),
         )
+
+    # conserto TASK-825/826 B3: confere o gate_check MAIS RECENTE sempre que ele existir, mesmo
+    # quando um review_verdict (talvez mais antigo) ja tenha resolvido fonte_evidencia primeiro -
+    # antes, esse if so disparava quando fonte_evidencia == "gate_check", entao um review_verdict
+    # PASS anterior a um gate_check FAIL mais novo autorizava o close por cima.
+    evento_gate = _gate_check_mais_recente(task.get("id"), events)
+    if evento_gate is not None:
+        veredito_gate = evento_gate.get("veredito")
+        if veredito_gate and veredito_gate != veredito:
+            raise TaskError(
+                "veredito digitado diverge do veredito do gate_check mais recente desta Task",
+                id=task.get("id"), veredito_digitado=veredito, veredito_gate_check=veredito_gate,
+            )
 
     novo_status = "done" if veredito == "PASS" else "review"
     permitidas = TRANSICOES_VALIDAS.get(status_atual, set())

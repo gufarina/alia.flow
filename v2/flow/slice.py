@@ -13,12 +13,14 @@ Criterio de "tarefa grande" (qualquer um dispara - ANY, nao AND):
       "modulo_ou_kernel" de risk.py e da regra R2 do kernel (AGENTS.md: "toca o kernel, o
       contrato de um modulo, ou tres ou mais modulos"). Reusa o limiar que a casa ja aceita em
       vez de inventar um novo - 3 modulos e onde o proprio risco ja escala pra R2.
-  (c) criterio de aceite com mais de um resultado verificavel: objetivo OU exemplo_falha com 2+
-      oracoes separadas por ";" (so ";", nao "e"/"ou" - texto natural usa "e" para unir duas
-      METADES da mesma frase o tempo todo, ex. TASK-717 "muda contrato sem aviso e quebra em
-      producao" e UM jeito de falhar, nao dois criterios. Falso negativo (nao fatiar um brief que
-      merecia) e mais seguro aqui que falso positivo (fatiar um brief que nao precisava) - por
-      isso o separador e estrito).
+  (c) objetivo com mais de um resultado verificavel: 2+ oracoes separadas por ";" (so ";", nao
+      "e"/"ou" - texto natural usa "e" para unir duas METADES da mesma frase o tempo todo, ex.
+      TASK-717 "muda contrato sem aviso e quebra em producao" e UM jeito de falhar, nao dois
+      criterios. Falso negativo (nao fatiar um brief que merecia) e mais seguro aqui que falso
+      positivo (fatiar um brief que nao precisava) - por isso o separador e estrito). exemplo_falha
+      NUNCA entra neste eixo (conserto TASK-826, 24/09): ele descreve como UMA entrega falha, e
+      alternativa ligada por "ou"/";"/virgula dentro dele e jeito de falhar, nao entrega separada -
+      so objetivo fatia de verdade.
 
 Task pequena (nenhum criterio dispara): fatiar() devolve 1 fatia so, o brief inteiro.
 
@@ -51,7 +53,7 @@ def is_tarefa_grande(brief):
     criterio(s) que disparou - vazio quando a Task e pequena."""
     frentes = brief.get('frentes') or []
     modulos = brief.get('modulos_tocados') or []
-    oracoes = _oracoes(brief.get('objetivo')) or _oracoes(brief.get('exemplo_falha'))
+    oracoes = _oracoes(brief.get('objetivo'))
 
     motivos = {}
     if len(frentes) > TETO_FRENTES:

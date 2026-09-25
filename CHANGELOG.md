@@ -18,6 +18,22 @@ testado na instancia viva (a instancia aplicada) antes de fechar. Um update = um
 reversivel. Fluxo: alterar engine -> bump VERSION -> entrada no CHANGELOG -> smoke-test-studio
 ALL GREEN -> tag.
 
+## [2.0.2] - 2026-09-25
+
+A 2.0.2 saiu em 25/09 às 00:12 e trouxe seis mudanças:
+
+- Histórico de versões obrigatório: a conferência automática reprova versão nova sem entrada neste
+  histórico, e nenhuma versão é publicada sem revisão aprovada.
+- Tarefa conferida agora fecha: a conferência grava a prova, e a tarefa só fecha com essa prova e
+  com o mesmo veredito. Critério reprovado na conferência não deixa a tarefa sair aprovada.
+- A divisão de tarefas não parte mais um pedido pequeno: o jeito como o pedido pode falhar não vira
+  tarefa separada, e o título de cada parte vem sempre do que foi pedido.
+- A migração do estúdio passa a levar o histórico de versões junto.
+- As proteções do motor passam a vigiar também os comandos do PowerShell, não só os do Bash, e
+  reconhecem mais formas de escrever, copiar, mover e apagar arquivo.
+- A Alia passa a falar com você só quando precisa de uma decisão sua ou para entregar o resultado,
+  com um resumo no fim.
+
 ## [2.0.1] - 2026-09-24
 
 A 2.0.1 saiu em 24/09 às 20:49 e trouxe cinco mudanças:

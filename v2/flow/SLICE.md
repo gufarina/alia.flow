@@ -2,13 +2,18 @@
 
 `slice.py` e puro, so stdlib, nao importa lib/ nem a entidade Task (Warden mexe nelas agora).
 3 funcoes: `is_tarefa_grande(brief)` (motivos: frentes > 1, modulos_tocados > 2 - mesmo limiar
-de risk.py, ou oracao separada por ";" no objetivo/exemplo_falha), `fatiar(brief)` (lista de
-fatias em ordem; Task pequena devolve 1 fatia so) e `pode_comecar_fatia(indice, veredito_anterior)`
-(regra 3: so True no indice 0, ou se o veredito da fatia anterior foi PASS).
+de risk.py, ou oracao separada por ";" no objetivo), `fatiar(brief)` (lista de fatias em ordem;
+Task pequena devolve 1 fatia so) e `pode_comecar_fatia(indice, veredito_anterior)` (regra 3: so
+True no indice 0, ou se o veredito da fatia anterior foi PASS).
+
+`exemplo_falha` nunca entra no criterio de oracoes (conserto TASK-826, 24/09): ele descreve como
+UMA entrega falha, e alternativa ligada por "ou"/";"/virgula dentro dele e jeito de falhar, nao
+entrega separada. So o objetivo com 2+ oracoes separadas por ";" fatia de verdade.
 
 Provado contra os 12 casos de `cases.json` em `test_slice.py`: TASK-577 e TASK-603 (2+ frentes)
 saem grandes, os outros 10 pequenos; mais prova negativa (TASK-717, "e" solto no exemplo_falha
-NAO fatia) e positiva (";" de verdade fatia).
+NAO fatia; ";" de verdade no exemplo_falha tambem NAO fatia) e positiva (";" de verdade no
+objetivo fatia).
 
 ## Onde o Warden chama isto
 
