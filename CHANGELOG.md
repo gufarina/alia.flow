@@ -18,6 +18,21 @@ testado na instancia viva (a instancia aplicada) antes de fechar. Um update = um
 reversivel. Fluxo: alterar engine -> bump VERSION -> entrada no CHANGELOG -> smoke-test-studio
 ALL GREEN -> tag.
 
+## [2.0.1] - 2026-09-24
+
+A 2.0.1 saiu em 24/09 às 20:49 e trouxe cinco mudanças:
+
+- Aviso de conferência pendente: quando um especialista entrega e a entrega ainda não passou pela
+  conferência, a Alia é avisada antes de encerrar a resposta. Antes isso travava a conversa; agora
+  só avisa, e ficou mais rápido.
+- Checagem de idioma: resposta em inglês é barrada antes de chegar a você.
+- Proteção dos arquivos centrais do motor: olha só o arquivo que o comando vai alterar de verdade.
+  Comando que só lê passa.
+- Tarefa grande é dividida em partes, cada uma com seu critério de aceite. A parte seguinte só abre
+  depois que a anterior passa na conferência.
+- A linha de status mostra a versão certa depois de migrar o estúdio (antes ficava presa na versão
+  antiga).
+
 ## [2.0.0] - 2026-09-24
 
 A Alia Flow 2.0 chega mais rapida e mais economica, com numeros que voce confere. Ela responde na
