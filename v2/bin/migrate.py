@@ -16,7 +16,7 @@ O que o apply copia para dentro de <target>:
   VERSION (raiz)            <- dirname(<source>)/VERSION, quando existe (a linha de status le daqui)
   CHANGELOG.md (raiz)       <- dirname(<source>)/CHANGELOG.md, quando existe
   v2/                       <- <source> inteira (exceto __pycache__ e proof/_sandbox*)
-  .claude/settings.json     <- hooks do despachante amarrados (PreToolUse/PostToolUse/SubagentStop/Stop)
+  .claude/settings.json     <- hooks do despachante amarrados (PreToolUse/PostToolUse/SubagentStop/Stop/SessionStart)
 
 Backup: <target>/_backups/v2-migrate-<timestamp>/ recebe copia de CADA arquivo/pasta que
 o apply for sobrescrever ou criar, mais manifest.json com a lista completa (criados vs
@@ -66,6 +66,16 @@ SETTINGS_HOOKS = {
         "Stop": [
             {
                 "matcher": "",
+                "hooks": [{
+                    "type": "command",
+                    "command": "python \"${CLAUDE_PROJECT_DIR}/v2/hooks/dispatch.py\"",
+                    "timeout": 10,
+                }],
+            }
+        ],
+        "SessionStart": [
+            {
+                "matcher": "compact",
                 "hooks": [{
                     "type": "command",
                     "command": "python \"${CLAUDE_PROJECT_DIR}/v2/hooks/dispatch.py\"",

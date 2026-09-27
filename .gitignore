@@ -71,3 +71,5 @@ engine/governance/edges.json
 scripts/extract-secrets.ps1
 scripts/migrate-to-studio.ps1
 scripts/smoke-test-studio.ps1
+
+.alia/

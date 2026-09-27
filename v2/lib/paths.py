@@ -111,12 +111,15 @@ def _load_current_task_file() -> dict:
 
 
 def read_current_task(session_id: str | None = None) -> str | None:
-    """Task corrente para a sessao. Se a sessao tiver uma entrada propria, ganha; senao cai
-    para "_last" (a ultima Task aberta por `task.py open`, quando o chamador nao sabe o
-    session_id do host - caso comum, ja que a CLI roda fora do processo do hook)."""
+    """Task corrente para a sessao. Com session_id conhecido, a resposta e SO a entrada
+    daquela sessao - sem entrada propria, devolve None (nunca cai em "_last": TASK-838,
+    divida do WARDEN na release-reviews/2.0.2.md - cair no "_last" global atribuia Task de
+    OUTRA sessao, caso real: agentes do Dott gravados na TASK-827 da Alia). Sem session_id
+    (CLI fora do processo do hook, onde o chamador nao sabe qual sessao e a sua), cai para
+    "_last" (a ultima Task aberta por `task.py open`) - unico caso em que isso e seguro."""
     data = _load_current_task_file()
-    if session_id and session_id in data:
-        return data[session_id]
+    if session_id:
+        return data.get(session_id)
     return data.get("_last")
 
 

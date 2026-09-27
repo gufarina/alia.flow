@@ -10,9 +10,9 @@ do `proof/check.py`, nao repetido aqui).
 | flow | 5 passos, brief, risco, debate | Nexus | 12 casos certos | campo vazio nao abre |
 | squad | persona, gerador, ferramentas | Weaver | gerar 2x, mesmo hash | `gateway: false` com Agent, FAIL |
 | ledger | eventos so de acrescimo | Archive | payload gera a linha exata | evento sem campo obrigatorio nega |
-| gate | 6 criterios + goal-backward | Canon | criterio rotulado passa | travessao ou rotulo ausente, FAIL |
+| gate | 6 criterios + goal-backward | Canon | criterio rotulado passa | travessao, rotulo ausente, ou `funciona`/`goal-backward` em PASS so com frase (sem ponteiro verificavel), FAIL |
 | memoria | playbook, RSI, validade, linhagem | Archive | patterns real, zero item sem causa | sem sinal, nada muda |
 | context | brief por indice, mapa sob demanda | Gauge | brief de 3 Tasks cabe no teto | mapa injetado sem pedido, FAIL |
-| guard | despachante unico | Warden | escrita legitima passa + Stop sem Task tocada passa | 4 negacoes barram (kernel, segredo, publicacao, dominio sem delegacao) + Stop com Task tocada sem gate_verdict bloqueia 1x (TASK-812) |
+| guard | despachante unico | Warden | escrita legitima passa + Stop sem Task tocada passa + SessionStart/compact devolve ponteiro de recuperacao | 4 negacoes barram (kernel, segredo, publicacao, dominio sem delegacao) + Stop com Task tocada sem gate_verdict bloqueia 1x (TASK-812) + SessionStart de outro source/sem transcript_path devolve {} |
 | proof | conferencia rapida, 1 catraca | Warden | bateria roda ate o alvo (30s) | quebrar cada modulo, FAIL |
 | release | pacote e migracao com backup | Courier | migracao em copia muda so campo novo | restaurar devolve o hash original |

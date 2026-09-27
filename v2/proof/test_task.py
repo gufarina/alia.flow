@@ -318,14 +318,17 @@ check("hash do state.json sentinela igual antes e depois de toda a bateria", has
 
 print("\n=== I2 prova negativa (conserto FLAKE): escrever no sentinela muda o hash - o mecanismo "
       "pegaria a escrita indevida se ela acontecesse de verdade ===")
-with open(REAL_STATE, "r", encoding="utf-8") as fh:
+with open(REAL_STATE, "r", encoding="utf-8", newline="") as fh:
     _bytes_sentinela_intacto = fh.read()
-with open(REAL_STATE, "a", encoding="utf-8") as fh:
+with open(REAL_STATE, "a", encoding="utf-8", newline="") as fh:
     fh.write("\n")  # simula codigo escrevendo no sentinela por engano
 hash_sentinela_sujo = sha256(REAL_STATE)
 check("sentinela alterado diverge do hash limpo (a escrita indevida seria pega)",
       hash_sentinela_sujo != hash_after, f"limpo={hash_after[:12]} sujo={hash_sentinela_sujo[:12]}")
-with open(REAL_STATE, "w", encoding="utf-8") as fh:
+# newline="" nas 3 aberturas acima (achado ao rodar esta bateria no Windows, TASK-838): o
+# arquivo real e so LF - texto sem essa flag TRADUZ "\n" -> "\r\n" na escrita (newline=None,
+# o default), e o restore deixava de bater byte a byte com o hash limpo so por causa disso.
+with open(REAL_STATE, "w", encoding="utf-8", newline="") as fh:
     fh.write(_bytes_sentinela_intacto)  # desfaz a escrita, sentinela volta ao estado provado acima
 check("sentinela restaurado volta ao hash limpo (PASS de volta)", sha256(REAL_STATE) == hash_after, "")
 
@@ -351,6 +354,18 @@ def run_gate(*args) -> tuple[dict, int]:
     return out, proc.returncode
 
 
+CRITERIOS_COM_PONTEIRO_OBRIGATORIO = ("funciona", "goal-backward")
+
+
+def _evidencia_fixture(rotulo: str) -> str:
+    """Evidencia generica da fixture. TASK-838: funciona/goal-backward em PASS agora exigem
+    ponteiro verificavel (bin/gate.py, validar_parecer) - a fixture usa um comando entre
+    crases pros dois, e mantem a frase simples nos outros (nao exigem ponteiro)."""
+    if rotulo in CRITERIOS_COM_PONTEIRO_OBRIGATORIO:
+        return f"evidencia: rodei `python test_task.py --fixture {rotulo}` e bateu o esperado"
+    return f"evidencia: [MEDIDO fixture de teste do gate.py, criterio {rotulo}]"
+
+
 def _parecer(veredito: str, excluir: tuple = ()) -> str:
     """Parecer de gate minimo e valido: os 7 rotulos (6 criterios + goal-backward), cada um
     com resultado PASS e uma linha de evidencia logo abaixo, mais a linha de veredito."""
@@ -359,7 +374,7 @@ def _parecer(veredito: str, excluir: tuple = ()) -> str:
         if rotulo in excluir:
             continue
         linhas.append(f"{rotulo}: PASS")
-        linhas.append(f"evidencia: [MEDIDO fixture de teste do gate.py, criterio {rotulo}]")
+        linhas.append(_evidencia_fixture(rotulo))
     linhas.append(f"veredito: {veredito}")
     return "\n".join(linhas) + "\n"
 

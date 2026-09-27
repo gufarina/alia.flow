@@ -18,6 +18,13 @@ logo na sequencia (pode pular linha em branco, nunca outro texto no meio). No fi
 linha `veredito: PASS|FAIL|CONCERN` (se aparecer mais de uma vez, vale a ultima). Zero travessao
 (U+2014) e zero meia-risca (U+2013) em qualquer ponto do arquivo.
 
+Ponteiro verificavel (padrao copiado do jkudish/jev-mcp, MIT: "o pedido e a afirmacao nao sao
+prova; so a evidencia e"): quando o criterio `funciona` ou `goal-backward` vem em PASS, a linha de
+evidencia precisa trazer pelo menos UM ponteiro que outra mao reproduz - um comando entre crases
+`...` ou um caminho de arquivo (com `:linha`, `:inicio-fim` ou `#Lx-Ly` opcional) que EXISTE no
+disco. So o PRIMEIRO CORTE (sem modelo); a conferencia semantica do que a evidencia sustenta fica
+para prova futura.
+
 Uso: python gate.py --task TASK-N --parecer <arquivo.md> [--session <id>] [--ledger <caminho>]
 
 So biblioteca padrao. Saida sempre 1 objeto JSON em stdout; exit 0 quando o parecer e valido
@@ -45,6 +52,53 @@ MEIA_RISCA = chr(0x2013)  # en-dash, mesma lei
 CRITERIOS_MINIMOS = ("funciona", "aderente-ddd", "frugal", "rastreavel", "simplicidade", "fundamentada")
 CRITERIO_GOAL_BACKWARD = "goal-backward"
 TODOS_CRITERIOS = CRITERIOS_MINIMOS + (CRITERIO_GOAL_BACKWARD,)
+CRITERIO_FUNCIONA = "funciona"
+CRITERIOS_QUE_EXIGEM_PONTEIRO = (CRITERIO_FUNCIONA, CRITERIO_GOAL_BACKWARD)
+
+_COMANDO_ENTRE_CRASES_RE = re.compile(r"`([^`]+)`")
+# token com / ou \ e extensao, aceitando sufixo :N, :N-M ou #Lx-Ly (o sufixo fica de fora
+# da checagem de existencia no disco - so o caminho antes dele precisa existir).
+_CAMINHO_TOKEN_RE = re.compile(
+    r"[^\s`]*[/\\][^\s`]*\.[A-Za-z0-9]+(?::\d+(?:-\d+)?|#L\d+(?:-L?\d+)?)?"
+)
+_SUFIXO_LINHA_RE = re.compile(r"(:\d+(?:-\d+)?|#L\d+(?:-L?\d+)?)$")
+
+
+def _caminho_sem_sufixo(token: str) -> str:
+    return _SUFIXO_LINHA_RE.sub("", token)
+
+
+def _caminho_existe(caminho: str, dir_parecer: str) -> bool:
+    caminho = caminho.strip("'\"(),;:")
+    if not caminho:
+        return False
+    if os.path.isabs(caminho):
+        return os.path.isfile(caminho) or os.path.isdir(caminho)
+    bases = [os.getcwd()]
+    project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
+    if project_dir:
+        bases.append(project_dir)
+    bases.append(dir_parecer)
+    for base in bases:
+        alvo = os.path.join(base, caminho)
+        if os.path.isfile(alvo) or os.path.isdir(alvo):
+            return True
+    return False
+
+
+def _tem_ponteiro_verificavel(evidencia: str, dir_parecer: str) -> bool:
+    """Um comando entre crases sempre conta (outra mao reproduz o comando). Um caminho de
+    arquivo so conta se EXISTIR no disco (absoluto, ou relativo a cwd/CLAUDE_PROJECT_DIR/pasta
+    do proprio parecer) - caminho citado de memoria e mais frase que prova."""
+    if _COMANDO_ENTRE_CRASES_RE.search(evidencia):
+        return True
+    for m in _CAMINHO_TOKEN_RE.finditer(evidencia):
+        token = m.group(0).strip("'\"(),;")
+        if not token:
+            continue
+        if _caminho_existe(_caminho_sem_sufixo(token), dir_parecer):
+            return True
+    return False
 
 
 def _linha_rotulo(rotulo: str, linhas: list[str]) -> tuple[int | None, str | None]:
@@ -68,14 +122,18 @@ def _evidencia_logo_apos(idx: int, linhas: list[str]) -> str | None:
     return None
 
 
-def validar_parecer(texto: str) -> dict:
+def validar_parecer(texto: str, parecer_path: str | None = None) -> dict:
     """Confere o parecer contra o contrato do gate. Devolve {problemas, criterios, veredito}.
-    `problemas` vazio = parecer valido (pode gravar o evento)."""
+    `problemas` vazio = parecer valido (pode gravar o evento). `parecer_path` (quando dado)
+    vira mais uma base de resolucao de caminho relativo no ponteiro verificavel - nunca afeta
+    nenhuma outra regra."""
     problemas: list[str] = []
     if TRAVESSAO in texto:
         problemas.append("travessao (em-dash, U+2014) encontrado no parecer")
     if MEIA_RISCA in texto:
         problemas.append("meia-risca (en-dash, U+2013) encontrada no parecer")
+
+    dir_parecer = os.path.dirname(os.path.abspath(parecer_path)) if parecer_path else os.getcwd()
 
     linhas = texto.splitlines()
     criterios: dict[str, str] = {}
@@ -90,6 +148,13 @@ def validar_parecer(texto: str) -> dict:
         evidencia = _evidencia_logo_apos(idx, linhas)
         if not evidencia:
             problemas.append(f"criterio '{rotulo}' sem linha de evidencia logo abaixo")
+            continue
+        if (rotulo in CRITERIOS_QUE_EXIGEM_PONTEIRO and valor.upper() == "PASS"
+                and not _tem_ponteiro_verificavel(evidencia, dir_parecer)):
+            problemas.append(
+                f"criterio '{rotulo}' em PASS com evidencia so em frase: aponte arquivo, "
+                "arquivo:linha ou `comando` que outra mao reproduz"
+            )
             continue
         criterios[rotulo] = valor.upper()
 
@@ -138,7 +203,7 @@ def main() -> int:
         bruto = fh.read()
     texto = bruto.decode("utf-8", errors="replace")
 
-    avaliacao = validar_parecer(texto)
+    avaliacao = validar_parecer(texto, args.parecer)
     if avaliacao["problemas"]:
         _print({"ok": False, "error": "parecer invalido contra o contrato do gate",
                 "problemas": avaliacao["problemas"]})

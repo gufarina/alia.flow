@@ -111,6 +111,12 @@ check("test_task.py sai verde", rc == 0, f"{dt*1000:.0f} ms")
 if rc != 0:
     print(out[-3000:])
 
+print("\n=== bateria: bin/gate.py (TASK-838, ponteiro verificavel em funciona/goal-backward) ===")
+rc, out, dt = run_script(os.path.join(HERE, "test_gate.py"))
+check("test_gate.py sai verde", rc == 0, f"{dt*1000:.0f} ms")
+if rc != 0:
+    print(out[-3000:])
+
 print("\n=== bateria: bin/migrate.py (D1, achado do Gate do NEXUS: apply/undo sem prova automatica) ===")
 rc, out, dt = run_script(os.path.join(HERE, "test_migrate.py"))
 check("test_migrate.py sai verde", rc == 0, f"{dt*1000:.0f} ms")

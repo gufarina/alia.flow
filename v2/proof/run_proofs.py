@@ -723,6 +723,81 @@ out_pt, dt_pt, rc_pt = run_stop({"session_id": "s-lang-pt", "transcript_path": _
 check("prova negativa: portugues com termos tecnicos em ingles (check.py, commit, push, "
       "dispatch.py, merge, release) NAO e barrado", out_pt == {}, str(out_pt))
 
+# ---------------------------------------------------------------------------
+print("\n=== TASK-838 (C): read_current_task nunca cai no _last quando o session_id e conhecido ===")
+sys.path.insert(0, os.path.join(V2, "lib"))
+import paths as _paths_mod  # noqa: E402
+import importlib as _importlib  # noqa: E402
+_importlib.reload(_paths_mod)
+
+_current_task_fixture = os.path.join(SANDBOX, "current-task-fixture.json")
+os.environ["ALIA_CURRENT_TASK_PATH"] = _current_task_fixture
+with open(_current_task_fixture, "w", encoding="utf-8", newline="\n") as fh:
+    json.dump({"sessao-alia": "TASK-827", "_last": "TASK-827"}, fh)
+
+# positivo: sessao com entrada propria ganha a propria (nunca a de outra sessao)
+check("sessao com entrada propria devolve a sua",
+      _paths_mod.read_current_task("sessao-alia") == "TASK-827",
+      str(_paths_mod.read_current_task("sessao-alia")))
+
+# negativo (a prova do achado real, TASK-827 do Alia gravada por agente do Dott): sessao NOVA
+# (sem entrada propria) tem que devolver None, NUNCA o "_last" de outra sessao.
+check("prova negativa: sessao SEM entrada propria (mas com session_id conhecido) devolve None, "
+      "nunca cai no _last de outra sessao",
+      _paths_mod.read_current_task("sessao-dott-nova") is None,
+      str(_paths_mod.read_current_task("sessao-dott-nova")))
+
+# regressao (comportamento antigo intencional, preservado): SEM session_id (CLI fora do hook),
+# cai no _last como sempre.
+check("sem session_id (CLI fora do hook) continua caindo no _last",
+      _paths_mod.read_current_task(None) == "TASK-827",
+      str(_paths_mod.read_current_task(None)))
+del os.environ["ALIA_CURRENT_TASK_PATH"]
+
+# ---------------------------------------------------------------------------
+print("\n=== TASK-839 (B): SessionStart/compact devolve ponteiro de recuperacao ===")
+LEDGER = fresh_sandbox()
+_transcript_compact = os.path.join(SANDBOX, "transcript-compact-fixture.jsonl")
+with open(_transcript_compact, "w", encoding="utf-8") as fh:
+    fh.write('{"type": "user", "message": {"content": "oi"}}\n')
+
+_current_task_compact = os.path.join(SANDBOX, "current-task-compact.json")
+with open(_current_task_compact, "w", encoding="utf-8", newline="\n") as fh:
+    json.dump({"s-compact-1": "TASK-839"}, fh)
+
+out_compact, _, rc_compact = run_dispatch(
+    {"hook_event_name": "SessionStart", "source": "compact", "session_id": "s-compact-1",
+     "transcript_path": _transcript_compact},
+    env_extra={"ALIA_CURRENT_TASK_PATH": _current_task_compact},
+)
+check("SessionStart/compact sai 0", rc_compact == 0, f"rc={rc_compact}")
+_ctx_compact = out_compact.get("hookSpecificOutput", {}).get("additionalContext", "")
+check("additionalContext cita o transcript_path (ponteiro de recuperacao)",
+      _transcript_compact in _ctx_compact, _ctx_compact)
+check("additionalContext cita a Task corrente desta sessao",
+      "TASK-839" in _ctx_compact, _ctx_compact)
+check("additionalContext ate 700 caracteres (teto proprio)", len(_ctx_compact) <= 700, str(len(_ctx_compact)))
+_eventos_compact = read_ledger()
+check("evento compact_recovery gravado no ledger",
+      any(e.get("event") == "compact_recovery" and e.get("session_id") == "s-compact-1"
+          for e in _eventos_compact), str(_eventos_compact))
+
+# negativo (a): source diferente de "compact" (ex.: "startup"/"resume") nunca gera contexto
+LEDGER = fresh_sandbox()
+out_startup, _, rc_startup = run_dispatch(
+    {"hook_event_name": "SessionStart", "source": "startup", "session_id": "s-compact-2",
+     "transcript_path": _transcript_compact})
+check("prova negativa: SessionStart source=startup devolve {} (fail-soft, nao e recuperacao)",
+      out_startup == {}, str(out_startup))
+check("nenhum compact_recovery gravado para source=startup", read_ledger() == [], str(read_ledger()))
+
+# negativo (b): SessionStart/compact SEM transcript_path nunca gera contexto (nao ha o que apontar)
+LEDGER = fresh_sandbox()
+out_sem_transcript, _, rc_sem_transcript = run_dispatch(
+    {"hook_event_name": "SessionStart", "source": "compact", "session_id": "s-compact-3"})
+check("prova negativa: SessionStart/compact sem transcript_path devolve {}",
+      out_sem_transcript == {}, str(out_sem_transcript))
+
 print("\n=== resultado ===")
 if FAILS:
     print(f"FALHOU: {len(FAILS)} prova(s): {FAILS}")

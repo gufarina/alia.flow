@@ -28,7 +28,13 @@
   negacoes do guard rodam so no PreToolUse. Stop (TASK-812, a trava de fim): bloqueia 1 vez
   quando ESTA sessao tocou (evidencia no ledger) uma Task que segue sem gate_verdict;
   stop_hook_active nunca bloqueia de novo (anti-laco) e grava "encerrou_sem_gate"; desliga com
-  ALIA_END_LOCK_OFF=1 ou .claude/end-lock.off.
+  ALIA_END_LOCK_OFF=1 ou .claude/end-lock.off. SessionStart matcher "compact" (TASK-839): devolve
+  additionalContext apontando o transcript_path da sessao (recuperacao pos-compactacao) e grava
+  "compact_recovery"; qualquer outro source, ou sem transcript_path, devolve {}.
+- [lib/paths.py](lib/paths.py) - resolvedor unico de ledger/state/Task corrente (Warden).
+  `read_current_task(session_id)`: com session_id conhecido, SO a entrada daquela sessao (sem
+  entrada propria, None - TASK-838, nunca mais cai no "_last" de outra sessao); sem session_id
+  (CLI fora do hook), cai no "_last" como sempre.
 - [bin/task.py](bin/task.py) - CLI `task open/close/context` (I2, Warden). Sempre sobre `--state`
   explicito (copia), nunca resolve o state.json real por conta propria. `close` exige evidencia de
   veredito no ledger (`review_verdict` ou o `gate_check` que nasce de `bin/gate.py`, TASK-825) e

@@ -18,6 +18,17 @@ testado na instancia viva (a instancia aplicada) antes de fechar. Um update = um
 reversivel. Fluxo: alterar engine -> bump VERSION -> entrada no CHANGELOG -> smoke-test-studio
 ALL GREEN -> tag.
 
+## [2.0.3] - 2026-09-27
+
+A 2.0.3 saiu em 27/09 às HH:MM e trouxe três mudanças:
+
+- A conferência final recusa aprovação sem prova que outra pessoa consiga repetir: dizer que
+  funciona ou que cumpriu o objetivo agora exige apontar o comando rodado ou um arquivo que existe.
+- Quando a conversa é resumida para liberar espaço, a Alia recebe o endereço da conversa inteira e
+  confere ali antes de afirmar um detalhe da parte resumida.
+- Cada conversa registra só a própria tarefa: uma conversa sem tarefa aberta não herda mais a de
+  outra, e o custo não vai parar na conta errada.
+
 ## [2.0.2] - 2026-09-25
 
 A 2.0.2 saiu em 25/09 às 00:15 e trouxe seis mudanças:

@@ -15,6 +15,10 @@ mais que isso:
    nunca bloqueia de novo (anti-laco): deixa parar e grava "encerrou_sem_gate"
    no ledger, a divida visivel. Desliga com ALIA_END_LOCK_OFF=1 ou o arquivo
    .claude/end-lock.off (mesmo padrao do graph-gate.off).
+4. Recuperacao pos-compactacao (SessionStart matcher "compact", TASK-839): devolve
+   additionalContext curto apontando o transcript_path da sessao (o .jsonl continua com a
+   conversa inteira antes da fronteira de compactacao) e grava "compact_recovery" no ledger.
+   Qualquer outro source, ou SessionStart sem transcript_path, devolve {} (fail-soft).
 
 Nunca deixa excecao crua vazar: todo caminho de erro cai no except geral no
 fim do arquivo, loga em activity.jsonl como "dispatch_error" e devolve uma
@@ -689,6 +693,43 @@ def handle_stop(event: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Recuperacao pos-compactacao (SessionStart, TASK-839): a conversa compactada some do resumo,
+# mas o .jsonl da sessao continua com o texto integral ANTES da fronteira (achado medido: 2.582
+# linhas antes de subtype compact_boundary num transcript real). O contrato do host dispara
+# SessionStart com matcher "compact" so apos /compact manual ou automatico - so ai vale avisar.
+# Teto de 700 caracteres (nosso, mais apertado que o teto do host de 10.000), sempre PT-BR.
+# ---------------------------------------------------------------------------
+
+CONTEXTO_COMPACT_MAX_CHARS = 700
+
+
+def handle_session_start(event: dict) -> dict:
+    if event.get("source") != "compact":
+        return {}
+    transcript_path = event.get("transcript_path")
+    if not transcript_path:
+        return {}
+    session_id = event.get("session_id")
+    task_id = paths.read_current_task(session_id)
+    sufixo_task = f" Task corrente desta sessao: {task_id}." if task_id else ""
+    contexto = (
+        "Conversa compactada. O texto integral anterior a compactacao continua em "
+        f"{transcript_path}. Antes de afirmar fato exato da parte compactada (caminho, "
+        "numero, decisao, pedido original do operador), busque nesse arquivo com Grep em vez "
+        f"de confiar so no resumo.{sufixo_task}"
+    )
+    if len(contexto) > CONTEXTO_COMPACT_MAX_CHARS:
+        contexto = contexto[:CONTEXTO_COMPACT_MAX_CHARS]
+    ledger.append_event(_ledger_path(), {
+        "event": "compact_recovery",
+        "session_id": session_id,
+        "transcript_path": transcript_path,
+        "task_id": task_id,
+    })
+    return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": contexto}}
+
+
+# ---------------------------------------------------------------------------
 # Roteamento principal
 # ---------------------------------------------------------------------------
 
@@ -745,6 +786,10 @@ def main() -> int:
 
         if hook == "Stop":
             _write_stdout(handle_stop(event))
+            return 0
+
+        if hook == "SessionStart":
+            _write_stdout(handle_session_start(event))
             return 0
 
         _write_stdout({})
