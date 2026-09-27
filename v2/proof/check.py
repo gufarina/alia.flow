@@ -355,6 +355,304 @@ check("nenhum diretorio _sandbox* dentro de v2/ (sandbox de teste vive em tempfi
       len(sandboxes_em_v2) == 0, str(sandboxes_em_v2))
 
 # ---------------------------------------------------------------------------
+print("\n=== identidade real do operador (TASK-841/842, WARDEN): sem Client/estudio/usuario real "
+      "em arquivo publicavel do motor ===")
+sys.path.insert(0, os.path.join(V2, "lib"))
+import identity_guard  # noqa: E402
+
+# fixture positiva: alia.config.json + state.json SINTETICOS (Client "cliente-exemplo", estudio
+# "Estudio Exemplo" numa PASTA "estudio-exemplo-pasta" - nomes de campo e de pasta DIVERGEM de
+# proposito, pra provar que as duas formas contam), fora do motor de verdade (a lei da propria
+# Task 841/842 proibe nome de Client real em v2/).
+_id_fixture_root = _sandbox_tempdir("alia-v2-check-identity-")
+_id_fixture_dir = os.path.join(_id_fixture_root, "estudio-exemplo-pasta")
+os.makedirs(_id_fixture_dir, exist_ok=True)
+with open(os.path.join(_id_fixture_dir, "alia.config.json"), "w", encoding="utf-8") as fh:
+    json.dump({"studio_dir": ".", "studio": "Estudio Exemplo"}, fh)
+with open(os.path.join(_id_fixture_dir, "state.json"), "w", encoding="utf-8") as fh:
+    json.dump({"clients": ["cliente-exemplo", {"id": "alia-flow-lab"}]}, fh)
+
+_ids_fx, _studios_fx = identity_guard.find_operator_client_ids(_id_fixture_dir)
+check("find_operator_client_ids le a fixture, exclui alia-flow-lab e devolve as DUAS formas do nome do estudio (campo + pasta)",
+      _ids_fx == ["cliente-exemplo"] and _studios_fx == ["Estudio Exemplo", "estudio-exemplo-pasta"],
+      str((_ids_fx, _studios_fx)))
+
+_leak_a = identity_guard.find_identity_leak("o Client cliente-exemplo pediu isso", start=_id_fixture_dir)
+check("(a) positivo: id de Client real detectado", _leak_a is not None and "cliente-exemplo" in _leak_a, str(_leak_a))
+
+_leak_hifen = identity_guard.find_identity_leak("mcp-cliente-exemplo-tool nunca casa (colado por hifen)", start=_id_fixture_dir)
+check("negativo: id colado por hifen/underscore (fronteira) NAO conta como vazamento", _leak_hifen is None, str(_leak_hifen))
+
+# (a, R2) achado do revisor LATTICE: ids CURTOS de Client (ex. 6-8 letras) podem colar dentro de
+# outro nome (o dono do GitHub nas URLs de instalacao e o caso real: scripts/install.ps1 tem
+# "$repo = <dono>/alia.flow" e o dono contem um id real colado a outro prefixo). Usa os ids REAIS
+# desta maquina (nunca cravados aqui) para provar as duas pontas com a MESMA regra de
+# check-public-surface.ps1 - sem piso/excecao inventada so pra id curto.
+_ids_r2, _ = identity_guard.find_operator_client_ids()
+if _ids_r2:
+    _id_curto = min(_ids_r2, key=len)
+    _colado = "prefixo" + _id_curto + "sufixo"
+    _leak_colado_r2 = identity_guard.find_identity_leak_with(_colado, _ids_r2, [])
+    check(f"(a) negativo R2: id curto real ({len(_id_curto)} letra(s)) colado dentro de outro nome NAO casa",
+          _leak_colado_r2 is None, str(_leak_colado_r2))
+    _palavra = "o Client " + _id_curto + " pediu isso"
+    _leak_palavra_r2 = identity_guard.find_identity_leak_with(_palavra, _ids_r2, [])
+    check("(a) positivo R2: o MESMO id curto real como PALAVRA INTEIRA casa",
+          _leak_palavra_r2 is not None, str(_leak_palavra_r2))
+    # dono do GitHub de verdade (scripts/install.ps1, lido do disco, nunca cravado aqui): se
+    # ELE proprio colar algum id real, tem que passar limpo - a mesma regra de
+    # check-public-surface.ps1, nenhuma excecao especial pro nome do dono.
+    _install_ps1_r2 = os.path.join(os.path.dirname(V2), "scripts", "install.ps1")
+    if os.path.isfile(_install_ps1_r2):
+        with open(_install_ps1_r2, "r", encoding="utf-8") as fh:
+            _m_repo_r2 = re.search(r'\$repo\s*=\s*"([^"]+)"', fh.read())
+        if _m_repo_r2:
+            _owner_r2 = _m_repo_r2.group(1).split("/")[0]
+            _leak_owner_r2 = identity_guard.find_identity_leak_with(_owner_r2, _ids_r2, [])
+            check(f"(a) negativo R2: dono real do GitHub em scripts/install.ps1 NAO casa nenhum id de Client "
+                  "real colado (mesma regra de check-public-surface.ps1, sem piso inventado)",
+                  _leak_owner_r2 is None, str(_leak_owner_r2))
+
+_leak_clean = identity_guard.find_identity_leak("texto generico sem nada sensivel", start=_id_fixture_dir)
+check("negativo: texto limpo nao acusa nada", _leak_clean is None, str(_leak_clean))
+
+# (b) nome do estudio: campo do config, pasta raiz, e as 3 formas de separador - NUNCA
+# autorreferencia legitima (diferente do check-public-surface.ps1, que so precisa disso pra Client).
+for _texto_b, _motivo_b in [
+    ("a marca Estudio Exemplo aparece aqui (campo do config, com espaco)", "campo com espaco"),
+    ("a marca estudio-exemplo-pasta aparece aqui (nome da pasta, com hifen)", "pasta com hifen"),
+    ("a marca estudio_exemplo aparece aqui (com underscore)", "com underscore"),
+    ("a marca ESTUDIO EXEMPLO aparece aqui (caixa alta)", "case-insensitive"),
+]:
+    _r = identity_guard.find_identity_leak(_texto_b, start=_id_fixture_dir)
+    check(f"(b) positivo [{_motivo_b}]: nome do estudio detectado", _r is not None and "estudio" in _r, str(_r))
+
+# (c) usuario/caminho da maquina: as 5 formas praticas (nativo, hifen/slug do Claude Code, %20,
+# sem espaco, 8.3 curto quando o SO souber devolver).
+_ids_nc, _studios_nc, _formas_c = identity_guard.operator_identity_needles(_id_fixture_dir)
+check(f"operator_identity_needles resolve pelo menos 3 formas do caminho/usuario real ({len(_formas_c)})",
+      len(_formas_c) >= 3, str(_formas_c))
+_usuario_real = os.path.basename(os.path.expanduser("~").rstrip("\\/"))
+_forma_hifen = re.sub(r"[\s_]+", "-", _usuario_real)
+for _texto_c, _motivo_c in [
+    (f"o caminho e {os.path.expanduser('~')}\\projeto", "caminho nativo"),
+    (f"pasta .claude/projects/C--Users-{_forma_hifen}-Projetos-x/memory", "slug com hifen (Claude Code)"),
+    (f"o usuario e {_usuario_real.replace(' ', '%20')}", "%20"),
+]:
+    _r = identity_guard.find_identity_leak(_texto_c, start=_id_fixture_dir)
+    check(f"(c) positivo [{_motivo_c}]: usuario/caminho real detectado", _r is not None and "maquina do operador" in _r, str(_r))
+
+_leak_c_fake = identity_guard.find_identity_leak("o caminho e C:\\Users\\fulano\\projeto", start=_id_fixture_dir)
+check("negativo: caminho de fixture sintetica (fulano) nao acusa nada", _leak_c_fake is None, str(_leak_c_fake))
+
+# sem state.json acessivel em nenhum ancestral (caso do produto publico distribuido): (a) e (b)
+# ficam vazias, so (c) roda - fail-soft, esperado, nunca quebra a sessao.
+_no_state_dir = _sandbox_tempdir("alia-v2-check-identity-nostate-")
+_ids_ns, _studios_ns = identity_guard.find_operator_client_ids(_no_state_dir)
+check("sem state.json em nenhum ancestral: ids e nomes do estudio ficam vazios ((a)/(b) pulados, esperado)",
+      _ids_ns == [] and _studios_ns == [], str((_ids_ns, _studios_ns)))
+_leak_ns_id = identity_guard.find_identity_leak("cliente-exemplo aparece aqui mas sem config", start=_no_state_dir)
+check("sem config: mencao a um id nao acusa nada (nada pra comparar)", _leak_ns_id is None, str(_leak_ns_id))
+_leak_ns_home = identity_guard.find_identity_leak(f"caminho {os.path.expanduser('~').replace(chr(92), '/')}/x", start=_no_state_dir)
+check("sem config: (c) caminho real continua ativo mesmo sem state.json (fail-soft nunca desliga o caminho)",
+      _leak_ns_home is not None, str(_leak_ns_home))
+
+# classify_target: allowlist real (mesma de package-release.ps1) - oficina, produto, e pasta/
+# script FORA da allowlist (nao ship, entao identidade la dentro nunca trava este guard).
+# CONSERTO (achado da coordenacao): os casos de OFICINA usavam o proprio caminho V2 deste
+# processo - so bate "oficina" quando check.py roda DE DENTRO da oficina de verdade; rodando no
+# produto (mesmo sha256 do arquivo, layout de disco diferente) os 6 casos reprovavam por diverg
+# do ambiente, nunca por defeito do codigo. Agora a fixture MONTA o layout de oficina numa pasta
+# SINTETICA (contem o marcador clients/alia-flow-lab/ literal) - o mesmo veredito em QUALQUER
+# lugar onde check.py rode.
+_ofc_root = os.path.join(_sandbox_tempdir("alia-v2-check-classify-oficina-"), "clients", "alia-flow-lab")
+os.makedirs(os.path.join(_ofc_root, "v2", "hooks"), exist_ok=True)
+os.makedirs(os.path.join(_ofc_root, "scripts"), exist_ok=True)
+os.makedirs(os.path.join(_ofc_root, "docs"), exist_ok=True)
+os.makedirs(os.path.join(_ofc_root, "opportunities"), exist_ok=True)
+os.makedirs(os.path.join(_ofc_root, "studio"), exist_ok=True)
+for _rel_ofc in ("v2/hooks/dispatch.py", "scripts/smoke-test.ps1", "scripts/smoke-test-studio.ps1",
+                  "docs/CLAIMS.md", "opportunities/x.md", "studio/state.json"):
+    open(os.path.join(_ofc_root, *_rel_ofc.split("/")), "w").close()
+check("classify_target: v2/hooks/dispatch.py (layout sintetico de oficina) = oficina",
+      identity_guard.classify_target(os.path.join(_ofc_root, "v2", "hooks", "dispatch.py")) == "oficina", "")
+check("classify_target: scripts/smoke-test.ps1 (sintetico, na allowlist) = oficina",
+      identity_guard.classify_target(os.path.join(_ofc_root, "scripts", "smoke-test.ps1")) == "oficina", "")
+check("classify_target: scripts/smoke-test-studio.ps1 (sintetico, FORA da allowlist, smoke da instancia) NAO trava",
+      identity_guard.classify_target(os.path.join(_ofc_root, "scripts", "smoke-test-studio.ps1")) is None, "")
+check("classify_target: docs/CLAIMS.md (sintetico, docs/ e allowlist, CLAIMS nao esta nela) NAO trava",
+      identity_guard.classify_target(os.path.join(_ofc_root, "docs", "CLAIMS.md")) is None, "")
+check("classify_target: pasta privada (opportunities/) sintetica dentro da oficina NAO trava",
+      identity_guard.classify_target(os.path.join(_ofc_root, "opportunities", "x.md")) is None, "")
+check("classify_target: studio/ (sintetico, dogfood operacional da propria oficina) NAO trava",
+      identity_guard.classify_target(os.path.join(_ofc_root, "studio", "state.json")) is None, "")
+
+_prod_root = _sandbox_tempdir("alia-v2-check-identity-prod-")
+open(os.path.join(_prod_root, "VERSION"), "w").close()
+os.makedirs(os.path.join(_prod_root, "v2"), exist_ok=True)
+open(os.path.join(_prod_root, "MANIFEST.sha256"), "w").close()
+_prod_file = os.path.join(_prod_root, "engine", "x.md")
+os.makedirs(os.path.dirname(_prod_file), exist_ok=True)
+open(_prod_file, "w").close()
+check("classify_target: repo com VERSION+v2/+MANIFEST.sha256 = product (repo inteiro, ja publicado)",
+      identity_guard.classify_target(_prod_file) == "product", "")
+check("classify_target: caminho fora dos dois marcadores (nem oficina nem product) = None (nao trava)",
+      identity_guard.classify_target(os.path.join(_id_fixture_dir, "qualquer.md")) is None, "")
+
+# prova negativa DE VERDADE (LEI da casa: desligue a condicao e confira o FAIL de verdade).
+# Simula o guard SEM a exclusao de alia-flow-lab: o proprio motor citando o proprio nome (self
+# -reference legitima em qualquer README/CHANGELOG/engine) viraria falso positivo eterno - a
+# exclusao existe exatamente para isso nunca acontecer.
+_regex_sem_exclusao = re.compile(r"(?i)(?<![\w-])(?:cliente-exemplo|alia-flow-lab)(?![\w-])")
+check("prova negativa: SEM a exclusao de alia-flow-lab, self-reference do motor vira falso positivo",
+      bool(_regex_sem_exclusao.search("o motor alia-flow-lab cita o proprio nome")), "")
+check("com a exclusao (codigo real de identity_guard.py): a mesma frase nao acusa nada",
+      identity_guard.find_identity_leak("o motor alia-flow-lab cita o proprio nome", start=_id_fixture_dir) is None, "")
+
+# prova negativa DE VERDADE do nome do estudio: sem tratar a forma-pasta como needle, o mesmo
+# texto (b) acima passaria batido - confere que DESLIGAR so a forma-pasta faz o achado sumir.
+_ids_sopc, _studios_sopc = identity_guard.find_operator_client_ids(_id_fixture_dir)
+_so_campo = [n for n in _studios_sopc if n != "estudio-exemplo-pasta"]
+_sem_forma_pasta = identity_guard.find_identity_leak_with(
+    "a marca estudio-exemplo-pasta aparece aqui", _ids_sopc, _so_campo)
+check("prova negativa: SEM a forma-pasta na lista, a mesma frase (so pasta, sem o campo) passa batida",
+      _sem_forma_pasta is None, str(_sem_forma_pasta))
+
+# varredura de VERDADE: todo arquivo PUBLICAVEL - modo depende de ONDE check.py roda (achado do
+# revisor LATTICE, R2: a varredura so olhava a oficina; quando check.py roda DENTRO do repo do
+# PRODUTO ja publicado - a 3a porta, CI do produto - tem que varrer o produto inteiro, senao um
+# vazamento que so existe la (scripts/ divergem 1.83/1.84, nao propagam por copia) nunca e pego).
+_ids_real, _studios_real, _formas_real = identity_guard.operator_identity_needles()
+_kernel_probe = os.path.join(V2, "AGENTS.md")
+_scan_kind = identity_guard.classify_target(_kernel_probe)
+# CONSERTO (achado da coordenacao, R4): sem marcador de oficina NEM de produto (ex.: uma
+# INSTANCIA instalada do estudio - VERSION + v2/ + alia.config.json/state.json REAIS do
+# operador, sem MANIFEST.sha256 de pacote) o codigo antigo caia direto no "else" e tratava
+# como OFICINA por omissao - varria alia.config.json/state.json da RAIZ da instancia, que sao
+# dado PRIVADO do operador por definicao (AGENTS.md, Fronteira: "studio = os dados, do
+# operador, privado, nunca vai pro repo publico"), nao arquivo publicavel. So v2/ (o motor que
+# roda ali, identico ao que ship) entra nesse 3o modo.
+if _scan_kind == "product":
+    _SCAN_ROOT = identity_guard._find_product_root(_kernel_probe)
+    _SCAN_LABEL = "produto (repo inteiro)"
+elif _scan_kind == "oficina":
+    _SCAN_ROOT = os.path.dirname(V2)  # .../clients/alia-flow-lab
+    _SCAN_LABEL = "oficina (allowlist de package-release.ps1)"
+else:
+    _SCAN_ROOT = V2  # instancia instalada: so o motor (v2/) e publicavel, a raiz e privada
+    _SCAN_LABEL = "instancia instalada (so v2/ - raiz do estudio e dado privado do operador)"
+# CHANGELOG.md ship, mas TRUNCADO no publish (package-release.ps1, $ChangelogPublicFloor):
+# historico ANTES dessa versao nunca sai da oficina. Mesmo piso aqui, senao a varredura reprova
+# historico que nunca vaza de verdade (o proprio CHANGELOG documenta Task de Client por nome -
+# legitimo na oficina, cortado antes de publicar; no produto o arquivo ja chega truncado, o piso
+# so nao acha nada pra cortar - inofensivo).
+_CHANGELOG_PUBLIC_FLOOR = "1.79.0"
+_id_scan_count = 0
+_id_leaks: list[str] = []
+
+
+def _scan_file_for_identity(_fp: str) -> None:
+    """Le `_fp`, corta o CHANGELOG.md no piso publico, e acumula vazamento em `_id_leaks` -
+    fatorado pra ser chamado tanto pelo modo git-list quanto pelo walk do disco."""
+    global _id_scan_count
+    try:
+        with open(_fp, "r", encoding="utf-8") as fh:
+            _linhas = fh.readlines()
+    except (OSError, UnicodeDecodeError):
+        return
+    if os.path.basename(_fp) == "CHANGELOG.md":
+        _floor_re = re.compile(r"^##\s*\[" + re.escape(_CHANGELOG_PUBLIC_FLOOR) + r"\]")
+        _corte = next((i for i, l in enumerate(_linhas) if _floor_re.match(l.strip())), len(_linhas))
+        _linhas = _linhas[:_corte]
+    _id_scan_count += 1
+    for _i, _linha in enumerate(_linhas, start=1):
+        _vaz = identity_guard.find_identity_leak_with(_linha, _ids_real, _studios_real, _formas_real)
+        if _vaz:
+            _id_leaks.append(f"{os.path.relpath(_fp, _SCAN_ROOT)}:{_i} - {_vaz}")
+
+
+def _git_relpaths(root: str) -> list[str] | None:
+    """Achado da coordenacao (R3): no produto, PUBLICO e o que o git versiona - nao o disco
+    inteiro (docs/RELEASE-STATUS.md e docs/provas/*.txt estao no .gitignore do produto, nunca
+    publicam, mas o walk antigo os lia do disco mesmo assim e reprovava vazamento que ninguem
+    vai ver). Sem `.git` em `root`, devolve None - quem chama cai no walk do disco, como sempre."""
+    if not os.path.isdir(os.path.join(root, ".git")):
+        return None
+    try:
+        _tracked = subprocess.run(["git", "ls-files"], cwd=root, capture_output=True,
+                                   text=True, check=True, encoding="utf-8").stdout
+        _novos = subprocess.run(["git", "ls-files", "--others", "--exclude-standard"], cwd=root,
+                                 capture_output=True, text=True, check=True, encoding="utf-8").stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    _linhas_git = _tracked.splitlines() + _novos.splitlines()
+    return sorted({l.strip().replace("\\", "/") for l in _linhas_git if l.strip()})
+
+
+_ID_SCAN_EXT = (".py", ".ps1", ".md", ".json", ".yaml", ".yml", ".txt", ".bat")
+_git_files = _git_relpaths(_SCAN_ROOT) if _scan_kind == "product" else None
+if _git_files is not None:
+    _SCAN_LABEL = "produto (git ls-files: versionado + novo nao ignorado, nunca o disco inteiro)"
+    for _rel in _git_files:
+        if not _rel.endswith(_ID_SCAN_EXT):
+            continue
+        _fp = os.path.join(_SCAN_ROOT, *_rel.split("/"))
+        if identity_guard.classify_target(_fp) != _scan_kind:
+            continue
+        _scan_file_for_identity(_fp)
+else:
+    for _root, _dirs, _files in os.walk(_SCAN_ROOT):
+        _rel_root = os.path.relpath(_root, _SCAN_ROOT).replace("\\", "/")
+        if _rel_root == ".":
+            _rel_root = ""
+        if _scan_kind == "product":
+            _dirs[:] = [d for d in _dirs if d != ".git"]
+        elif _scan_kind == "oficina":
+            _dirs[:] = [d for d in _dirs if d != ".git" and not d.startswith("_sandbox") and d != "__pycache__" and
+                        identity_guard._classify_oficina_relative((_rel_root + "/" + d) if _rel_root else d)]
+        else:
+            # instancia: _SCAN_ROOT JA E v2/ (nao a raiz do estudio) - so poda sandbox/cache,
+            # o resto de v2/ ships inteiro (mesma regra de _classify_oficina_relative pro top "v2").
+            _dirs[:] = [d for d in _dirs if not d.startswith("_sandbox") and d != "__pycache__"]
+        for _fn in _files:
+            if not _fn.endswith(_ID_SCAN_EXT):
+                continue
+            _fp = os.path.join(_root, _fn)
+            if _scan_kind in ("product", "oficina") and identity_guard.classify_target(_fp) != _scan_kind:
+                continue
+            _scan_file_for_identity(_fp)
+check(f"varredura de TODO arquivo publicavel - modo {_SCAN_LABEL} ({_id_scan_count} arquivo(s), "
+      f"{len(_ids_real)} Client id(s) + {len(_studios_real)} forma(s) de estudio reais): "
+      "nenhuma identidade real do operador vazada", len(_id_leaks) == 0, str(_id_leaks[:10]))
+
+# prova positiva/negativa do modo git-list (achado da coordenacao, R3): PUBLICO no produto e o
+# que o git versiona - docs/RELEASE-STATUS.md e docs/provas/*.txt do produto real estao no
+# .gitignore e nunca publicam, mas o walk do disco antigo os lia e reprovava vazamento que
+# ninguem ve. Fixture: repo git com .gitignore, 1 arquivo IGNORADO com identidade (nao pode
+# entrar na lista), 1 VERSIONADO com identidade (tem que entrar), 1 NOVO nao ignorado com
+# identidade (tambem tem que entrar - git ls-files --others --exclude-standard).
+_git_fx_root = _sandbox_tempdir("alia-v2-check-identity-gitlist-")
+subprocess.run(["git", "init", "-q"], cwd=_git_fx_root, check=True)
+subprocess.run(["git", "config", "user.email", "fx@fx.fx"], cwd=_git_fx_root, check=True)
+subprocess.run(["git", "config", "user.name", "fx"], cwd=_git_fx_root, check=True)
+with open(os.path.join(_git_fx_root, ".gitignore"), "w", encoding="utf-8") as fh:
+    fh.write("ignorado.md\n")
+with open(os.path.join(_git_fx_root, "versionado.md"), "w", encoding="utf-8") as fh:
+    fh.write("versionado\n")
+with open(os.path.join(_git_fx_root, "ignorado.md"), "w", encoding="utf-8") as fh:
+    fh.write("ignorado\n")
+subprocess.run(["git", "add", "versionado.md", ".gitignore"], cwd=_git_fx_root, check=True)
+subprocess.run(["git", "commit", "-q", "-m", "fx"], cwd=_git_fx_root, check=True)
+with open(os.path.join(_git_fx_root, "novo-nao-ignorado.md"), "w", encoding="utf-8") as fh:
+    fh.write("novo\n")
+_git_listados = _git_relpaths(_git_fx_root)
+check("R3 (git-list): versionado.md entra na lista", "versionado.md" in (_git_listados or []), str(_git_listados))
+check("R3 (git-list): novo-nao-ignorado.md (git ls-files --others --exclude-standard) entra na lista",
+      "novo-nao-ignorado.md" in (_git_listados or []), str(_git_listados))
+check("R3 (git-list) prova negativa: ignorado.md (.gitignore) NUNCA entra na lista - o walk do "
+      "disco antigo o leria; git ls-files nao", "ignorado.md" not in (_git_listados or []), str(_git_listados))
+
+# ---------------------------------------------------------------------------
 print("\n=== cadeado de versao (TASK-822): VERSION == primeira entrada do CHANGELOG.md ===")
 import paths  # noqa: E402 (resolvedor de lib/paths.py)
 _raiz_cadeado = paths.instance_root()

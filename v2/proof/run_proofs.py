@@ -146,12 +146,13 @@ check("duplicata fica registrada como ignorada", len(dup) == 1, str(dup))
 
 # ---------------------------------------------------------------------------
 print("\n=== I1 fechamento: SubagentStop com transcript real (soma por id de mensagem) ===")
-REAL_TRANSCRIPT = os.path.abspath(os.path.join(
-    os.path.expanduser("~"), ".claude", "projects",
-    "C--Users-Lite-OS-Projetos-studio-farina",
-    "33e36edc-6cdd-4a07-a6d6-7111798e9160", "subagents",
-    "agent-a98c3476ac6663981.jsonl"))
-if os.path.exists(REAL_TRANSCRIPT):
+# TASK-841/842 (WARDEN): caminho de projeto do Claude Code embute usuario + nome do studio do
+# operador - identidade que nunca pode ficar cravada em v2/. Esta fixture so roda quando
+# ALIA_REAL_TRANSCRIPT_FIXTURE aponta pra um arquivo local (uso manual, nunca comitado); sem a
+# variavel o bloco e pulado (INFO, nao FAIL) - a soma por message.id ja tem cobertura sintetica
+# em outros pontos deste arquivo (I1(a-d) acima).
+REAL_TRANSCRIPT = os.environ.get("ALIA_REAL_TRANSCRIPT_FIXTURE", "")
+if REAL_TRANSCRIPT and os.path.exists(REAL_TRANSCRIPT):
     LEDGER = fresh_sandbox()
     stop_event = {"hook_event_name": "SubagentStop", "session_id": "s-real",
                   "agent_id": "agent-real-a98c3476", "agent_type": "alia-flow-lab-canon",
@@ -169,7 +170,7 @@ if os.path.exists(REAL_TRANSCRIPT):
     check("cache_read_input_tokens = 233369", usage.get("cache_read_input_tokens") == 233369, str(usage.get("cache_read_input_tokens")))
     check("source = transcript_planB", row.get("source") == "transcript_planB", str(row.get("source")))
 else:
-    check("transcript real existe (pre-condicao do teste)", False, REAL_TRANSCRIPT)
+    print("[INFO] ALIA_REAL_TRANSCRIPT_FIXTURE nao definido - bloco de transcript real pulado (nao e FAIL)")
 
 # ---------------------------------------------------------------------------
 print("\n=== I1(c) mediana de 20 execucoes, frio e quente ===")
@@ -376,7 +377,7 @@ run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Agent", "session_id
               "tool_use_id": "tu-src1", "tool_input": {"subagent_type": "alia-flow-lab-warden",
               "prompt": "conserta o guard do kernel"}})
 out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s2",
-                           "tool_input": {"file_path": "C:/studio-farina/clients/alia-flow-lab/v2/AGENTS.md", "content": "x"}})
+                           "tool_input": {"file_path": "C:/instancia-exemplo/clients/alia-flow-lab/v2/AGENTS.md", "content": "x"}})
 check("positivo: escrita na FONTE (clients/alia-flow-lab/v2/AGENTS.md) NAO e negada", out == {}, str(out))
 out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s2",
                            "tool_input": {"file_path": "clients/alia-flow-lab/engine/constitution.md", "content": "x"}})
@@ -385,13 +386,68 @@ out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", 
                            "tool_input": {"command": "echo x >> clients/alia-flow-lab/v2/CLAUDE.md"}})
 check("positivo: Bash >> na FONTE (clients/alia-flow-lab/v2/CLAUDE.md) NAO e negado", out == {}, str(out))
 out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s2",
-                           "tool_input": {"file_path": "C:/studio-farina/v2/AGENTS.md", "content": "x"}})
+                           "tool_input": {"file_path": "C:/instancia-exemplo/v2/AGENTS.md", "content": "x"}})
 check("nega escrita no kernel da INSTANCIA (raiz do studio/v2/AGENTS.md) - a protecao continua viva",
       out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
 out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s2",
-                           "tool_input": {"file_path": "C:/studio-farina/engine/constitution.md", "content": "x"}})
+                           "tool_input": {"file_path": "C:/instancia-exemplo/engine/constitution.md", "content": "x"}})
 check("nega escrita no engine/ da INSTANCIA - a protecao continua viva",
       out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+
+# 1d) TASK-841/842 (R2, Gate do NEXUS, medido): as provas acima SO usavam caminho SINTETICO
+# ("C:/instancia-exemplo/..."), nunca o caminho REAL desta maquina - por isso nenhuma prova
+# pegou o defeito real: identity_guard.find_identity_leak(path) tambem escaneava o CAMINHO, e
+# todo caminho publicavel de verdade contem a pasta do usuario e/ou do estudio POR CONSTRUCAO (e
+# onde o arquivo mora em disco) - qualquer escrita legitima com conteudo limpo virava negada.
+# Esta bateria usa o CAMINHO REAL (V2 de verdade, dentro de clients/alia-flow-lab) e roda pelo
+# DESPACHANTE INTEIRO via subprocess (run_dispatch), no formato exato do hook real.
+sys.path.insert(0, os.path.join(V2, "lib"))
+import identity_guard as _idg_r2  # noqa: E402
+_idg_ids_r2, _idg_studios_r2 = _idg_r2.find_operator_client_ids()
+_r2_target = os.path.join(V2, "lib", "___r2-fixture.md")  # caminho REAL: contem usuario + estudio
+
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s2",
+                           "tool_input": {"file_path": _r2_target, "content": "x = 1"}})
+check("R2 positivo: Write com CONTEUDO LIMPO em caminho REAL publicavel passa (o caminho, cheio "
+      "de usuario/estudio de verdade, NUNCA e o motivo de negar)", out == {}, str(out))
+
+if _idg_ids_r2:
+    out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s2",
+                               "tool_input": {"file_path": _r2_target, "content": "o Client " + _idg_ids_r2[0] + " pediu isso"}})
+    check("R2 positivo: Write com id de Client real no CONTEUDO nega",
+          out.get("hookSpecificOutput", {}).get("permissionDecision") == "deny", str(out))
+
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Edit", "session_id": "s2",
+                           "tool_input": {"file_path": _r2_target, "new_string": "y = 2"}})
+check("R2 positivo: Edit com CONTEUDO LIMPO em caminho REAL publicavel passa", out == {}, str(out))
+
+if _idg_studios_r2:
+    out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Edit", "session_id": "s2",
+                               "tool_input": {"file_path": _r2_target, "new_string": "a marca " + _idg_studios_r2[0] + " aparece aqui"}})
+    check("R2 positivo: Edit com nome do estudio real no CONTEUDO nega",
+          out.get("hookSpecificOutput", {}).get("permissionDecision") == "deny", str(out))
+
+# Bash: alvo com ESPACO entre aspas (a extracao de alvo cortava no espaco e a cobertura nunca se
+# confirmava - achado do revisor LATTICE). Heredoc para o MESMO caminho real, conteudo limpo x
+# conteudo com identidade.
+_r2_cmd_limpo = 'cat <<EOF > "' + _r2_target + '"\nconteudo limpo, nada sensivel\nEOF'
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
+                           "tool_input": {"command": _r2_cmd_limpo}})
+check("R2 positivo: Bash heredoc para alvo com ESPACO entre aspas, conteudo limpo, passa", out == {}, str(out))
+
+if _idg_ids_r2:
+    _r2_cmd_id = 'cat <<EOF > "' + _r2_target + '"\no Client ' + _idg_ids_r2[0] + ' pediu isso\nEOF'
+    out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
+                               "tool_input": {"command": _r2_cmd_id}})
+    check("R2 positivo: Bash heredoc com id de Client real no CORPO nega",
+          out.get("hookSpecificOutput", {}).get("permissionDecision") == "deny", str(out))
+
+# prova negativa DE VERDADE (LEI da casa): volta o Write/Edit a escanear content OR path (linha
+# antiga, medida real do defeito) e confere que o mesmo caso "positivo" acima vira FAIL.
+_r2_leak_com_path_velho = _idg_r2.find_identity_leak("x = 1") or _idg_r2.find_identity_leak(_r2_target)
+check("prova negativa: reintroduzindo 'or find_identity_leak(path)' (linha antiga), o MESMO "
+      "conteudo limpo no MESMO caminho real volta a acusar vazamento (reproduz o defeito medido "
+      "pelo Gate do NEXUS)", _r2_leak_com_path_velho is not None, str(_r2_leak_com_path_velho))
 
 # 2) segredo
 out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s2",

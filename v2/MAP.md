@@ -24,13 +24,20 @@
   fatia que nao resolve no disco; nunca inclui texto de coordenacao (risco, justificativa, nota de
   protocolo) - isso fica com quem delega, nao com quem executa.
 - [hooks/dispatch.py](hooks/dispatch.py) + [lib/ledger.py](lib/ledger.py) - o despachante unico
-  (I1/I4, Warden). PreToolUse/PostToolUse/SubagentStop de Agent/Task viram evento no ledger; as 4
-  negacoes do guard rodam so no PreToolUse. Stop (TASK-812, a trava de fim): bloqueia 1 vez
+  (I1/I4, Warden). PreToolUse/PostToolUse/SubagentStop de Agent/Task viram evento no ledger; as 5
+  negacoes do guard rodam so no PreToolUse (a 5a, TASK-841/842: identidade real do operador -
+  Client id, nome do estudio, caminho da maquina - em arquivo publicavel do motor, ver
+  [lib/identity_guard.py](lib/identity_guard.py)). Stop (TASK-812, a trava de fim): bloqueia 1 vez
   quando ESTA sessao tocou (evidencia no ledger) uma Task que segue sem gate_verdict;
   stop_hook_active nunca bloqueia de novo (anti-laco) e grava "encerrou_sem_gate"; desliga com
   ALIA_END_LOCK_OFF=1 ou .claude/end-lock.off. SessionStart matcher "compact" (TASK-839): devolve
   additionalContext apontando o transcript_path da sessao (recuperacao pos-compactacao) e grava
   "compact_recovery"; qualquer outro source, ou sem transcript_path, devolve {}.
+- [lib/identity_guard.py](lib/identity_guard.py) - fonte UNICA da regra de identidade real do
+  operador (TASK-841/842, Warden). Espelha `scripts/check-public-surface.ps1`
+  (Find-OperatorClientIds + secao "(1.5)"): mesma fonte de dado (alia.config.json -> studio_dir
+  -> state.json), mesma fronteira de casamento. Usado por hooks/dispatch.py (trava na escrita) e
+  proof/check.py (prova a cada rodada).
 - [lib/paths.py](lib/paths.py) - resolvedor unico de ledger/state/Task corrente (Warden).
   `read_current_task(session_id)`: com session_id conhecido, SO a entrada daquela sessao (sem
   entrada propria, None - TASK-838, nunca mais cai no "_last" de outra sessao); sem session_id
@@ -41,7 +48,9 @@
   recusa se o `--veredito` digitado divergir do `gate_check` mais recente da Task.
 - [proof/check.py](proof/check.py) - a conferencia rapida UNICA (I9, Warden): roda as baterias de
   cada modulo, mais kernel (hash/bytes), LAW-MAP (lei sem destino), decide (I7), checagem cruzada
-  do ledger e 1 catraca generica (travessao). Alvo 30s, medido ~4s.
+  do ledger, identidade real do operador (TASK-841/842: varre todo texto de v2/ com
+  lib/identity_guard.py - sem Client/estudio/caminho real fora de pasta privada) e 1 catraca
+  generica (travessao). Alvo 30s, medido ~19s.
 
 Ainda faltam nesta pasta (fora do escopo desta entrega, donos declarados em CONTRACTS.md):
 o restante dos incrementos I6/I8/I10 (parcialmente entregues em sessoes anteriores, ver `proof/`

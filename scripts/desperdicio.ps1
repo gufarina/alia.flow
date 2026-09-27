@@ -60,8 +60,9 @@
 
   Uso:
     desperdicio.ps1 [-Dias 30] [-ProjectsDir <path>] [-Slug <slug>] [-Json]
-  Sem -Slug: deriva do $PWD subindo ate achar "studio-farina" no caminho (a oficina fica dentro
-  dele); mesmo padrao de derivacao de cost-sensor.ps1 ($PWD.Path -replace '[^a-zA-Z0-9]','-').
+  Sem -Slug: deriva do $PWD subindo ate achar a pasta com alia.config.json (raiz do estudio do
+  operador; a oficina fica dentro dela); mesmo padrao de derivacao de cost-sensor.ps1
+  ($PWD.Path -replace '[^a-zA-Z0-9]','-').
   So leitura: este script NUNCA escreve em disco (nem log, nem ledger).
   Escrita .NET UTF-8 sem BOM (so no -Json, via stdout).
 #>
@@ -161,7 +162,19 @@ $root = Split-Path -Parent $PSScriptRoot
 if ($ProjectsDir -eq "") { $ProjectsDir = Join-Path $env:USERPROFILE ".claude/projects" }
 if ($Slug -eq "") {
   $p = $PWD.Path
-  if ($p -match '^(.*studio-farina)') { $p = $Matches[1] }
+  $probe = $p
+  $achado = $null
+  # continua ate o topo, sem early-return no primeiro achado: a oficina (clients/alia-flow-lab)
+  # tem o SEU PROPRIO alia.config.json aninhado (dogfood) dentro do estudio real do operador -
+  # parar no primeiro acharia o config errado (o dogfood, nao a raiz real). O ANCESTRAL MAIS
+  # EXTERNO com alia.config.json vence, mesma regra de identity_guard.find_operator_client_ids.
+  for ($i = 0; $i -lt 15 -and $probe) {
+    if (Test-Path -LiteralPath (Join-Path $probe "alia.config.json")) { $achado = $probe }
+    $parent = Split-Path -Parent $probe
+    if ([string]::IsNullOrEmpty($parent) -or $parent -eq $probe) { break }
+    $probe = $parent
+  }
+  if ($achado) { $p = $achado }
   $Slug = ($p -replace '[^a-zA-Z0-9]', '-')
 }
 $sessDir = Join-Path $ProjectsDir $Slug

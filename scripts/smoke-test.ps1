@@ -3224,7 +3224,7 @@ if ($mLinkQuebrado.Success) {
 # memory-curator.ps1 termina em `exit` no modo -Validade - dot-source arrastaria esse exit e
 # derrubaria o smoke inteiro.
 # LIMITACAO HONESTA: o cofre de VERDADE do operador mora FORA do studio inteiro (o caminho acima,
-# em .claude/projects/, nao em clients/alia-flow-lab nem em studio-farina). Quando ele existe
+# em .claude/projects/, nao em clients/alia-flow-lab nem na raiz do estudio do operador). Quando ele existe
 # nesta maquina, o vigia mede ELE de verdade; sem ele (clone novo, outra maquina, CI), cai pro
 # indice DENTRO da instancia (<instance>/memory/_index.md) - cobertura parcial, nomeada abaixo,
 # nunca fingida.
@@ -4390,7 +4390,7 @@ $agPreservedRootForDotSource = $root
 $root = $agPreservedRootForDotSource
 
 # (a, negativo) prompt ambiguo que toca superficie publica -> DISPARA.
-$agPromptA = "refaz sse plano e so volta com tudo feito e corrigido, e com o o github atualizado e propagado aquii no studio farina"
+$agPromptA = "refaz sse plano e so volta com tudo feito e corrigido, e com o o github atualizado e propagado aquii no meu estudio"
 $agPayloadA = (@{ session_id = "AG-A"; prompt = $agPromptA } | ConvertTo-Json -Compress)
 $agOutA = Invoke-AlinhamentoGate -RawInput $agPayloadA -Root $agRoot -LedgerPath $agLedger
 Check "alinhamento-gate.ps1 (negativo): prompt ambiguo + superficie publica DISPARA ([ALINHAMENTO])" (($agOutA -match '\[ALINHAMENTO\]') -and ($agOutA -match 'skills/alinhamento/SKILL\.md')) ("saida: " + $agOutA)
@@ -5185,7 +5185,11 @@ if ((Test-Path -LiteralPath $rgScript) -and (Test-Path -LiteralPath $hookInstall
 # install-release-hooks.ps1 ja avisava que isso aconteceria ("reexecutado toda vez que .git for
 # recriado") - o aviso escrito nao e mecanismo. Este check le o DISCO real, nunca fixture; se a
 # pasta nao existir nesta maquina vira SKIP nomeado, nunca PASS silencioso.
-$publicRepoPath = "C:/Users/Lite OS/Projetos/alia-flow"
+# Caminho do repo publico nunca cravado (TASK-841/842, WARDEN): -Repo/variavel de ambiente
+# primeiro; sem ela, deriva de $root (esta copia de smoke-test.ps1 ja vive dentro do repo
+# publico) - nunca o usuario da maquina.
+$publicRepoPath = $env:ALIA_PUBLIC_REPO_PATH
+if ([string]::IsNullOrEmpty($publicRepoPath)) { $publicRepoPath = $root }
 if (Test-Path -LiteralPath $publicRepoPath -PathType Container) {
   $publicPrePushHook = Join-Path $publicRepoPath ".git\hooks\pre-push"
   Check "repo publico (Projetos/alia-flow, TASK-661, L69): hook pre-push instalado em .git/hooks" (Test-Path -LiteralPath $publicPrePushHook) ("reinstale com: powershell -File scripts/install-release-hooks.ps1 -Repo " + $publicRepoPath)

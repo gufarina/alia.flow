@@ -295,13 +295,14 @@ if ($Check) {
 Write-Host "3/3 Validando esta instancia depois do update..."
 Write-Host ""
 # TASK-782 (achado da coordenadora): a validacao pos-update chamava scripts/smoke-test-studio.ps1,
-# que e o espelho de teste PRIVADO do Studio Farina (titulo do proprio arquivo: "Smoke Test -
-# Studio Farina") - nunca viaja no pacote/produto (esta na lista de caminhos internos do .gitignore
-# e de check-public-surface.ps1). Quem instala a 1.83.0 nao tem esse arquivo: a copia dava certo e
-# a validacao morria com "comando nao encontrado", fazendo update bom parecer update quebrado.
-# Medido: smoke-test.ps1 (generico, sem dado de nenhum Client, viaja em TODO pacote) ja e desenhado
-# pra rodar tanto na oficina quanto contra uma "instancia ja aplicada" (comentarios do proprio
-# arquivo, secao README/GUARD-NUM) - e a validacao certa aqui, nao um remendo do studio-farina.
+# que e o espelho de teste PRIVADO do estudio do operador (titulo do proprio arquivo: "Smoke Test -
+# " + nome do estudio) - nunca viaja no pacote/produto (esta na lista de caminhos internos do
+# .gitignore e de check-public-surface.ps1). Quem instala a 1.83.0 nao tem esse arquivo: a copia
+# dava certo e a validacao morria com "comando nao encontrado", fazendo update bom parecer update
+# quebrado. Medido: smoke-test.ps1 (generico, sem dado de nenhum Client, viaja em TODO pacote) ja e
+# desenhado pra rodar tanto na oficina quanto contra uma "instancia ja aplicada" (comentarios do
+# proprio arquivo, secao README/GUARD-NUM) - e a validacao certa aqui, nao um remendo do estudio
+# especifico do operador.
 $validationScript = Join-Path $root "scripts\smoke-test.ps1"
 if (-not (Test-Path -LiteralPath $validationScript)) {
   Write-Host ("[RESSALVA] Validacao pos-update NAO RODOU nesta instancia: arquivo ausente -> " + $validationScript)

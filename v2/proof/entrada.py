@@ -15,9 +15,27 @@ import re
 HERE = os.path.dirname(os.path.abspath(__file__))          # .../v2/proof
 V2 = os.path.dirname(HERE)                                  # .../v2
 CLIENT = os.path.dirname(V2)                                 # .../clients/alia-flow-lab
-ROOT = os.path.dirname(os.path.dirname(CLIENT))              # .../studio-farina
+ROOT = os.path.dirname(os.path.dirname(CLIENT))              # .../<studio do operador>
 HOME = os.path.expanduser("~")
 AGENTS_DIR = os.path.join(ROOT, ".claude", "agents")
+
+
+def _find_memory_md() -> str:
+    """Acha o MEMORY.md ativo sem cravar nome de pasta de projeto real (TASK-841/842: o
+    caminho de um projeto do Claude Code embute usuario + nome do studio do operador,
+    identidade que nunca pode morar em v2/). Varre .claude/projects/*/memory/MEMORY.md e
+    devolve o mais recente; sem nenhum achado, string vazia (mede 0, nao quebra)."""
+    projects_dir = os.path.join(HOME, ".claude", "projects")
+    if not os.path.isdir(projects_dir):
+        return ""
+    candidatos = []
+    for nome in os.listdir(projects_dir):
+        caminho = os.path.join(projects_dir, nome, "memory", "MEMORY.md")
+        if os.path.isfile(caminho):
+            candidatos.append(caminho)
+    if not candidatos:
+        return ""
+    return max(candidatos, key=os.path.getmtime)
 
 
 def size(path: str) -> int:
@@ -58,11 +76,7 @@ def main() -> None:
     # plataforma: fora do motor, identica nas duas versoes (contrato modulo 7: "sobre
     # esses o motor so mede e recomenda ao Operator, nunca edita").
     global_claude = os.path.join(HOME, ".claude", "CLAUDE.md")
-    memory_md = os.environ.get(
-        "ALIA_MEMORY_PATH",
-        os.path.join(HOME, ".claude", "projects", "C--Users-Lite-OS-Projetos-studio-farina",
-                     "memory", "MEMORY.md"),
-    )
+    memory_md = os.environ.get("ALIA_MEMORY_PATH") or _find_memory_md()
     b_global = size(global_claude)
     b_memory = size(memory_md)
     b_agentes, n_agentes = lista_agentes_bytes()

@@ -37,6 +37,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
+import identity_guard  # noqa: E402
 import ledger  # noqa: E402
 import paths  # noqa: E402
 
@@ -262,6 +263,26 @@ _OUTFILE_SETCONTENT_RE = re.compile(r"^(out-file|set-content|add-content|clear-c
 _NEWITEM_RE = re.compile(r"^new-item\b", re.IGNORECASE)
 _IOFILE_WRITE_RE = re.compile(r"\[(?:system\.)?io\.file\]::write\w*\s*\(\s*['\"]([^'\"]+)['\"]", re.IGNORECASE)
 _SED_INPLACE_RE = re.compile(r"^sed\b", re.IGNORECASE)
+# alvo entre aspas (com espaco dentro - achado do NEXUS, Gate: caminho real do usuario quase
+# sempre tem espaco, ex. "C:\Users\Nome Completo\...", e (\S+) ou .split() ingenuo cortava no
+# espaco, deixando so o pedaco ATE o espaco como "alvo" - a identidade nunca era vista dentro da
+# parte cortada fora, e o alvo incompleto raramente batia numa pasta publicavel de verdade).
+_QUOTED_OR_TOKEN = r'''(?:"[^"]*"|'[^']*'|\S+)'''
+
+
+def _first_token(text: str) -> str:
+    """Primeiro token de `text`, respeitando aspas simples/duplas (o conteudo entre aspas pode
+    ter espaco) - mesma regra usada pelas capturas `-Destination`/`-Path`/`-FilePath` abaixo."""
+    text = text.lstrip()
+    if not text:
+        return ""
+    if text[0] in "'\"":
+        aspa = text[0]
+        fim = text.find(aspa, 1)
+        if fim != -1:
+            return text[1:fim]
+        return text[1:]
+    return text.split(None, 1)[0]
 
 
 def _extract_write_targets(command: str) -> list[str]:
@@ -275,22 +296,22 @@ def _extract_write_targets(command: str) -> list[str]:
     alvos: list[str] = []
     sem_fd = _FD_DUP_RE.sub(" ", command)
     for m in _WRITE_OP_RE.finditer(sem_fd):
-        resto = sem_fd[m.end():].lstrip().split()
-        if resto:
-            alvos.append(resto[0].strip("'\""))
+        alvo_redir = _first_token(sem_fd[m.end():])
+        if alvo_redir:
+            alvos.append(alvo_redir.strip("'\""))
     for m_iofile in _IOFILE_WRITE_RE.finditer(command):
         alvos.append(m_iofile.group(1).strip("'\""))
     for clausula in re.split(r"[;&|]+", command):
         c = clausula.strip()
         if not c:
             continue
-        m_tee = re.match(r"tee\b\s+(?:-a\s+)?(\S+)", c, re.IGNORECASE)
+        m_tee = re.match(rf"tee\b\s+(?:-a\s+)?({_QUOTED_OR_TOKEN})", c, re.IGNORECASE)
         if m_tee:
             alvos.append(m_tee.group(1).strip("'\""))
             continue
         if _CP_RE.match(c):
             # so o DESTINO e alvo de escrita - -Path/-LiteralPath aqui e a origem, so leitura
-            m_dest = re.search(r"-Destination\s+(\S+)", c, re.IGNORECASE)
+            m_dest = re.search(rf"-Destination\s+({_QUOTED_OR_TOKEN})", c, re.IGNORECASE)
             if m_dest:
                 alvos.append(m_dest.group(1).strip("'\""))
             else:
@@ -303,8 +324,8 @@ def _extract_write_targets(command: str) -> list[str]:
             # TASK-824 (conserto): todo argumento que nao e flag conta SEMPRE como alvo (origem
             # ou destino, os dois sao escrita), somado aos valores de -Destination/-Path -
             # forma mista (um posicional + uma flag) tambem precisa marcar o posicional.
-            m_dest = re.search(r"-Destination\s+(\S+)", c, re.IGNORECASE)
-            m_origem = re.search(r"-(?:Path|LiteralPath)\s+(\S+)", c, re.IGNORECASE)
+            m_dest = re.search(rf"-Destination\s+({_QUOTED_OR_TOKEN})", c, re.IGNORECASE)
+            m_origem = re.search(rf"-(?:Path|LiteralPath)\s+({_QUOTED_OR_TOKEN})", c, re.IGNORECASE)
             if m_dest:
                 alvos.append(m_dest.group(1).strip("'\""))
             if m_origem:
@@ -314,13 +335,13 @@ def _extract_write_targets(command: str) -> list[str]:
             continue
         if _RM_RE.match(c):
             # remover e destrutivo - todo -Path/-LiteralPath e todo posicional e alvo
-            for m_path in re.finditer(r"-(?:Path|LiteralPath)\s+(\S+)", c, re.IGNORECASE):
+            for m_path in re.finditer(rf"-(?:Path|LiteralPath)\s+({_QUOTED_OR_TOKEN})", c, re.IGNORECASE):
                 alvos.append(m_path.group(1).strip("'\""))
             nao_flag = [p for p in c.split()[1:] if not p.startswith("-")]
             alvos.extend(p.strip("'\"") for p in nao_flag)
             continue
         if _OUTFILE_SETCONTENT_RE.match(c):
-            m_path = re.search(r"-(?:Path|FilePath)\s+(\S+)", c, re.IGNORECASE)
+            m_path = re.search(rf"-(?:Path|FilePath)\s+({_QUOTED_OR_TOKEN})", c, re.IGNORECASE)
             if m_path:
                 alvos.append(m_path.group(1).strip("'\""))
             else:
@@ -334,7 +355,7 @@ def _extract_write_targets(command: str) -> list[str]:
             e_diretorio = bool(m_itemtype) and m_itemtype.group(1).strip("'\"").lower() in ("directory", "dir")
             if e_diretorio and not tem_valor:
                 continue  # cria pasta vazia - nunca escreve dentro de um arquivo do kernel
-            m_path = re.search(r"-Path\s+(\S+)", c, re.IGNORECASE)
+            m_path = re.search(rf"-Path\s+({_QUOTED_OR_TOKEN})", c, re.IGNORECASE)
             if m_path:
                 alvos.append(m_path.group(1).strip("'\""))
             else:
@@ -387,6 +408,24 @@ def _bash_targets_kernel(command: str) -> bool:
     _extract_write_targets - nunca menciona de leitura (cat, grep, python lendo o kernel)
     em outro trecho do mesmo comando."""
     return any(_is_kernel_path(alvo) for alvo in _extract_write_targets(command))
+
+
+_HEREDOC_RE = re.compile(r"<<-?\s*['\"]?\w+")
+_INLINE_WRITE_CMD_RE = re.compile(r"(?i)^(echo|printf|write-output|write-out|set-content|add-content|out-file)\b")
+
+
+def _bash_carries_inline_content(command: str) -> bool:
+    """True quando o comando carrega TEXTO INLINE (nao so um caminho de origem/destino): heredoc
+    (`<<EOF`), ou clausula que comeca com echo/printf/Write-Output/Set-Content/Add-Content/
+    Out-File. Escopo deliberadamente estreito (achado do revisor LATTICE, R2): so cobre o caso em
+    que o CONTEUDO viaja dentro do proprio comando; download/copia de arquivo binario ou ja
+    existente no disco fica fora - a prova periodica de proof/check.py cobre a superficie depois."""
+    if _HEREDOC_RE.search(command):
+        return True
+    for clausula in re.split(r"[;&|]+", command):
+        if _INLINE_WRITE_CMD_RE.match(clausula.strip()):
+            return True
+    return False
 
 
 def _has_secret(text: str) -> bool:
@@ -495,11 +534,33 @@ def handle_pretooluse_guard(event: dict) -> dict:
     if tool_name in ("Write", "Edit"):
         path = tool_input.get("file_path", "")
         content = str(tool_input.get("content") or tool_input.get("new_string") or "")
+        # MultiEdit nao existe hoje neste dispatch (grep sem ocorrencia) - quando existir, some
+        # o texto de "edits" aqui antes de checar identidade (mesma trava, sem tool novo).
+        for edit_extra in (tool_input.get("edits") or []):
+            if isinstance(edit_extra, dict):
+                content += "\n" + str(edit_extra.get("new_string") or "")
         if _is_kernel_path(path):
             return _deny("guard: escrita no kernel negada (AGENTS.md, CLAUDE.md, "
                          "CONTRACTS.md ou engine/)")
         if _has_secret(content) or _has_secret(path):
             return _deny("guard: segredo detectado no conteudo ou caminho")
+        # TASK-841/842 (WARDEN): trava na ESCRITA - arquivo publicavel do motor (oficina
+        # clients/alia-flow-lab/... ou repo do produto) nunca leva id de Client real, nome do
+        # estudio do operador, ou caminho real da maquina do operador. Ver v2/lib/identity_guard.py.
+        # CONSERTO (Gate do NEXUS, medido): o `path` NUNCA entra na varredura - todo caminho REAL
+        # publicavel contem a pasta do usuario e/ou do estudio por construcao (e onde o arquivo
+        # mora em disco), entao escanear o path derrubava QUALQUER escrita legitima com conteudo
+        # limpo. O caminho so decide SE o alvo e publicavel (classify_target); a identidade so e
+        # julgada pelo CONTEUDO que vai DENTRO do arquivo.
+        alvo_publicavel = identity_guard.classify_target(path)
+        if alvo_publicavel:
+            vazamento = identity_guard.find_identity_leak(content)
+            if vazamento:
+                return _deny(
+                    f"guard: identidade real vazando em arquivo publicavel do motor ({alvo_publicavel}) - "
+                    f"{vazamento}. Use um nome generico; a evidencia real fica na pasta privada "
+                    "(opportunities/)."
+                )
         if _is_client_write_without_delegation(event, path):
             return _deny(
                 "guard: Write/Edit em clients/<id>/ pela sessao principal sem "
@@ -517,6 +578,31 @@ def handle_pretooluse_guard(event: dict) -> dict:
         if _bash_targets_kernel(command):
             return _deny("guard: Bash redireciona/copia para o kernel (AGENTS.md, "
                          "CLAUDE.md, CONTRACTS.md ou engine/) - negado")
+        # TASK-841/842 (R2, achado do revisor LATTICE): Bash/PowerShell tambem escreve arquivo
+        # sem passar por Write/Edit (heredoc, echo/Set-Content com texto inline). So confere
+        # identidade quando ha ALVO PUBLICAVEL entre os alvos de escrita extraidos E o comando
+        # carrega conteudo inline reconhecivel - cobertura deliberadamente PARCIAL (download,
+        # copia binaria, redirecionamento de arquivo ja existente ficam de fora daqui); o resto
+        # da superficie e coberto pela varredura periodica em proof/check.py, nunca so aqui. Ver
+        # v2/lib/identity_guard.py (docstring) e v2/CONTRACTS.md.
+        # CONSERTO (Gate do NEXUS, medido): o texto do ALVO (caminho) e removido do comando ANTES
+        # de varrer - mesmo motivo do bloco Write/Edit acima, o caminho publicavel sempre contem
+        # pasta do usuario/estudio por construcao; so o texto INLINE (heredoc/echo) e julgado.
+        _alvos_escrita = _extract_write_targets(command)
+        _alvos_publicaveis = [a for a in _alvos_escrita if identity_guard.classify_target(a)]
+        if _alvos_publicaveis and _bash_carries_inline_content(command):
+            _texto_sem_alvo = command
+            for _alvo_pub in _alvos_publicaveis:
+                for _forma_alvo in (_alvo_pub, f'"{_alvo_pub}"', f"'{_alvo_pub}'"):
+                    _texto_sem_alvo = _texto_sem_alvo.replace(_forma_alvo, " ")
+            _vazamento_bash = identity_guard.find_identity_leak(_texto_sem_alvo)
+            if _vazamento_bash:
+                _kind_bash = identity_guard.classify_target(_alvos_publicaveis[0])
+                return _deny(
+                    f"guard: identidade real vazando em comando que escreve arquivo publicavel do "
+                    f"motor ({_kind_bash}) - {_vazamento_bash}. Use um nome generico; a evidencia "
+                    "real fica na pasta privada (opportunities/)."
+                )
         if PUBLISH_PATTERNS.search(command):
             if not _check_marker_valido():
                 return _deny("guard: publicacao sem check (marcador de check ausente, "
@@ -713,10 +799,10 @@ def handle_session_start(event: dict) -> dict:
     task_id = paths.read_current_task(session_id)
     sufixo_task = f" Task corrente desta sessao: {task_id}." if task_id else ""
     contexto = (
-        "Conversa compactada. O texto integral anterior a compactacao continua em "
+        "Conversa compactada. O texto integral anterior a compactação continua em "
         f"{transcript_path}. Antes de afirmar fato exato da parte compactada (caminho, "
-        "numero, decisao, pedido original do operador), busque nesse arquivo com Grep em vez "
-        f"de confiar so no resumo.{sufixo_task}"
+        "número, decisão, pedido original do operador), busque nesse arquivo com Grep em vez "
+        f"de confiar só no resumo.{sufixo_task}"
     )
     if len(contexto) > CONTEXTO_COMPACT_MAX_CHARS:
         contexto = contexto[:CONTEXTO_COMPACT_MAX_CHARS]
