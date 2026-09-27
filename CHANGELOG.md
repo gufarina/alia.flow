@@ -18,9 +18,9 @@ testado na instancia viva (a instancia aplicada) antes de fechar. Um update = um
 reversivel. Fluxo: alterar engine -> bump VERSION -> entrada no CHANGELOG -> smoke-test-studio
 ALL GREEN -> tag.
 
-## [2.0.3] - 2026-09-27
+## [2.0.3] - 2026-09-26
 
-A 2.0.3 saiu em 27/09 às 23:08 e trouxe três mudanças:
+A 2.0.3 saiu em 26/09 às 23:08 e trouxe três mudanças:
 
 - A conferência final recusa aprovação sem prova que outra pessoa consiga repetir: dizer que
   funciona ou que cumpriu o objetivo agora exige apontar o comando rodado ou um arquivo que existe.
