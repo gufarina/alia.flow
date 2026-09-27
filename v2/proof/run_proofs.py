@@ -733,24 +733,25 @@ _importlib.reload(_paths_mod)
 _current_task_fixture = os.path.join(SANDBOX, "current-task-fixture.json")
 os.environ["ALIA_CURRENT_TASK_PATH"] = _current_task_fixture
 with open(_current_task_fixture, "w", encoding="utf-8", newline="\n") as fh:
-    json.dump({"sessao-alia": "TASK-827", "_last": "TASK-827"}, fh)
+    json.dump({"sessao-a": "TASK-FIXTURE-1", "_last": "TASK-FIXTURE-1"}, fh)
 
 # positivo: sessao com entrada propria ganha a propria (nunca a de outra sessao)
 check("sessao com entrada propria devolve a sua",
-      _paths_mod.read_current_task("sessao-alia") == "TASK-827",
-      str(_paths_mod.read_current_task("sessao-alia")))
+      _paths_mod.read_current_task("sessao-a") == "TASK-FIXTURE-1",
+      str(_paths_mod.read_current_task("sessao-a")))
 
-# negativo (a prova do achado real, TASK-827 do Alia gravada por agente do Dott): sessao NOVA
-# (sem entrada propria) tem que devolver None, NUNCA o "_last" de outra sessao.
+# negativo (a prova do achado real: agente de outra sessao gravado na Task aberta por outra
+# conversa): sessao NOVA (sem entrada propria) tem que devolver None, NUNCA o "_last" de outra
+# sessao.
 check("prova negativa: sessao SEM entrada propria (mas com session_id conhecido) devolve None, "
       "nunca cai no _last de outra sessao",
-      _paths_mod.read_current_task("sessao-dott-nova") is None,
-      str(_paths_mod.read_current_task("sessao-dott-nova")))
+      _paths_mod.read_current_task("sessao-b-nova") is None,
+      str(_paths_mod.read_current_task("sessao-b-nova")))
 
 # regressao (comportamento antigo intencional, preservado): SEM session_id (CLI fora do hook),
 # cai no _last como sempre.
 check("sem session_id (CLI fora do hook) continua caindo no _last",
-      _paths_mod.read_current_task(None) == "TASK-827",
+      _paths_mod.read_current_task(None) == "TASK-FIXTURE-1",
       str(_paths_mod.read_current_task(None)))
 del os.environ["ALIA_CURRENT_TASK_PATH"]
 

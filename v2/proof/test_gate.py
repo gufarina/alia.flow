@@ -4,10 +4,11 @@ e `goal-backward` quando vem em PASS. Padrao copiado do jkudish/jev-mcp (MIT): "
 afirmacao nao sao prova; so a evidencia e". So o PRIMEIRO CORTE (formato do ponteiro, sem
 modelo) - a conferencia semantica de que a evidencia sustenta o criterio fica para prova futura.
 
-Tambem roda o validador NOVO sobre os 8 pareceres historicos citados nos eventos `gate_check`
-de activity.jsonl (a medida de justificativa da mudanca) e imprime [MEDIDO] com o resultado -
-nunca falha o check.py por isso (pareceres historicos nasceram sob o contrato ANTIGO, sem
-ponteiro; reprovar agora e o EFEITO ESPERADO da mudanca, nao uma regressao).
+A medida de justificativa (validador NOVO contra os pareceres historicos reais citados nos
+eventos `gate_check` de activity.jsonl) foi reportada ao operador fora deste arquivo - caminho
+de scratchpad de sessao e identidade do estudio nunca viram literal no motor publico. Esta prova
+reproduz o MESMO padrao medido (evidencia so em frase, sem ponteiro) com fixture sintetica, para
+a regressao continuar coberta sem depender de caminho de disco de sessao nenhuma.
 
 Uso: python test_gate.py
 """
@@ -139,46 +140,21 @@ check("prova negativa: SEM o bloco de ponteiro, o mesmo parecer-so-frase passari
       problemas_antigos == [], str(problemas_antigos))
 
 # ---------------------------------------------------------------------------
-print("\n=== medida de justificativa: validador NOVO sobre os 8 pareceres historicos "
-      "(campo parecer_path dos eventos gate_check em activity.jsonl) ===")
-PARECERES_HISTORICOS = [
-    r"C:\Users\LITEOS~1\AppData\Local\Temp\claude\C--Users-Lite-OS-Projetos-studio-farina"
-    r"\20c80adf-be0f-4d63-9ae0-7a380fb85732\scratchpad\pareceres\TASK-822.md",
-    r"C:\Users\LITEOS~1\AppData\Local\Temp\claude\C--Users-Lite-OS-Projetos-studio-farina"
-    r"\20c80adf-be0f-4d63-9ae0-7a380fb85732\scratchpad\pareceres\TASK-823.md",
-    r"C:\Users\LITEOS~1\AppData\Local\Temp\claude\C--Users-Lite-OS-Projetos-studio-farina"
-    r"\20c80adf-be0f-4d63-9ae0-7a380fb85732\scratchpad\pareceres\TASK-824.md",
-    r"C:\Users\LITEOS~1\AppData\Local\Temp\claude\C--Users-Lite-OS-Projetos-studio-farina"
-    r"\20c80adf-be0f-4d63-9ae0-7a380fb85732\scratchpad\pareceres\TASK-825.md",
-    r"C:\Users\LITEOS~1\AppData\Local\Temp\claude\C--Users-Lite-OS-Projetos-studio-farina"
-    r"\20c80adf-be0f-4d63-9ae0-7a380fb85732\scratchpad\pareceres\TASK-826.md",
-    r"C:\Users\LITEOS~1\AppData\Local\Temp\claude\C--Users-Lite-OS-Projetos-studio-farina"
-    r"\20c80adf-be0f-4d63-9ae0-7a380fb85732\scratchpad\pareceres\TASK-827.md",
-    r"C:\Users\LITEOS~1\AppData\Local\Temp\claude\C--Users-Lite-OS-Projetos-studio-farina"
-    r"\20c80adf-be0f-4d63-9ae0-7a380fb85732\scratchpad\pareceres\changelog-2.0.1.md",
-    r"C:\Users\LITEOS~1\AppData\Local\Temp\claude\C--Users-Lite-OS-Projetos-studio-farina"
-    r"\28f69224-8c56-416d-9210-4198a9256af9\scratchpad\parecer-TASK-837.md",
-    r"C:\Users\LITEOS~1\AppData\Local\Temp\claude\C--Users-Lite-OS-Projetos-studio-farina"
-    r"\a6f1190f-ffaf-4e36-a859-bb0492d7bc4d\scratchpad\jev\parecer-TASK-830.md",
-]
-_recusados = 0
-_faltando = 0
-for _p in PARECERES_HISTORICOS:
-    if not os.path.isfile(_p):
-        _faltando += 1
-        print(f"[LIDO] parecer historico nao encontrado no disco (scratchpad de sessao expirou): {_p}")
-        continue
-    with open(_p, "r", encoding="utf-8", errors="replace") as _fh:
-        _texto = _fh.read()
-    _r = gate.validar_parecer(_texto, parecer_path=_p)
-    _so_ponteiro = [pr for pr in _r["problemas"] if "aponte arquivo" in pr]
-    if _so_ponteiro:
-        _recusados += 1
-        print(f"[MEDIDO] recusado por ponteiro: {os.path.basename(_p)} -> {_so_ponteiro}")
-    else:
-        print(f"[MEDIDO] aceito (com ponteiro valido ou criterio nao PASS): {os.path.basename(_p)}")
-print(f"[MEDIDO] total: {len(PARECERES_HISTORICOS)} pareceres historicos, "
-      f"{_recusados} recusados por falta de ponteiro, {_faltando} nao encontrados no disco")
+# Justificativa (TASK-838): rodei este mesmo validador contra os pareceres historicos reais
+# citados no campo parecer_path dos eventos gate_check de activity.jsonl (medida reportada ao
+# operador fora deste arquivo - caminho de scratchpad de sessao e identidade do estudio, nunca
+# viram literal no motor publico). O resultado medido: 9 pareceres historicos unicos, os 9
+# recusados nos dois criterios por falta de ponteiro. A prova PERMANENTE abaixo reproduz o
+# MESMO padrao (evidencia so em frase, sem comando nem caminho) com uma fixture sintetica, para
+# a regressao continuar coberta sem depender de caminho de disco de sessao nenhuma.
+print("\n=== prova de regressao: padrao historico (evidencia so em frase) continua recusado ===")
+parecer_estilo_historico = _parecer_base(
+    "evidencia: o objetivo era garantir esse comportamento e ele esta implementado, conferido",
+    "goal-backward: PASS\nevidencia: a entrega bateu o objetivo pedido, esta no repositorio",
+)
+r = gate.validar_parecer(parecer_estilo_historico)
+check("parecer no estilo historico (so frase, sem ponteiro) e recusado nos 2 criterios",
+      sum(1 for p in r["problemas"] if "aponte arquivo" in p) == 2, str(r["problemas"]))
 
 print("\n=== resultado ===")
 if FAILS:
