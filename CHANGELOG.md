@@ -18,6 +18,17 @@ testado na instancia viva (a instancia aplicada) antes de fechar. Um update = um
 reversivel. Fluxo: alterar engine -> bump VERSION -> entrada no CHANGELOG -> smoke-test-studio
 ALL GREEN -> tag.
 
+## [2.0.4] - 2026-09-27
+
+A 2.0.4 saiu em 27/09 às 12:25 e trouxe quatro mudanças:
+
+- O motor recusa, na hora de escrever, arquivo que vai para o público com o nome de um cliente
+  seu, do seu estúdio ou do usuário do seu computador.
+- A conferência automática varre todos os arquivos públicos atrás desses nomes e aponta onde cada
+  um aparece.
+- Scripts e provas do motor deixaram de citar dados da máquina de quem o desenvolve.
+- O aviso que aparece quando a conversa é resumida agora sai com acento.
+
 ## [2.0.3] - 2026-09-26
 
 A 2.0.3 saiu em 26/09 às 23:08 e trouxe três mudanças:
