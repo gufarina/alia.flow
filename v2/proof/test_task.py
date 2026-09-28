@@ -273,10 +273,13 @@ check("close PASS com conhecimento em dia fecha e grava recibo_conhecimento na T
       out.get("ok") is True and (out.get("task") or {}).get("recibo_conhecimento", {}).get("veredito") == "OK", str(out)[:300])
 
 _amanha = _time.strftime("%Y-%m-%d", _time.gmtime(_time.time() + 86400))  # UTC, igual ao frescor
+# regra direta (sem processo novo): o caminho do CLI ja foi provado pela recusa e pelo OK acima
+sys.path.insert(0, os.path.join(V2, "lib"))
+import frescor as _frescor_t  # noqa: E402
 _r3, _s3, _l3 = _estudio_recibo(divida="acme " + _amanha + " prazo curto")
-out, rc = run_task("--state", _s3, "close", "--id", "TASK-001", "--artifact", "x.md", "--veredito", "PASS", "--ledger", _l3)
-check("close PASS com divida no prazo fecha e o recibo registra que o aviso estava calado",
-      out.get("ok") is True and str((out.get("task") or {}).get("recibo_conhecimento", {}).get("veredito", "")).startswith("CALADO_ATE"), str(out)[:300])
+_rec3 = _frescor_t.recibo_de_fechamento(_r3, "acme")
+check("recibo com divida no prazo deixa fechar e registra que o aviso estava calado",
+      _rec3.get("ok") is True and str((_rec3.get("recibo") or {}).get("veredito", "")).startswith("CALADO_ATE"), str(_rec3))
 
 # --state fora do estudio + --studio-root apontando o estudio com mapa velho: recusa
 _r4, _s4, _l4 = _estudio_recibo()
@@ -302,9 +305,9 @@ _r6, _s6, _l6 = _estudio_recibo()
 _know6 = os.path.join(_r6, "clients", "acme", "squad", "knowledge")
 _toca(os.path.join(_know6, "graphify-out", "graph.json"), dias_atras=0)
 os.remove(os.path.join(_know6, "edges.json"))
-out, rc = run_task("--state", _s6, "close", "--id", "TASK-001", "--artifact", "x.md", "--veredito", "PASS", "--ledger", _l6)
-check("close de Client com squad/knowledge sem indice e recusado (indice ausente)",
-      out.get("ok") is False and "indice" in str(out.get("falta")), str(out)[:300])
+_rec6 = _frescor_t.recibo_de_fechamento(_r6, "acme")
+check("recibo de Client com squad/knowledge sem indice e recusado (indice ausente)",
+      _rec6.get("ok") is False and "indice" in str(_rec6.get("falta")), str(_rec6))
 
 print("\n=== I2 prova negativa (TASK-804): Task done nao reabre por cima ===")
 out, rc = run_task("--state", COPY, "close", "--id", new_id, "--artifact", "v2/proof/test_task.py",

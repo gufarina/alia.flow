@@ -817,11 +817,35 @@ _out_h = json.loads(_proc_h.stdout.decode("utf-8") or "{}")
 check("(g) SessionStart startup com tudo OK devolve {} (sem Client velho)", _out_h == {}, str(_out_h))
 
 # (g) o ramo resume tambem avisa (sessao retomada e a mesma porta de entrada)
-_proc_g_resume = subprocess.run([sys.executable, os.path.join(V2, "hooks", "dispatch.py")],
-                                 input=json.dumps({"hook_event_name": "SessionStart", "source": "resume",
-                                                   "session_id": "s-fresc-g2"}).encode("utf-8"),
-                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=_env_g)
-_ctx_g_resume = json.loads(_proc_g_resume.stdout.decode("utf-8") or "{}").get("hookSpecificOutput", {}).get("additionalContext", "")
+# chamada direta (sem processo novo): a fronteira do processo ja e provada pelo caso startup acima
+import importlib.util as _ilu  # noqa: E402
+
+
+def _com_env(extra: dict, fn):
+    antes = {k: os.environ.get(k) for k in extra}
+    os.environ.update(extra)
+    try:
+        return fn()
+    finally:
+        for k, v in antes.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def _carrega(nome: str, caminho: str):
+    spec = _ilu.spec_from_file_location(nome, caminho)
+    mod = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_disp_fr = _carrega("_dispatch_frescor", os.path.join(V2, "hooks", "dispatch.py"))
+_out_g_resume = _com_env({"CLAUDE_PROJECT_DIR": _fr_g, "ALIA_LEDGER_PATH": os.path.join(_fr_g, "activity.jsonl")},
+                         lambda: _disp_fr.handle_session_start({"hook_event_name": "SessionStart", "source": "resume",
+                                                                "session_id": "s-fresc-g2"}))
+_ctx_g_resume = (_out_g_resume or {}).get("hookSpecificOutput", {}).get("additionalContext", "")
 check("(g) SessionStart resume com Client VELHO tambem devolve [CONHECIMENTO VELHO]",
       "[CONHECIMENTO VELHO]" in _ctx_g_resume and "acme" in _ctx_g_resume, _ctx_g_resume[:200])
 
@@ -838,10 +862,20 @@ def _brief_fr(root: str, client: str) -> dict:
 _b_velho = _brief_fr(_fr_g, "acme")
 check("(k) brief de Client VELHO leva o campo conhecimento citando o Client",
       _b_velho.get("ok") is True and "acme" in str(_b_velho.get("conhecimento", "")), str(_b_velho)[:200])
-_b_ok = _brief_fr(_fr_h_ok, "acme")
+_brief_mod = _carrega("_brief_frescor", os.path.join(V2, "bin", "brief.py"))
+
+
+def _brief_direto(root: str, client: str) -> dict:
+    campos = {"client": client, "project": "p", "objetivo": "o", "paths": "x", "consumidor": "c",
+              "destino": "d", "exemplo_falha": "e"}
+    args = _brief_mod.build_parser().parse_args(["open", "--brief", json.dumps(campos)])
+    return _com_env({"CLAUDE_PROJECT_DIR": root}, lambda: args.func(args))
+
+
+_b_ok = _brief_direto(_fr_h_ok, "acme")
 check("(k) brief de Client OK nao leva o campo conhecimento",
       _b_ok.get("ok") is True and "conhecimento" not in _b_ok, str(_b_ok)[:200])
-_b_quebrado = _brief_fr(_fr_root(), "fantasma")
+_b_quebrado = _brief_direto(_fr_root(), "fantasma")
 check("(k) brief de Client sem pasta continua abrindo (frescor nunca derruba o brief)",
       _b_quebrado.get("ok") is True, str(_b_quebrado)[:200])
 
