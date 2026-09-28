@@ -20,7 +20,7 @@ ALL GREEN -> tag.
 
 ## [2.0.5] - 2026-09-28
 
-A 2.0.5 saiu em 28/09 às HH:MM e trouxe sete mudanças:
+A 2.0.5 saiu em 28/09 às 20:07 e trouxe sete mudanças:
 
 - O motor agora confere se o conhecimento curado de cada cliente está desatualizado (mapa velho,
   índice velho, ficha de produto atrasada) e avisa isso logo na abertura da sessão, sem esperar
