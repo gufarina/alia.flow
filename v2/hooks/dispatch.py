@@ -789,7 +789,46 @@ def handle_stop(event: dict) -> dict:
 CONTEXTO_COMPACT_MAX_CHARS = 700
 
 
+def _frescor_bloco() -> str:
+    """Aviso de conhecimento velho no startup/resume (TASK-856): o sensor 1.x
+    (graph-usage-sensor.ps1) morreu e L26/L67 apontavam para codigo que a 2.0 nunca chamava - um
+    Client real ficou 45 dias com mapa velho sem aviso nenhum. Erro = sem aviso (fail-soft, nunca
+    prende a sessao), mas grava no ledger como o resto deste despachante."""
+    try:
+        import frescor  # noqa: E402 (import tardio - so quando o SessionStart precisa)
+        root = paths.studio_root()
+        velhos = []
+        for cid in frescor.clientes_ativos(root):
+            resultado = frescor.avaliar_client(root, cid)
+            if resultado["veredito"] == "VELHO":
+                velhos.append(resultado)
+        if not velhos:
+            return ""
+        linhas = [frescor.linha_humana(r) for r in velhos[:8]]
+        aviso = ["[CONHECIMENTO VELHO]"] + linhas + [
+            "Antes de trabalhar nesse Client, leia a fonte (client.md, artifacts/, CHANGELOG do "
+            "codigo), nao o mapa. Refazer: /graphify clients/<id>/squad/knowledge e "
+            "scripts/kb-index.ps1."
+        ]
+        return chr(10).join(aviso)
+    except Exception as exc:
+        try:
+            ledger.append_event(_ledger_path(), {"event": "frescor_error", "error": str(exc)[:300]})
+        except Exception:
+            pass
+        return ""
+
+
 def handle_session_start(event: dict) -> dict:
+    # TASK-856: startup/resume injeta o aviso de conhecimento velho (frescor.py). Compact
+    # continua tratado abaixo, sem mudanca.
+    if event.get("source") in ("startup", "resume"):
+        bloco_frescor = _frescor_bloco()
+        if not bloco_frescor:
+            return {}
+        return {"hookSpecificOutput": {"hookEventName": "SessionStart",
+                                        "additionalContext": bloco_frescor}}
+
     if event.get("source") != "compact":
         return {}
     transcript_path = event.get("transcript_path")

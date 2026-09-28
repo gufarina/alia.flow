@@ -75,7 +75,7 @@ SETTINGS_HOOKS = {
         ],
         "SessionStart": [
             {
-                "matcher": "compact",
+                "matcher": "startup|resume|compact",
                 "hooks": [{
                     "type": "command",
                     "command": "python \"${CLAUDE_PROJECT_DIR}/v2/hooks/dispatch.py\"",

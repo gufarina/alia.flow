@@ -839,12 +839,17 @@ check("evento compact_recovery gravado no ledger",
       any(e.get("event") == "compact_recovery" and e.get("session_id") == "s-compact-1"
           for e in _eventos_compact), str(_eventos_compact))
 
-# negativo (a): source diferente de "compact" (ex.: "startup"/"resume") nunca gera contexto
+# negativo (a): source diferente de "compact" (ex.: "startup"/"resume") nunca gera o CONTEXTO DE
+# RECUPERACAO (o startup/resume tem o proprio ramo, frescor - TASK-856; aqui so provamos que ele
+# NUNCA cai no texto de recuperacao pos-compactacao). CLAUDE_PROJECT_DIR aponta pro SANDBOX (sem
+# state.json/Clients) para o frescor nao subir a arvore e achar o studio real.
 LEDGER = fresh_sandbox()
 out_startup, _, rc_startup = run_dispatch(
     {"hook_event_name": "SessionStart", "source": "startup", "session_id": "s-compact-2",
-     "transcript_path": _transcript_compact})
-check("prova negativa: SessionStart source=startup devolve {} (fail-soft, nao e recuperacao)",
+     "transcript_path": _transcript_compact}, env_extra={"CLAUDE_PROJECT_DIR": SANDBOX})
+check("prova negativa: SessionStart source=startup nunca cita o transcript_path de recuperacao",
+      _transcript_compact not in json.dumps(out_startup), str(out_startup))
+check("positivo: SessionStart source=startup sem Client velho (sandbox vazio) devolve {}",
       out_startup == {}, str(out_startup))
 check("nenhum compact_recovery gravado para source=startup", read_ledger() == [], str(read_ledger()))
 

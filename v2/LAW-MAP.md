@@ -73,7 +73,7 @@ Laudo do Canon (papel só-leitura), salvo pela coordenação, TASK-801, 23/09/20
 | L64 | Teto de chamadas por especialista | ledger | MONITORA, corte em 3 vezes o budget |
 | L65 | Task fecha com custo medido | ledger | contrato |
 | L66 | Especialista só aciona leitor | guard | FRACA (ver fim) |
-| L67 | Índice estrutural, grafo sob critério | memória | graph-check |
+| L67 | Índice estrutural, grafo sob critério | memória | frescor (TASK-856: `lib/frescor.py` + `bin/frescor.py` + aviso no SessionStart) |
 | L68 | Plano de etapas com diário | ledger | prova |
 | L69 | Identidade de commit em allowlist | release | prova |
 | L70 | Especialista nunca publica | guard | negação 3 |

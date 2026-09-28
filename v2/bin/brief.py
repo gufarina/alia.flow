@@ -37,6 +37,9 @@ V2 = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(V2, "flow"))
 import slice as slice_mod  # noqa: E402  (v2/flow/slice.py - so pure/stdlib, nao quebra o
 # desacoplamento de lib/ e risk.py que este arquivo mantem de proposito)
+sys.path.insert(0, os.path.join(V2, "lib"))
+import frescor  # noqa: E402  (TASK-856: campo "conhecimento" do brief, so leitura - nunca decide)
+import paths as _paths  # noqa: E402
 
 TETO_LINHAS = 120
 TETO_EMBUTIR_BYTES = 2048
@@ -150,7 +153,17 @@ def cmd_open(args: argparse.Namespace) -> dict:
     if recusadas:
         return _err("fatia recusada - brief nao abre pela metade", recusadas=recusadas)
 
-    return _ok(brief=brief, fatias=fatias)
+    resultado_final = _ok(brief=brief, fatias=fatias)
+    # TASK-856: aviso de conhecimento velho no brief - so quando o veredito nao e OK. Falha do
+    # frescor (Client sem pasta, estudio sem state.json) nunca derruba o brief.
+    if brief.get("client"):
+        try:
+            resultado_frescor = frescor.avaliar_client(_paths.studio_root(), brief["client"])
+            if resultado_frescor["veredito"] != "OK":
+                resultado_final["conhecimento"] = frescor.linha_humana(resultado_frescor)
+        except Exception:
+            pass
+    return resultado_final
 
 
 def build_parser() -> argparse.ArgumentParser:

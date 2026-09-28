@@ -46,6 +46,12 @@
   explicito (copia), nunca resolve o state.json real por conta propria. `close` exige evidencia de
   veredito no ledger (`review_verdict` ou o `gate_check` que nasce de `bin/gate.py`, TASK-825) e
   recusa se o `--veredito` digitado divergir do `gate_check` mais recente da Task.
+- [lib/frescor.py](lib/frescor.py) + [bin/frescor.py](bin/frescor.py) - conferencia de FRESCOR do
+  conhecimento por Client (TASK-856, Warden, L67): mapa semantico, indice estrutural, entregas e
+  ficha de produto atrasada, cada um com veredito OK/VELHO/AUSENTE (divida em
+  `studio/conhecimento-dividas.txt` pode calar por prazo). `hooks/dispatch.py` avisa no
+  SessionStart (`startup`/`resume`) e `bin/brief.py` embute a linha no brief quando o Client nao
+  esta OK.
 - [proof/check.py](proof/check.py) - a conferencia rapida UNICA (I9, Warden): roda as baterias de
   cada modulo, mais kernel (hash/bytes), LAW-MAP (lei sem destino), decide (I7), checagem cruzada
   do ledger, identidade real do operador (TASK-841/842: varre todo texto de v2/ com

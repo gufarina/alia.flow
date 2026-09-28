@@ -653,6 +653,191 @@ check("R3 (git-list) prova negativa: ignorado.md (.gitignore) NUNCA entra na lis
       "disco antigo o leria; git ls-files nao", "ignorado.md" not in (_git_listados or []), str(_git_listados))
 
 # ---------------------------------------------------------------------------
+print("\n=== TASK-856: frescor.py - conferencia de FRESCOR do conhecimento por Client ===")
+from datetime import datetime, timezone, timedelta  # noqa: E402 (so usado nesta bateria)
+sys.path.insert(0, os.path.join(V2, "lib"))
+import frescor as _fr  # noqa: E402
+
+
+def _fr_root() -> str:
+    return _sandbox_tempdir("alia-v2-check-frescor-")
+
+
+def _fr_touch(path: str, dias_atras: float = 0.0) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("x")
+    t = time.time() - dias_atras * 86400
+    os.utime(path, (t, t))
+
+
+# (a) mapa com 11 curados mais novos que o mapa = VELHO
+_fr_a = _fr_root()
+_fr_a_know = os.path.join(_fr_a, "clients", "acme", "squad", "knowledge")
+_fr_touch(os.path.join(_fr_a_know, "graphify-out", "graph.json"), dias_atras=5)
+for _i in range(11):
+    _fr_touch(os.path.join(_fr_a_know, f"nota{_i}.md"), dias_atras=1)
+_r_a = _fr.avaliar_client(_fr_a, "acme")
+check("(a) mapa com 11 curados mais novos que o mapa = VELHO", _r_a["mapa"]["veredito"] == "VELHO", str(_r_a["mapa"]))
+
+# (b) mapa de 30 dias + 1 curado novo = VELHO
+_fr_b = _fr_root()
+_fr_b_know = os.path.join(_fr_b, "clients", "acme", "squad", "knowledge")
+_fr_touch(os.path.join(_fr_b_know, "graphify-out", "graph.json"), dias_atras=30)
+_fr_touch(os.path.join(_fr_b_know, "nota.md"), dias_atras=1)
+_r_b = _fr.avaliar_client(_fr_b, "acme")
+check("(b) mapa de 30 dias + 1 curado novo = VELHO", _r_b["mapa"]["veredito"] == "VELHO", str(_r_b["mapa"]))
+
+# (c) mapa de 30 dias + nada mais novo = OK (Client parado nunca vira VELHO so por idade)
+_fr_c = _fr_root()
+_fr_c_know = os.path.join(_fr_c, "clients", "acme", "squad", "knowledge")
+_fr_touch(os.path.join(_fr_c_know, "graphify-out", "graph.json"), dias_atras=30)
+_fr_touch(os.path.join(_fr_c_know, "nota.md"), dias_atras=40)  # mais velho que o mapa
+_r_c = _fr.avaliar_client(_fr_c, "acme")
+check("(c) mapa de 30 dias sem nada mais novo = OK (parado nao e VELHO)", _r_c["mapa"]["veredito"] == "OK", str(_r_c["mapa"]))
+
+# (d) divida: data futura cala (valida); vencida NAO cala; sem data reconhecivel NAO cala
+_fr_d = _fr_root()
+_fr_d_arq = os.path.join(_fr_d, "studio", "conhecimento-dividas.txt")
+os.makedirs(os.path.dirname(_fr_d_arq), exist_ok=True)
+_amanha = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d")
+_ontem = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+with open(_fr_d_arq, "w", encoding="utf-8") as fh:
+    fh.write(f"acme {_amanha} motivo futuro\n")
+_div_futura = _fr._checar_divida(_fr_d, "acme")
+check("(d) divida com data futura fica valida (cala)", _div_futura["valida"] == _amanha, str(_div_futura))
+with open(_fr_d_arq, "w", encoding="utf-8") as fh:
+    fh.write(f"acme {_ontem} motivo vencido\n")
+_div_vencida = _fr._checar_divida(_fr_d, "acme")
+check("(d) divida vencida NAO cala (vira divida_vencida)",
+      _div_vencida["valida"] is None and _div_vencida["vencida"] == _ontem, str(_div_vencida))
+with open(_fr_d_arq, "w", encoding="utf-8") as fh:
+    fh.write("acme sem-data motivo\n")
+_div_sem_data = _fr._checar_divida(_fr_d, "acme")
+check("(d) linha sem data reconhecivel NAO cala nada",
+      _div_sem_data == {"valida": None, "vencida": None}, str(_div_sem_data))
+
+_longe = (datetime.now(timezone.utc) + timedelta(days=60)).strftime("%Y-%m-%d")
+with open(_fr_d_arq, "w", encoding="utf-8") as fh:
+    fh.write(f"acme {_longe} prazo longo demais\n")
+_div_longa = _fr._checar_divida(_fr_d, "acme")
+check("(d) divida com prazo acima do teto NAO cala (prazo longo = sem prazo)",
+      _div_longa["valida"] is None, str(_div_longa))
+
+# (i) CHANGELOG fora de ordem: vale a MAIOR versao, nao a primeira linha do arquivo
+_fr_i = _fr_root()
+_fr_i_code = os.path.join(_fr_i, "produto-acme")
+os.makedirs(_fr_i_code, exist_ok=True)
+os.makedirs(os.path.join(_fr_i, "clients", "acme"), exist_ok=True)
+with open(os.path.join(_fr_i_code, "CHANGELOG.md"), "w", encoding="utf-8") as fh:
+    fh.write("## [0.6.0] - 2026-09-14\n\n## [0.9.0] - 2026-09-26\n\n## [0.8.3] - 2026-09-26\n")
+with open(os.path.join(_fr_i, "clients", "acme", "client.md"), "w", encoding="utf-8") as fh:
+    fh.write(f"- **codePath:** {_fr_i_code}\n\nversao 0.6.0\n")
+_r_i = _fr.avaliar_client(_fr_i, "acme")
+check("(i) CHANGELOG fora de ordem: produto = maior versao (0.9.0) e ficha ATRASADA",
+      _r_i["produto"] is not None and _r_i["produto"]["versao"] == "0.9.0" and _r_i["produto"]["ficha"] == "ATRASADA", str(_r_i["produto"]))
+
+# (j) indice recem-gerado: MAP.md nasce logo depois do edges.json e NAO conta como mudanca
+_fr_j = _fr_root()
+_fr_j_know = os.path.join(_fr_j, "clients", "acme", "squad", "knowledge")
+_fr_touch(os.path.join(_fr_j_know, "graphify-out", "graph.json"), dias_atras=2)
+_fr_touch(os.path.join(_fr_j_know, "nota.md"), dias_atras=3)
+_fr_touch(os.path.join(_fr_j_know, "edges.json"), dias_atras=0.001)
+_fr_touch(os.path.join(_fr_j_know, "MAP.md"), dias_atras=0)
+_r_j = _fr.avaliar_client(_fr_j, "acme")
+check("(j) indice recem-gerado (MAP.md depois do edges.json) fica OK e nao envelhece o mapa",
+      _r_j["indice"]["veredito"] == "OK" and _r_j["mapa"]["mudaram"] == 0, str(_r_j["indice"]) + " " + str(_r_j["mapa"]))
+
+# (e) produto: CHANGELOG do codePath na 0.7.0; client.md sem a versao = ATRASADA, com = OK;
+# codePath com crase e barra final tambem resolve (achado da coordenacao)
+_fr_e = _fr_root()
+_fr_e_client_dir = os.path.join(_fr_e, "clients", "acme")
+os.makedirs(_fr_e_client_dir, exist_ok=True)
+_fr_e_code = os.path.join(_fr_e, "produto-acme")
+os.makedirs(_fr_e_code, exist_ok=True)
+with open(os.path.join(_fr_e_code, "CHANGELOG.md"), "w", encoding="utf-8") as fh:
+    fh.write("## [0.7.0] - 2026-09-27\n\ntexto\n")
+with open(os.path.join(_fr_e_client_dir, "client.md"), "w", encoding="utf-8") as fh:
+    fh.write(f"- **codePath:** {_fr_e_code}\n\nprojeto na versao 0.6.0\n")
+_r_e_atrasada = _fr.avaliar_client(_fr_e, "acme")
+check("(e) client.md sem a versao do CHANGELOG = ficha ATRASADA",
+      _r_e_atrasada["produto"] is not None and _r_e_atrasada["produto"]["ficha"] == "ATRASADA", str(_r_e_atrasada["produto"]))
+with open(os.path.join(_fr_e_client_dir, "client.md"), "w", encoding="utf-8") as fh:
+    fh.write(f"- **codePath:** {_fr_e_code}\n\nprojeto na versao 0.7.0\n")
+_r_e_ok = _fr.avaliar_client(_fr_e, "acme")
+check("(e) client.md citando a versao do CHANGELOG = ficha OK",
+      _r_e_ok["produto"] is not None and _r_e_ok["produto"]["ficha"] == "OK", str(_r_e_ok["produto"]))
+with open(os.path.join(_fr_e_client_dir, "client.md"), "w", encoding="utf-8") as fh:
+    fh.write(f"- **codePath:** `{_fr_e_code}/`\n\nprojeto na versao 0.7.0\n")
+_r_e_crase = _fr.avaliar_client(_fr_e, "acme")
+check("(e) codePath com crase e barra final tambem resolve o CHANGELOG",
+      _r_e_crase["produto"] is not None and _r_e_crase["produto"]["ficha"] == "OK", str(_r_e_crase["produto"]))
+
+# (f) artifacts com 3 subpastas + 1 arquivo solto = 4 entregas (oculto ignorado)
+_fr_f = _fr_root()
+_fr_f_art = os.path.join(_fr_f, "clients", "acme", "artifacts")
+os.makedirs(os.path.join(_fr_f_art, "sub1"))
+os.makedirs(os.path.join(_fr_f_art, "sub2"))
+os.makedirs(os.path.join(_fr_f_art, "sub3"))
+with open(os.path.join(_fr_f_art, "sub1", "a.md"), "w", encoding="utf-8") as fh:
+    fh.write("x")
+with open(os.path.join(_fr_f_art, "solto.md"), "w", encoding="utf-8") as fh:
+    fh.write("x")
+with open(os.path.join(_fr_f_art, ".oculto.md"), "w", encoding="utf-8") as fh:
+    fh.write("x")
+_r_f = _fr._checar_entregas(os.path.join(_fr_f, "clients", "acme"))
+check("(f) 3 subpastas + 1 arquivo solto = 4 entregas (oculto ignorado)", _r_f["quantidade"] == 4, str(_r_f))
+
+# (g) SessionStart startup: Client VELHO gera aviso [CONHECIMENTO VELHO]; tudo OK devolve {}
+_fr_g = _fr_root()
+with open(os.path.join(_fr_g, "state.json"), "w", encoding="utf-8") as fh:
+    json.dump({"clients": [{"id": "acme", "status": "active"}]}, fh)
+_fr_touch(os.path.join(_fr_g, "clients", "acme", "squad", "knowledge", "graphify-out", "graph.json"), dias_atras=30)
+_fr_touch(os.path.join(_fr_g, "clients", "acme", "squad", "knowledge", "nota.md"), dias_atras=1)
+_env_g = _clean_env({"CLAUDE_PROJECT_DIR": _fr_g, "ALIA_LEDGER_PATH": os.path.join(_fr_g, "activity.jsonl")})
+_proc_g = subprocess.run([sys.executable, os.path.join(V2, "hooks", "dispatch.py")],
+                          input=json.dumps({"hook_event_name": "SessionStart", "source": "startup",
+                                            "session_id": "s-fresc-g"}).encode("utf-8"),
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=_env_g)
+_out_g = json.loads(_proc_g.stdout.decode("utf-8") or "{}")
+_ctx_g = _out_g.get("hookSpecificOutput", {}).get("additionalContext", "")
+check("(g) SessionStart startup com Client VELHO devolve aviso [CONHECIMENTO VELHO]",
+      "[CONHECIMENTO VELHO]" in _ctx_g and "acme" in _ctx_g, str(_out_g))
+
+_fr_h_ok = _fr_root()
+with open(os.path.join(_fr_h_ok, "state.json"), "w", encoding="utf-8") as fh:
+    json.dump({"clients": [{"id": "acme", "status": "active"}]}, fh)
+_fr_touch(os.path.join(_fr_h_ok, "clients", "acme", "squad", "knowledge", "graphify-out", "graph.json"), dias_atras=1)
+_env_h = _clean_env({"CLAUDE_PROJECT_DIR": _fr_h_ok, "ALIA_LEDGER_PATH": os.path.join(_fr_h_ok, "activity.jsonl")})
+_proc_h = subprocess.run([sys.executable, os.path.join(V2, "hooks", "dispatch.py")],
+                          input=json.dumps({"hook_event_name": "SessionStart", "source": "startup",
+                                            "session_id": "s-fresc-h"}).encode("utf-8"),
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=_env_h)
+_out_h = json.loads(_proc_h.stdout.decode("utf-8") or "{}")
+check("(g) SessionStart startup com tudo OK devolve {} (sem Client velho)", _out_h == {}, str(_out_h))
+
+# (h) frescor.py --check: exit 1 com Client ativo VELHO, exit 0 sem
+_fr_hcli_velho = _fr_root()
+with open(os.path.join(_fr_hcli_velho, "state.json"), "w", encoding="utf-8") as fh:
+    json.dump({"clients": [{"id": "acme", "status": "active"}]}, fh)
+_fr_touch(os.path.join(_fr_hcli_velho, "clients", "acme", "squad", "knowledge", "graphify-out", "graph.json"), dias_atras=30)
+_fr_touch(os.path.join(_fr_hcli_velho, "clients", "acme", "squad", "knowledge", "nota.md"), dias_atras=1)
+_proc_check_velho = subprocess.run([sys.executable, os.path.join(V2, "bin", "frescor.py"),
+                                     "--root", _fr_hcli_velho, "--check"],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=_clean_env())
+check("(h) frescor.py --check sai 1 com Client ativo VELHO", _proc_check_velho.returncode == 1, str(_proc_check_velho.returncode))
+
+_fr_hcli_ok = _fr_root()
+with open(os.path.join(_fr_hcli_ok, "state.json"), "w", encoding="utf-8") as fh:
+    json.dump({"clients": [{"id": "acme", "status": "active"}]}, fh)
+_fr_touch(os.path.join(_fr_hcli_ok, "clients", "acme", "squad", "knowledge", "graphify-out", "graph.json"), dias_atras=1)
+_proc_check_ok = subprocess.run([sys.executable, os.path.join(V2, "bin", "frescor.py"),
+                                  "--root", _fr_hcli_ok, "--check"],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=_clean_env())
+check("(h) frescor.py --check sai 0 sem Client velho", _proc_check_ok.returncode == 0, str(_proc_check_ok.returncode))
+
+
+# ---------------------------------------------------------------------------
 print("\n=== cadeado de versao (TASK-822): VERSION == primeira entrada do CHANGELOG.md ===")
 import paths  # noqa: E402 (resolvedor de lib/paths.py)
 _raiz_cadeado = paths.instance_root()

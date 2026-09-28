@@ -18,6 +18,24 @@ testado na instancia viva (a instancia aplicada) antes de fechar. Um update = um
 reversivel. Fluxo: alterar engine -> bump VERSION -> entrada no CHANGELOG -> smoke-test-studio
 ALL GREEN -> tag.
 
+## [2.0.5] - 2026-09-28
+
+A 2.0.5 saiu em 28/09 às HH:MM e trouxe seis mudanças:
+
+- O motor agora confere se o conhecimento curado de cada cliente está desatualizado (mapa velho,
+  índice velho, ficha de produto atrasada) e avisa isso logo na abertura da sessão, sem esperar
+  alguém notar.
+- Quando o mapa ou a ficha de um cliente está velho, o aviso aparece também no resumo de tarefa
+  entregue a quem vai trabalhar nele.
+- Uma dívida registrada com prazo de até 14 dias silencia o aviso até a data combinada; sem prazo,
+  com prazo vencido ou com prazo mais longo que isso, o aviso volta sozinho.
+- A versão do produto é lida como a maior do CHANGELOG, mesmo quando ele está fora de ordem, e
+  refazer o índice de um cliente não faz mais o mapa parecer velho.
+- Sessões novas e retomadas passam a acionar o mesmo mecanismo de aviso que antes só rodava depois
+  de uma compactação de conversa.
+- A conferência automática do motor ganhou mais provas, incluindo a checagem pelo negativo
+  (quebrar, ver falhar, desfazer, ver passar de novo).
+
 ## [2.0.4] - 2026-09-27
 
 A 2.0.4 saiu em 27/09 às 12:25 e trouxe quatro mudanças:
