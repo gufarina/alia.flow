@@ -38,6 +38,7 @@ V2 = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(V2, "flow"))
 sys.path.insert(0, os.path.join(V2, "lib"))
 import ledger  # noqa: E402  (v2/lib/ledger.py)
+import frescor  # noqa: E402  (v2/lib/frescor.py, recibo de conhecimento)
 import paths  # noqa: E402  (v2/lib/paths.py - resolvedor unico de ledger/Task corrente)
 import task_model  # noqa: E402  (v2/lib/task_model.py - a entidade Task)
 import slice as slice_mod  # noqa: E402  (v2/flow/slice.py - fatiar tarefa grande, TASK-812 B)
@@ -183,6 +184,21 @@ def cmd_close(args: argparse.Namespace) -> dict:
             if isinstance(tt, (int, float)):
                 cost += tt
 
+    # Recibo de conhecimento: entrega (PASS) de um Client so fecha com o conhecimento dele
+    # registrado e em dia. Sem isso o mapa envelheceu 45 dias enquanto as Tasks fechavam.
+    if task_fechada.get("status") == "done" and task.get("client"):
+        raiz_estudio = args.studio_root or os.path.dirname(os.path.abspath(args.state))
+        rec = frescor.recibo_de_fechamento(raiz_estudio, task["client"])
+        if not rec["ok"]:
+            return _err("close recusado: entrega sem recibo de conhecimento em dia",
+                        client=task["client"], falta=rec["falta"],
+                        como_resolver="refazer o indice (scripts/kb-index.ps1, custo zero), o mapa "
+                                      "(/graphify clients/<id>/squad/knowledge) ou a ficha (client.md citando "
+                                      "a versao do CHANGELOG); ou divida com prazo de ate 14 dias em "
+                                      "studio/conhecimento-dividas.txt")
+        if rec["recibo"] is not None:
+            task_fechada["recibo_conhecimento"] = dict(rec["recibo"], quando=_now())
+
     task_fechada["closed_at"] = _now()
     task_fechada["tokens"] = cost
     task_fechada["tokens_source"] = "ledger"
@@ -219,6 +235,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_close.add_argument("--criterio-reprovado", dest="criterio_reprovado", default="",
                           help="criterio do gate que reprovou (exigido quando veredito != PASS)")
     p_close.add_argument("--ledger", default="")
+    p_close.add_argument("--studio-root", dest="studio_root", default="",
+                         help="raiz do estudio para o recibo de conhecimento (padrao: pasta do --state)")
     p_close.set_defaults(func=cmd_close)
 
     p_context = sub.add_parser("context")

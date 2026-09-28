@@ -202,6 +202,28 @@ def clientes_ativos(studio_root: str) -> list[str]:
     return out
 
 
+def recibo_de_fechamento(studio_root: str, client_id: str) -> dict:
+    """Recibo de conhecimento para fechar uma entrega do Client (pedido do CEO, 28/09): sem ele,
+    o conhecimento envelhece em silencio enquanto as Tasks fecham. Devolve {"ok": bool, "recibo"
+    ou "falta"}. Client sem pasta no estudio nao tem o que conferir (ok, sem recibo)."""
+    client_dir = os.path.join(studio_root, "clients", client_id)
+    if not os.path.isdir(client_dir):
+        return {"ok": True, "recibo": None}
+    r = avaliar_client(studio_root, client_id)
+    falta = []
+    if r["veredito"] == "VELHO":
+        falta.append(linha_humana(r))
+    if os.path.isdir(os.path.join(client_dir, "squad", "knowledge")) and r["indice"]["veredito"] == "AUSENTE":
+        falta.append(client_id + ": indice do segundo cerebro ausente")
+    if falta:
+        return {"ok": False, "falta": falta}
+    produto = r["produto"] or {}
+    return {"ok": True, "recibo": {
+        "veredito": r["veredito"], "mapa": r["mapa"].get("data") or r["mapa"]["veredito"],
+        "indice": r["indice"]["veredito"], "produto": produto.get("versao"), "ficha": produto.get("ficha"),
+    }}
+
+
 def avaliar_client(studio_root: str, client_id: str) -> dict:
     """Funcao pura principal: devolve mapa/indice/entregas/produto/divida_vencida/veredito
     para 1 Client. Nunca lanca excecao por dado ausente - tudo em disco e opcional."""

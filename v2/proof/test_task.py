@@ -228,6 +228,54 @@ check("custo somado so das linhas desta Task (12345+678=13023, nao 99999)", out.
 check("Task fechada muda status para done (veredito PASS)", (out.get("task") or {}).get("status") == "done", str(out.get("task")))
 check("Task fechada registra a fonte da evidencia de veredito", (out.get("task") or {}).get("evidencia_veredito") == "ledger_review", str(out.get("task")))
 
+print("\n=== recibo de conhecimento: entrega so fecha com o conhecimento do Client em dia ===")
+import time as _time  # noqa: E402
+
+
+def _toca(caminho: str, dias_atras: float = 0.0) -> None:
+    os.makedirs(os.path.dirname(caminho), exist_ok=True)
+    with open(caminho, "w", encoding="utf-8") as fh:
+        fh.write("x")
+    t = _time.time() - dias_atras * 86400
+    os.utime(caminho, (t, t))
+
+
+def _estudio_recibo(divida: str = "") -> tuple[str, str, str]:
+    raiz = _sandbox_tempdir("alia-v2-test-recibo-")
+    estado = os.path.join(raiz, "state.json")
+    with open(estado, "w", encoding="utf-8") as fh:
+        json.dump({"clients": [{"id": "acme", "status": "active"}],
+                   "tasks": [{"id": "TASK-001", "client": "acme", "status": "open", "title": "entrega"}]}, fh)
+    know = os.path.join(raiz, "clients", "acme", "squad", "knowledge")
+    _toca(os.path.join(know, "graphify-out", "graph.json"), dias_atras=30)
+    _toca(os.path.join(know, "nota.md"), dias_atras=1)
+    _toca(os.path.join(know, "edges.json"), dias_atras=0)
+    if divida:
+        os.makedirs(os.path.join(raiz, "studio"), exist_ok=True)
+        with open(os.path.join(raiz, "studio", "conhecimento-dividas.txt"), "w", encoding="utf-8") as fh:
+            fh.write(divida + "\n")
+    led = os.path.join(raiz, "activity.jsonl")
+    with open(led, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"event": "review_verdict", "task_id": "TASK-001", "revisor": "WARDEN", "veredito": "PASS"}) + "\n")
+    return raiz, estado, led
+
+
+_r1, _s1, _l1 = _estudio_recibo()
+out, rc = run_task("--state", _s1, "close", "--id", "TASK-001", "--artifact", "x.md", "--veredito", "PASS", "--ledger", _l1)
+check("close PASS com mapa do Client velho e recusado (sem recibo de conhecimento)",
+      out.get("ok") is False and "recibo" in str(out.get("error", "")) and "acme" in str(out.get("falta")), str(out)[:300])
+
+_toca(os.path.join(_r1, "clients", "acme", "squad", "knowledge", "graphify-out", "graph.json"), dias_atras=0)
+out, rc = run_task("--state", _s1, "close", "--id", "TASK-001", "--artifact", "x.md", "--veredito", "PASS", "--ledger", _l1)
+check("close PASS com conhecimento em dia fecha e grava recibo_conhecimento na Task",
+      out.get("ok") is True and (out.get("task") or {}).get("recibo_conhecimento", {}).get("veredito") == "OK", str(out)[:300])
+
+_amanha = _time.strftime("%Y-%m-%d", _time.localtime(_time.time() + 86400))
+_r3, _s3, _l3 = _estudio_recibo(divida="acme " + _amanha + " prazo curto")
+out, rc = run_task("--state", _s3, "close", "--id", "TASK-001", "--artifact", "x.md", "--veredito", "PASS", "--ledger", _l3)
+check("close PASS com divida no prazo fecha e o recibo registra que o aviso estava calado",
+      out.get("ok") is True and str((out.get("task") or {}).get("recibo_conhecimento", {}).get("veredito", "")).startswith("CALADO_ATE"), str(out)[:300])
+
 print("\n=== I2 prova negativa (TASK-804): Task done nao reabre por cima ===")
 out, rc = run_task("--state", COPY, "close", "--id", new_id, "--artifact", "v2/proof/test_task.py",
                     "--veredito", "PASS", "--ledger", LEDGER)

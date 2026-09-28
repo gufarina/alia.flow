@@ -20,11 +20,14 @@ ALL GREEN -> tag.
 
 ## [2.0.5] - 2026-09-28
 
-A 2.0.5 saiu em 28/09 às HH:MM e trouxe seis mudanças:
+A 2.0.5 saiu em 28/09 às HH:MM e trouxe sete mudanças:
 
 - O motor agora confere se o conhecimento curado de cada cliente está desatualizado (mapa velho,
   índice velho, ficha de produto atrasada) e avisa isso logo na abertura da sessão, sem esperar
   alguém notar.
+- Uma entrega de cliente só fecha com recibo de conhecimento: se o mapa, o índice ou a ficha do
+  cliente estiverem velhos, o fechamento é recusado e diz o que refazer. O recibo fica gravado na
+  tarefa.
 - Quando o mapa ou a ficha de um cliente está velho, o aviso aparece também no resumo de tarefa
   entregue a quem vai trabalhar nele.
 - Uma dívida registrada com prazo de até 14 dias silencia o aviso até a data combinada; sem prazo,
