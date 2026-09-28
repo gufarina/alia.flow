@@ -144,7 +144,9 @@ def _checar_produto(client_md: str) -> dict | None:
     if not achadas:
         return None
     versao, data_versao = max(achadas, key=lambda vd: tuple(int(x) for x in vd[0].split(".")))
-    ficha = "OK" if versao in texto else "ATRASADA"
+    # fronteira de numero: "1.0.1" nao pode ser achada dentro de "1.0.10"
+    citada = re.search(r"(?<![0-9.])" + re.escape(versao) + r"(?![0-9])", texto)
+    ficha = "OK" if citada else "ATRASADA"
     return {"ficha": ficha, "versao": versao, "data": data_versao}
 
 

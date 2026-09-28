@@ -154,12 +154,13 @@ def cmd_open(args: argparse.Namespace) -> dict:
         return _err("fatia recusada - brief nao abre pela metade", recusadas=recusadas)
 
     resultado_final = _ok(brief=brief, fatias=fatias)
-    # TASK-856: aviso de conhecimento velho no brief - so quando o veredito nao e OK. Falha do
+    # TASK-856: aviso de conhecimento velho no brief - so quando o veredito e VELHO (divida no
+    # prazo cala aqui tambem, igual ao aviso da sessao). Falha do
     # frescor (Client sem pasta, estudio sem state.json) nunca derruba o brief.
     if brief.get("client"):
         try:
             resultado_frescor = frescor.avaliar_client(_paths.studio_root(), brief["client"])
-            if resultado_frescor["veredito"] != "OK":
+            if resultado_frescor["veredito"] == "VELHO":
                 resultado_final["conhecimento"] = frescor.linha_humana(resultado_frescor)
         except Exception:
             pass

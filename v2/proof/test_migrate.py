@@ -104,6 +104,10 @@ if os.path.isfile(_settings_alvo):
     _matcher_pre = _settings.get("hooks", {}).get("PreToolUse", [{}])[0].get("matcher", "")
     check("matcher do PreToolUse do apply inclui PowerShell",
           "PowerShell" in _matcher_pre.split("|"), _matcher_pre)
+    # TASK-856: sem startup/resume o aviso de conhecimento velho nunca dispara na instancia
+    _matcher_ss = _settings.get("hooks", {}).get("SessionStart", [{}])[0].get("matcher", "")
+    check("matcher do SessionStart do apply liga startup, resume e compact",
+          {"startup", "resume", "compact"} <= set(_matcher_ss.split("|")), _matcher_ss)
 
 # ---------------------------------------------------------------------------
 print("\n=== migrate.py undo: devolve os hashes ORIGINAIS de VERSION, CHANGELOG.md e AGENTS.md ===")

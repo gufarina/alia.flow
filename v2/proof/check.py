@@ -816,6 +816,48 @@ _proc_h = subprocess.run([sys.executable, os.path.join(V2, "hooks", "dispatch.py
 _out_h = json.loads(_proc_h.stdout.decode("utf-8") or "{}")
 check("(g) SessionStart startup com tudo OK devolve {} (sem Client velho)", _out_h == {}, str(_out_h))
 
+# (g) o ramo resume tambem avisa (sessao retomada e a mesma porta de entrada)
+_proc_g_resume = subprocess.run([sys.executable, os.path.join(V2, "hooks", "dispatch.py")],
+                                 input=json.dumps({"hook_event_name": "SessionStart", "source": "resume",
+                                                   "session_id": "s-fresc-g2"}).encode("utf-8"),
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=_env_g)
+_ctx_g_resume = json.loads(_proc_g_resume.stdout.decode("utf-8") or "{}").get("hookSpecificOutput", {}).get("additionalContext", "")
+check("(g) SessionStart resume com Client VELHO tambem devolve [CONHECIMENTO VELHO]",
+      "[CONHECIMENTO VELHO]" in _ctx_g_resume and "acme" in _ctx_g_resume, _ctx_g_resume[:200])
+
+
+def _brief_fr(root: str, client: str) -> dict:
+    campos = {"client": client, "project": "p", "objetivo": "o", "paths": "x", "consumidor": "c",
+              "destino": "d", "exemplo_falha": "e"}
+    proc = subprocess.run([sys.executable, os.path.join(V2, "bin", "brief.py"), "open", "--brief", json.dumps(campos)],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=_clean_env({"CLAUDE_PROJECT_DIR": root}))
+    return json.loads(proc.stdout.decode("utf-8") or "{}")
+
+
+# (k) brief: Client VELHO leva o campo conhecimento; Client OK nao leva; Client quebrado nao derruba
+_b_velho = _brief_fr(_fr_g, "acme")
+check("(k) brief de Client VELHO leva o campo conhecimento citando o Client",
+      _b_velho.get("ok") is True and "acme" in str(_b_velho.get("conhecimento", "")), str(_b_velho)[:200])
+_b_ok = _brief_fr(_fr_h_ok, "acme")
+check("(k) brief de Client OK nao leva o campo conhecimento",
+      _b_ok.get("ok") is True and "conhecimento" not in _b_ok, str(_b_ok)[:200])
+_b_quebrado = _brief_fr(_fr_root(), "fantasma")
+check("(k) brief de Client sem pasta continua abrindo (frescor nunca derruba o brief)",
+      _b_quebrado.get("ok") is True, str(_b_quebrado)[:200])
+
+# (l) versao citada com fronteira: "1.0.1" nao vale dentro de "1.0.10"
+_fr_l = _fr_root()
+_fr_l_code = os.path.join(_fr_l, "produto-acme")
+os.makedirs(_fr_l_code, exist_ok=True)
+os.makedirs(os.path.join(_fr_l, "clients", "acme"), exist_ok=True)
+with open(os.path.join(_fr_l_code, "CHANGELOG.md"), "w", encoding="utf-8") as fh:
+    fh.write("## [1.0.1] - 2026-09-20" + chr(10))
+with open(os.path.join(_fr_l, "clients", "acme", "client.md"), "w", encoding="utf-8") as fh:
+    fh.write("- **codePath:** " + _fr_l_code + chr(10) + chr(10) + "versao 1.0.10" + chr(10))
+_r_l = _fr.avaliar_client(_fr_l, "acme")
+check("(l) versao 1.0.1 nao e achada dentro de 1.0.10 (ficha ATRASADA)",
+      _r_l["produto"] is not None and _r_l["produto"]["ficha"] == "ATRASADA", str(_r_l["produto"]))
+
 # (h) frescor.py --check: exit 1 com Client ativo VELHO, exit 0 sem
 _fr_hcli_velho = _fr_root()
 with open(os.path.join(_fr_hcli_velho, "state.json"), "w", encoding="utf-8") as fh:
