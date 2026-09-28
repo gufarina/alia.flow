@@ -45,13 +45,16 @@
 - [bin/task.py](bin/task.py) - CLI `task open/close/context` (I2, Warden). Sempre sobre `--state`
   explicito (copia), nunca resolve o state.json real por conta propria. `close` exige evidencia de
   veredito no ledger (`review_verdict` ou o `gate_check` que nasce de `bin/gate.py`, TASK-825) e
-  recusa se o `--veredito` digitado divergir do `gate_check` mais recente da Task.
+  recusa se o `--veredito` digitado divergir do `gate_check` mais recente da Task. Entrega PASS
+  com Client exige recibo de conhecimento (`lib/frescor.recibo_de_fechamento`, L80); raiz em
+  `--studio-root`, senao pasta do `--state` com `clients/`, senao estudio da sessao; sem pasta do
+  Client grava `SEM_PASTA`.
 - [lib/frescor.py](lib/frescor.py) + [bin/frescor.py](bin/frescor.py) - conferencia de FRESCOR do
   conhecimento por Client (TASK-856, Warden, L67): mapa semantico, indice estrutural, entregas e
   ficha de produto atrasada, cada um com veredito OK/VELHO/AUSENTE (divida em
   `studio/conhecimento-dividas.txt` pode calar por prazo). `hooks/dispatch.py` avisa no
   SessionStart (`startup`/`resume`) e `bin/brief.py` embute a linha no brief quando o Client nao
-  esta OK.
+  esta OK. `recibo_de_fechamento` e a regra do recibo que `bin/task.py close` exige (L80).
 - [proof/check.py](proof/check.py) - a conferencia rapida UNICA (I9, Warden): roda as baterias de
   cada modulo, mais kernel (hash/bytes), LAW-MAP (lei sem destino), decide (I7), checagem cruzada
   do ledger, identidade real do operador (TASK-841/842: varre todo texto de v2/ com

@@ -32,6 +32,10 @@ guarda estado proprio.
   campo faltando ou Client invalido lista as opcoes validas, nunca so "invalido".
 - `python v2/bin/task.py close --state <state.json> --artifact <prova> --veredito PASS|FAIL|CONCERN`
   - exige evidencia de veredito no ledger; Task de correcao sem `--root-cause` e erro.
+  - entrega PASS de um Client so fecha com recibo de conhecimento em dia (mapa, indice e ficha;
+    divida com prazo de ate 14 dias passa e fica registrada). Recusa diz o que refazer. Raiz:
+    `--studio-root`, senao a pasta do `--state` se tiver `clients/`, senao a do estudio da sessao.
+    Client sem pasta fecha com recibo `SEM_PASTA` gravado na Task.
 - `python v2/bin/task.py context --state <state.json> --id <task_id>` - le a Task, nunca muta.
 - `python v2/bin/client.py list` / `python v2/bin/client.py use <client>` - troca o squad visivel
   em `.claude/agents` para so o do Client escolhido (+ `--keep`). So vale a partir da PROXIMA

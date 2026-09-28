@@ -95,7 +95,9 @@ def run_task(*args) -> tuple[dict, int]:
            if k != "CLAUDE_PROJECT_DIR" and not k.startswith("ALIA_")}
     # nunca deixa `open` escrever a Task corrente fora da sandbox (lib/paths.py).
     env["ALIA_CURRENT_TASK_PATH"] = os.path.join(SANDBOX, ".alia-current-task.json")
-    proc = subprocess.run([sys.executable, TASK_PY, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    # cwd na sandbox: a raiz do recibo de conhecimento nunca cai no estudio real por subida de pasta
+    proc = subprocess.run([sys.executable, TASK_PY, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
+                          cwd=SANDBOX)
     out = {}
     if proc.stdout:
         try:
@@ -270,11 +272,39 @@ out, rc = run_task("--state", _s1, "close", "--id", "TASK-001", "--artifact", "x
 check("close PASS com conhecimento em dia fecha e grava recibo_conhecimento na Task",
       out.get("ok") is True and (out.get("task") or {}).get("recibo_conhecimento", {}).get("veredito") == "OK", str(out)[:300])
 
-_amanha = _time.strftime("%Y-%m-%d", _time.localtime(_time.time() + 86400))
+_amanha = _time.strftime("%Y-%m-%d", _time.gmtime(_time.time() + 86400))  # UTC, igual ao frescor
 _r3, _s3, _l3 = _estudio_recibo(divida="acme " + _amanha + " prazo curto")
 out, rc = run_task("--state", _s3, "close", "--id", "TASK-001", "--artifact", "x.md", "--veredito", "PASS", "--ledger", _l3)
 check("close PASS com divida no prazo fecha e o recibo registra que o aviso estava calado",
       out.get("ok") is True and str((out.get("task") or {}).get("recibo_conhecimento", {}).get("veredito", "")).startswith("CALADO_ATE"), str(out)[:300])
+
+# --state fora do estudio + --studio-root apontando o estudio com mapa velho: recusa
+_r4, _s4, _l4 = _estudio_recibo()
+_fora = _sandbox_tempdir("alia-v2-test-recibo-fora-")
+_s4_fora = os.path.join(_fora, "state.json")
+shutil.copyfile(_s4, _s4_fora)
+out, rc = run_task("--state", _s4_fora, "close", "--id", "TASK-001", "--artifact", "x.md", "--veredito", "PASS",
+                   "--ledger", _l4, "--studio-root", _r4)
+check("close com --state fora do estudio e --studio-root no estudio de mapa velho e recusado",
+      out.get("ok") is False and "recibo" in str(out.get("error", "")), str(out)[:300])
+
+# Client sem pasta na raiz: fecha, mas o recibo grava SEM_PASTA (nunca mais fecha calado)
+_vazio = _sandbox_tempdir("alia-v2-test-recibo-vazio-")
+os.makedirs(os.path.join(_vazio, "clients"))
+_r5, _s5, _l5 = _estudio_recibo()
+out, rc = run_task("--state", _s5, "close", "--id", "TASK-001", "--artifact", "x.md", "--veredito", "PASS",
+                   "--ledger", _l5, "--studio-root", _vazio)
+check("close de Client sem pasta na raiz fecha e grava recibo SEM_PASTA (auditavel)",
+      out.get("ok") is True and (out.get("task") or {}).get("recibo_conhecimento", {}).get("veredito") == "SEM_PASTA", str(out)[:300])
+
+# Client com segundo cerebro mas sem indice estrutural: recusa
+_r6, _s6, _l6 = _estudio_recibo()
+_know6 = os.path.join(_r6, "clients", "acme", "squad", "knowledge")
+_toca(os.path.join(_know6, "graphify-out", "graph.json"), dias_atras=0)
+os.remove(os.path.join(_know6, "edges.json"))
+out, rc = run_task("--state", _s6, "close", "--id", "TASK-001", "--artifact", "x.md", "--veredito", "PASS", "--ledger", _l6)
+check("close de Client com squad/knowledge sem indice e recusado (indice ausente)",
+      out.get("ok") is False and "indice" in str(out.get("falta")), str(out)[:300])
 
 print("\n=== I2 prova negativa (TASK-804): Task done nao reabre por cima ===")
 out, rc = run_task("--state", COPY, "close", "--id", new_id, "--artifact", "v2/proof/test_task.py",

@@ -158,6 +158,17 @@ def cmd_open(args: argparse.Namespace) -> dict:
     return _ok(task=new_task)
 
 
+def _raiz_do_recibo(args: argparse.Namespace) -> str:
+    """Onde procurar o conhecimento do Client: --studio-root explicito; senao a pasta do --state,
+    se ela for um estudio (tem clients/); senao a raiz do estudio da sessao (lib/paths.py)."""
+    if args.studio_root:
+        return args.studio_root
+    pasta_state = os.path.dirname(os.path.abspath(args.state))
+    if os.path.isdir(os.path.join(pasta_state, "clients")):
+        return pasta_state
+    return paths.studio_root()
+
+
 def cmd_close(args: argparse.Namespace) -> dict:
     state = _load_state(args.state)
     tasks = state.get("tasks", [])
@@ -187,7 +198,7 @@ def cmd_close(args: argparse.Namespace) -> dict:
     # Recibo de conhecimento: entrega (PASS) de um Client so fecha com o conhecimento dele
     # registrado e em dia. Sem isso o mapa envelheceu 45 dias enquanto as Tasks fechavam.
     if task_fechada.get("status") == "done" and task.get("client"):
-        raiz_estudio = args.studio_root or os.path.dirname(os.path.abspath(args.state))
+        raiz_estudio = _raiz_do_recibo(args)
         rec = frescor.recibo_de_fechamento(raiz_estudio, task["client"])
         if not rec["ok"]:
             return _err("close recusado: entrega sem recibo de conhecimento em dia",
@@ -198,6 +209,9 @@ def cmd_close(args: argparse.Namespace) -> dict:
                                       "studio/conhecimento-dividas.txt")
         if rec["recibo"] is not None:
             task_fechada["recibo_conhecimento"] = dict(rec["recibo"], quando=_now())
+        else:
+            # Client sem pasta na raiz achada: nao bloqueia, mas fica gravado (auditavel depois)
+            task_fechada["recibo_conhecimento"] = {"veredito": "SEM_PASTA", "raiz": raiz_estudio, "quando": _now()}
 
     task_fechada["closed_at"] = _now()
     task_fechada["tokens"] = cost
@@ -236,7 +250,7 @@ def build_parser() -> argparse.ArgumentParser:
                           help="criterio do gate que reprovou (exigido quando veredito != PASS)")
     p_close.add_argument("--ledger", default="")
     p_close.add_argument("--studio-root", dest="studio_root", default="",
-                         help="raiz do estudio para o recibo de conhecimento (padrao: pasta do --state)")
+                         help="raiz do estudio para o recibo de conhecimento (padrao: pasta do --state se tiver clients/, senao a raiz do estudio da sessao)")
     p_close.set_defaults(func=cmd_close)
 
     p_context = sub.add_parser("context")

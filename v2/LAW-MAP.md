@@ -86,6 +86,7 @@ Laudo do Canon (papel só-leitura), salvo pela coordenação, TASK-801, 23/09/20
 | L77 | Correção exige causa-raiz | ledger | contrato |
 | L78 | Número público reprodutível | release | contrato |
 | L79 | Veredito de gate por volta | gate | contrato |
+| L80 | Entrega fecha com recibo de conhecimento | memória | bin/task.py close + lib/frescor.py (prova: proof/test_task.py, bloco do recibo) |
 
 ## Leis com mecanismo fraco na 2.0 (risco real, Canon)
 
