@@ -18,6 +18,15 @@ testado na instancia viva (a instancia aplicada) antes de fechar. Um update = um
 reversivel. Fluxo: alterar engine -> bump VERSION -> entrada no CHANGELOG -> smoke-test-studio
 ALL GREEN -> tag.
 
+## [2.0.6] - 2026-09-29
+
+A 2.0.6 saiu em 29/09 às 15:46 e trouxe uma mudança:
+
+- Rodar o gerador de especialistas para um alvo só (`-Only`) agora gera só aquele alvo e nunca
+  apaga o resto; antes, esse comando apagava os especialistas de todos os outros clientes sem
+  perguntar. A poda do roster passou para `-Prune`, explícita e sempre junto de `-Only`, e um alvo
+  que não existe avisa e falha em vez de calar.
+
 ## [2.0.5] - 2026-09-28
 
 A 2.0.5 saiu em 28/09 às 20:28 e trouxe sete mudanças:

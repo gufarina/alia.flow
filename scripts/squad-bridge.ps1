@@ -97,11 +97,18 @@ param(
  # (entry_point/budget/output_contract/grounding) sem quebrar - adiciona so o que falta, com o
  # default da camada, nunca sobrescreve campo ja preenchido. Roda e sai (nao gera bundle).
  [switch]$MigrateContract,
- # -Only <client>: remove de .claude\agents\ os bundles de OUTROS Clients, mantendo sempre o
- # squad do engine_home (alia-flow-lab). Roda e sai (nao gera bundle). LIMITE: rodar no MEIO da
- # sessao nao recarrega o roster do Claude Code (ele le sub-agentes so na abertura da sessao) -
- # rodar SEMPRE antes de abrir a sessao.
- [string]$Only
+ # -Only <alvo>: filtro de GERAÇÃO. Gera só o alvo, que pode ser um Client (fx-a), um especialista
+ # (o id da persona) ou um bundle ({client}-{id}), e NUNCA apaga nada. Combina com -Client. Alvo que
+ # não casa com nada avisa e sai com código 1. Até a 2.0.5 o -Only PODAVA: apagou 103 bundles de
+ # .claude\agents numa rodada só; para restaurar basta rodar o script sem parâmetros. A poda agora
+ # exige -Prune.
+ [string]$Only,
+ # -Prune: poda EXPLÍCITA do roster. Exige -Only <client>, e esse Client precisa existir em
+ # clients\ (id de especialista ou nome inexistente é recusado, nada é apagado): remove de .claude\agents\ os bundles de
+ # OUTROS Clients, mantendo sempre o squad do engine_home (alia-flow-lab). Roda e sai (não gera
+ # bundle); respeita -DryRun. LIMITE: rodar no MEIO da sessão não recarrega o roster do Claude Code
+ # (ele lê sub-agentes só na abertura da sessão) - rodar SEMPRE antes de abrir a sessão.
+ [switch]$Prune
 )
 
 $ErrorActionPreference = 'Stop'
@@ -128,8 +135,18 @@ if (-not (Test-Path $outDir)) {
 
 }
 
-# ---- -Only: poda de bundles de outros Clients (roda e sai) ----
-if ($Only) {
+# ---- -Prune -Only <client>: poda de bundles de outros Clients (roda e sai) ----
+if ($Prune) {
+ if (-not $Only) {
+ Write-Error "-Prune exige -Only <client> (o Client que fica). Nada foi apagado."
+ exit 1
+}
+
+ if (-not (Test-Path -LiteralPath (Join-Path $clientsDir "$Only\squad\squad.yaml"))) {
+ Write-Error "-Prune -Only '$Only': nao existe o Client '$Only' (clients\$Only\squad\squad.yaml). Nada foi apagado."
+ exit 1
+}
+
  $bundlesDir = Join-Path $RepoRoot '.claude\agents'
  $keep = @($Only, 'alia-flow-lab') | Select-Object -Unique
  $removedCount = 0
@@ -148,7 +165,7 @@ if ($Only) {
 
 }
 
- Write-Host "-Only $Only : $removedCount bundle(s) removido(s) (mantidos: $($keep -join ', ')). Rode ISTO antes de abrir a sessao - o Claude Code so le sub-agentes na abertura, rodar no meio nao recarrega o roster."
+ Write-Host "-Prune -Only $Only : $removedCount bundle(s) removido(s) (mantidos: $($keep -join ', ')). Rode ISTO antes de abrir a sessao - o Claude Code so le sub-agentes na abertura, rodar no meio nao recarrega o roster."
  exit 0
 }
 
@@ -596,6 +613,7 @@ $generated = 0
 $updated = 0
 $unchanged = 0
 $errors = 0
+$onlyMatched = 0
 $reportLines = New-Object System.Collections.ArrayList
 $mcpWarnings = New-Object System.Collections.ArrayList
 $knowledgeWarnings = New-Object System.Collections.ArrayList
@@ -627,6 +645,11 @@ foreach ($clientDir in $clientDirs) {
     $agentYamls = Get-ChildItem -Path $agentsDir -Filter '*.yaml' -File
     foreach ($yamlFile in $agentYamls) {
         $agentId = [System.IO.Path]::GetFileNameWithoutExtension($yamlFile.Name)
+        if ($Only) {
+            if ($Only -ne $clientId -and $Only -ne $agentId -and $Only -ne "$clientId-$agentId") { continue }
+            $onlyMatched++
+        }
+
         try {
             $mdPath = Join-Path $agentsDir "$agentId.md"
             if (-not (Test-Path $mdPath)) {
@@ -1170,3 +1193,8 @@ if ($mcpWarnings.Count -gt 0) {
 
 Write-Host ''
 foreach ($rl in $reportLines) { Write-Host $rl }
+
+if ($Only -and $onlyMatched -eq 0) {
+    Write-Warning "-Only '$Only' nao casou com nenhum Client, especialista ou bundle (nada foi gerado nem apagado)."
+    exit 1
+}
