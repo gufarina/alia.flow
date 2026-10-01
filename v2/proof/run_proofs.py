@@ -32,6 +32,9 @@ def _sandbox_tempdir(prefix: str) -> str:
 SANDBOX = _sandbox_tempdir("alia-v2-run-proofs-")
 
 FAILS = []
+# TASK-870: com RUN_PROOFS_RELOGIO=adiado (o check.py liga no pool paralelo) as 3 medidas de LATENCIA nao rodam aqui:
+# medida de relogio no meio de 12 processos reprova por vizinhanca. Elas moram em proof/relogio.py e rodam em SERIE.
+RELOGIO_ADIADO = os.environ.get("RUN_PROOFS_RELOGIO") == "adiado"
 
 
 def _fake_secret(prefix: str, body: str) -> str:
@@ -255,21 +258,24 @@ for i in range(3):
     _, dt, rc = run_dispatch(sample_event, spawn=True)
     cold_times.append(dt)
 
-warm_times = []
-for i in range(20):
-    _, dt, rc = run_dispatch(sample_event, spawn=True)
-    warm_times.append(dt)
+if RELOGIO_ADIADO:
+    print("[INFO] mediana quente adiada: roda isolada em proof/relogio.py (serie, depois do pool)")
+else:
+    warm_times = []
+    for i in range(20):
+        _, dt, rc = run_dispatch(sample_event, spawn=True)
+        warm_times.append(dt)
 
-print(f"[MEDIDO] frio (pycache limpo a cada rodada, n=3): {[round(t,1) for t in cold_times]} ms, mediana={statistics.median(cold_times):.1f} ms")
-print(f"[MEDIDO] quente (pycache presente, n=20): {[round(t,1) for t in warm_times]} ms")
-med_warm = statistics.median(warm_times)
-# TASK-858: so remede se estourou o teto (150 ms) - mesma regra do _melhor_de(); vale a MENOR mediana.
-for _ in range(2):
-    if med_warm < 150:
-        break
-    med_warm = min(med_warm, statistics.median([run_dispatch(sample_event, spawn=True)[1] for _ in range(20)]))
-print(f"[MEDIDO] mediana quente = {med_warm:.1f} ms")
-check("mediana quente abaixo de 150 ms (meta da secao 1)", med_warm < 150, f"{med_warm:.1f} ms")
+    print(f"[MEDIDO] frio (pycache limpo a cada rodada, n=3): {[round(t,1) for t in cold_times]} ms, mediana={statistics.median(cold_times):.1f} ms")
+    print(f"[MEDIDO] quente (pycache presente, n=20): {[round(t,1) for t in warm_times]} ms")
+    med_warm = statistics.median(warm_times)
+    # TASK-858: so remede se estourou o teto (150 ms) - mesma regra do _melhor_de(); vale a MENOR mediana.
+    for _ in range(2):
+        if med_warm < 150:
+            break
+        med_warm = min(med_warm, statistics.median([run_dispatch(sample_event, spawn=True)[1] for _ in range(20)]))
+    print(f"[MEDIDO] mediana quente = {med_warm:.1f} ms")
+    check("mediana quente abaixo de 150 ms (meta da secao 1)", med_warm < 150, f"{med_warm:.1f} ms")
 
 # ---------------------------------------------------------------------------
 print("\n=== I1 fechamento (revisao independente): payload legitimo nunca devolve 'allow' ===")
@@ -809,8 +815,9 @@ def entrega_concluida(session_id: str, tu_id: str, agent_id: str, prompt: str) -
 # 1) positivo: sessao sem entrega nenhuma -> passa, sem saida, dentro do alvo de tempo
 out, dt, rc = run_stop({"session_id": "s-end-none"}, spawn=True)
 check("Stop passa (sem saida) quando a sessao nao teve entrega nenhuma", out == {}, str(out))
-dt = _melhor_de(dt, lambda: run_stop({"session_id": "s-end-none"}, spawn=True)[1])
-check("Stop responde abaixo de 300 ms", dt < 300, f"{dt:.1f} ms")
+if not RELOGIO_ADIADO:  # relogio isolado em proof/relogio.py
+    dt = _melhor_de(dt, lambda: run_stop({"session_id": "s-end-none"}, spawn=True)[1])
+    check("Stop responde abaixo de 300 ms", dt < 300, f"{dt:.1f} ms")
 
 # 2) negativo: entrega de Specialist voltou citando TASK-812, que segue sem gate_verdict ->
 # additionalContext (NUNCA decision:block - nao pode aparecer como erro pro Operator)
@@ -915,9 +922,10 @@ out_perf, dt_perf, _ = run_dispatch({"hook_event_name": "Stop", "session_id": "s
                                      env_extra={"ALIA_LEDGER_PATH": _perf_ledger, "ALIA_STATE_PATH": _perf_state}, spawn=True)
 _ev_perf = {"hook_event_name": "Stop", "session_id": "s-perf", "transcript_path": "/x.jsonl"}
 _env_perf = {"ALIA_LEDGER_PATH": _perf_ledger, "ALIA_STATE_PATH": _perf_state}
-dt_perf = _melhor_de(dt_perf, lambda: run_dispatch(_ev_perf, env_extra=_env_perf, spawn=True)[1])
-check("Stop com ledger de 50 mil linhas (indice ja construido) responde abaixo de 300 ms",
-      dt_perf < 300, f"{dt_perf:.1f} ms (indice construido em {_dt_build_ms:.1f} ms)")
+if not RELOGIO_ADIADO:  # relogio isolado em proof/relogio.py
+    dt_perf = _melhor_de(dt_perf, lambda: run_dispatch(_ev_perf, env_extra=_env_perf, spawn=True)[1])
+    check("Stop com ledger de 50 mil linhas (indice ja construido) responde abaixo de 300 ms",
+          dt_perf < 300, f"{dt_perf:.1f} ms (indice construido em {_dt_build_ms:.1f} ms)")
 check("Stop com 50 mil linhas ainda acha a entrega certa (TASK-PERF-1)",
       "TASK-90001" in out_perf.get("hookSpecificOutput", {}).get("additionalContext", ""), str(out_perf))
 

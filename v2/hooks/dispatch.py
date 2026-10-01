@@ -1127,6 +1127,37 @@ def _comando_forja_marcador(command: str, cwd: str | None) -> bool:
     return bool(_WALL_WRITE_TOKENS_RE.search(command) or re.search(r"(?i)\bsed\b[^\n]*\s-i", command))
 
 
+def _layout_deny(event: dict) -> dict | None:
+    """Portao de pastas (TASK-870, v2/lib/layout.py): bloqueia SO caminho NOVO fora do manifesto, com a
+    mensagem de onde ele deveria morar. Existente nunca bloqueia. Falha ABERTA: erro aqui vira o evento
+    `layout_excecao` no ledger e a escrita segue."""
+    try:
+        import layout  # tardio: so quem escreve paga
+        studio = paths.studio_root()
+        if layout.desligado(studio):
+            return None
+        ti = event.get("tool_input") or {}
+        cwd = event.get("cwd")
+        if event.get("tool_name") in ("Bash", "PowerShell"):
+            alvos = [_com_cwd(a, cwd) for a in _extract_write_targets(str(ti.get("command") or ""))]
+        else:
+            alvos = [_com_cwd(str(ti.get("file_path") or ti.get("notebook_path") or ""), cwd)]
+        for a in alvos:
+            a = a.strip().strip("'\"")
+            if not a or re.search(r"[$*?%`]|^~", a):  # variavel, glob ou ~: nao resolve com seguranca
+                continue
+            v = layout.violacao_de_caminho(a, studio)
+            if v:
+                return _deny(v["msg"])
+    except Exception as exc:  # noqa: BLE001 - fail-open registrado
+        try:
+            ledger.append_event(_ledger_path(), {"event": "layout_excecao", "error": str(exc)[:300],
+                                                 "tool": event.get("tool_name")})
+        except Exception:
+            pass
+    return None
+
+
 def handle_pretooluse_guard(event: dict) -> dict:
     tool_name = event.get("tool_name")
     tool_input = event.get("tool_input") or {}
@@ -1187,7 +1218,7 @@ def handle_pretooluse_guard(event: dict) -> dict:
                 "guard: Write/Edit em clients/<id>/ pela sessao principal sem "
                 "Agent/Task <id>-* visto nesta sessao (herda delegation-gate L33/L45)"
             )
-        return _no_decision()
+        return _layout_deny(event) or _no_decision()
 
     if tool_name in ("Bash", "PowerShell"):
         # PowerShell (TASK-824, achado do CEO 24/09/2026): o terminal nativo desta maquina
@@ -1231,6 +1262,9 @@ def handle_pretooluse_guard(event: dict) -> dict:
                     f"motor ({_kind_bash}) - {_vazamento_bash}. Use um nome generico; a evidencia "
                     "real fica na pasta privada (opportunities/)."
                 )
+        _negado_layout = _layout_deny(event)
+        if _negado_layout:
+            return _negado_layout
         if _comando_publica(command):
             if event["_is_subagent"]:
                 return _deny("guard: especialista nunca publica (L70) - publicacao so pela "

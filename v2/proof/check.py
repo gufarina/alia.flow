@@ -29,6 +29,19 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 V2 = os.path.dirname(HERE)
 REAL_STATE = os.path.abspath(os.path.join(V2, "..", "..", "..", "state.json"))
+# 2.1.4 (TASK-870): TRAVA DE EXECUCAO. Duas execucoes simultaneas do check (dois agentes, ou o hook e o operador)
+# disputavam o mesmo marcador/sandbox e reprovavam uma a outra. A segunda ESPERA a primeira terminar (ate 10 min; lock
+# de dono morto e retomado em 15 min) e so entao roda, com o proprio relogio (T0 abaixo conta depois da espera).
+sys.path.insert(0, os.path.join(V2, "lib"))
+import contextlib  # noqa: E402
+import trava as _trava  # noqa: E402
+_LOCK_STACK = contextlib.ExitStack()
+_LOCK_STACK.enter_context(_trava.trava(
+    os.path.join(tempfile.gettempdir(), "alia-check-" + hashlib.sha1(V2.lower().encode("utf-8")).hexdigest()[:10]),
+    espera_s=600.0, velha_s=900.0))
+atexit.register(_LOCK_STACK.close)
+
+
 def _sandbox_tempdir(prefix: str) -> str:
     """Sandbox de teste SEMPRE fora de v2/ (pasta temporaria do sistema), nunca dentro do
     motor - a origem do vazamento medido pelo CEO (state.json real copiado para dentro de
@@ -63,6 +76,12 @@ def _clean_env(extra: dict | None = None) -> dict:
     # idem a espinha: as provas legadas acionam agentes sem Task aberta; o dispatch da espinha
     # tem bateria propria (test_espinha.py) e liga la.
     env["ALIA_SPINE_OFF"] = "1"
+    # TASK-870: idem o portao de pastas - as provas legadas gravam 'nota.md' etc. na raiz de sandboxes; o portao tem
+    # bateria propria (test_layout.py, que desliga este interruptor no proprio processo).
+    env["ALIA_LAYOUT_GATE_OFF"] = "1"
+    # 2.1.5 (tempo): os filhos de prova nao carregam o site do USUARIO (.pth de pacote do operador custa ~14 ms por
+    # processo, centenas de processos por rodada). Prova mais reprodutivel; o relogio.py tira isto e mede o hook real.
+    env["PYTHONNOUSERSITE"] = "1"
     env["ALIA_PULSO"] = "1"  # PULSO e opt-in; as provas legadas dele rodam com a flag ligada
     if extra:
         env.update(extra)
@@ -95,10 +114,10 @@ def run_py(args: list[str]) -> tuple[int, str, float]:
 _PROCS: dict[str, tuple] = {}
 
 
-def _start_script(path: str, baixa: bool = False) -> None:
+def _start_script(path: str, baixa: bool = False, extra: dict | None = None) -> None:
     fo = tempfile.TemporaryFile()
     _PROCS[path] = (subprocess.Popen([sys.executable, path], stdout=fo, stderr=subprocess.STDOUT,
-                                     env=_clean_env(), creationflags=_BAIXA if baixa and os.name == "nt" else 0),
+                                     env=_clean_env(extra), creationflags=_BAIXA if baixa and os.name == "nt" else 0),
                     fo, time.perf_counter())
 
 
@@ -128,12 +147,95 @@ def collect_script(path: str) -> tuple[int, str, float]:
 # custava +4 s de 30 s, entao as OUTRAS baterias sobem em prioridade abaixo do normal (herdada pelos filhos):
 # run_proofs ganha a CPU na disputa e continua tudo em paralelo (tempo total preservado).
 _BAIXA = 0x00004000  # BELOW_NORMAL_PRIORITY_CLASS (Windows; noutros SO a flag e ignorada)
-_start_script(os.path.join(HERE, "run_proofs.py"))
+_start_script(os.path.join(HERE, "run_proofs.py"), extra={"RUN_PROOFS_RELOGIO": "adiado"})  # relogio roda isolado (relogio.py)
 for _n in ("test_task.py", "test_gate.py", "test_migrate.py", "test_rsi_reincidencia.py",
-           "test_memoria_check.py", "test_frescor_divida.py", "test_grafo.py", "test_espinha.py", "test_ciclo.py"):
-    _start_script(os.path.join(HERE, _n), baixa=True)
+           "test_memoria_check.py", "test_frescor_divida.py", "test_grafo.py", "test_espinha.py", "test_ciclo.py",
+           "test_layout.py"):
+    # test_grafo chama `python -m graphify` (pacote instalado no site do USUARIO): so ele mantem o site
+    _start_script(os.path.join(HERE, _n), baixa=True, extra={"PYTHONNOUSERSITE": ""} if _n == "test_grafo.py" else None)
 for _n in ("test_risk.py", "test_slice.py"):
     _start_script(os.path.join(V2, "flow", _n), baixa=True)
+
+# 2.1.5 (tempo): os dois blocos mais lentos da thread principal (3 chamadas do register-task.ps1 e 2 do
+# update-online.ps1, todas powershell) sobem AQUI, junto do pool, e o resultado e coletado onde as provas sempre
+# estiveram. Cada uma tem instancia/copia propria; nada disputa estado.
+_T845 = _sandbox_tempdir("alia-v2-t845-")
+# item 5 (E07): register-task.ps1 recusa done sem -GateVerdict em qualquer tipo
+_reg845 = os.path.abspath(os.path.join(V2, "..", "scripts", "register-task.ps1"))
+if os.path.isfile(_reg845):
+    _st845 = os.path.join(_T845, "state.json")
+    with open(_st845, "w", encoding="utf-8") as fh:
+        json.dump({"clients": [{"id": "acme", "squad": {"gateway": "gw", "specialists": ["bruno"]}, "projects": ["p"]}],
+                   "tasks": []}, fh)
+    _art845 = os.path.join(_T845, "entrega.md")
+    with open(_art845, "w", encoding="utf-8") as fh:
+        fh.write("Entrega de prova da TASK-845: registro de fechamento com veredito do Gate. " * 8 + "\n")
+    _led845 = os.path.join(_T845, "activity.jsonl")
+    with open(_led845, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"event": "review_verdict", "task_id": "TASK-001", "veredito": "PASS"}) + "\n")
+
+    # register-task.ps1 e WRAPPER da CLI `alia`. A recusa de done sem veredito e a de projeto fora do
+    # cadastro vem da CLI (prova de cada recusa, com mutante, em test_espinha.py); aqui so o wrapper.
+    def _reg(extra: list[str], projeto: str = "p", sufixo: str = "") -> tuple[int, str]:
+        # 2.1.5 (tempo): as 3 chamadas rodam em PARALELO; cada uma com copia propria do state, do ledger e do
+        # ponteiro de Task (nenhuma enxerga a escrita da outra); o resultado de cada uma e o mesmo da fila.
+        st_i, led_i = _st845 + sufixo, _led845 + sufixo
+        if sufixo:
+            shutil.copy2(_st845, st_i)
+            shutil.copy2(_led845, led_i)
+        p = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", _reg845,
+                            "-Client", "acme", "-Project", projeto, "-Title", "t845 ate o criterio de aceite",
+                            "-Type", "construcao", "-Status", "done", "-Artifact", _art845,
+                            "-Paths", _art845, "-Consumidor", "WARDEN", "-Destino", "interno",
+                            "-ExemploFalha", "fechar sem veredito", "-StateFile", st_i, *extra],
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                           env=_clean_env({"ALIA_LEDGER_PATH": led_i, "CLAUDE_PROJECT_DIR": _T845,
+                                           "ALIA_CURRENT_TASK_PATH": os.path.join(_T845, ".cur" + sufixo + ".json")}))
+        return p.returncode, (p.stdout + p.stderr).decode("utf-8", "replace")
+
+    import concurrent.futures as _cf  # noqa: E402
+    _pool_e07 = _cf.ThreadPoolExecutor(max_workers=3)
+    _f_e07 = [_pool_e07.submit(_reg, [], "p", ".a"),
+              _pool_e07.submit(_reg, ["-GateVerdict", "PASS"], "projeto-que-ninguem-cadastrou", ".b"),
+              _pool_e07.submit(_reg, ["-GateVerdict", "PASS"], "p", ".c")]  # coletadas depois do update-online
+
+
+_uo845 = os.path.abspath(os.path.join(V2, "..", "scripts", "update-online.ps1"))
+if os.path.isfile(_uo845):
+    import zipfile  # noqa: E402
+
+    def _instancia_uo(nome: str, check_sai: int) -> tuple[str, str]:
+        raiz = os.path.join(_T845, nome)
+        for rel, txt in (("VERSION", "2.0.4\n"), ("alia.config.json", "{}\n"),
+                         ("engine/x.md", "velho\n"), ("v2/proof/check.py", "import sys\nsys.exit(0)\n")):
+            os.makedirs(os.path.dirname(os.path.join(raiz, rel)), exist_ok=True)
+            with open(os.path.join(raiz, rel), "w", encoding="utf-8") as fh:
+                fh.write(txt)
+        os.makedirs(os.path.join(raiz, "scripts"), exist_ok=True)
+        shutil.copy2(_uo845, os.path.join(raiz, "scripts", "update-online.ps1"))
+        zp = os.path.join(_T845, nome + ".zip")
+        with zipfile.ZipFile(zp, "w") as z:
+            z.writestr("pkg-main/VERSION", "2.0.5\n")
+            z.writestr("pkg-main/engine/x.md", "novo\n")
+            z.writestr("pkg-main/v2/proof/check.py", f"import sys\nsys.exit({check_sai})\n")
+            with open(_uo845, "rb") as fh:
+                z.writestr("pkg-main/scripts/update-online.ps1", fh.read())
+        return raiz, zp
+
+    def _inicia_uo(raiz: str, zp: str) -> tuple[str, subprocess.Popen]:
+        return raiz, subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                                       os.path.join(raiz, "scripts", "update-online.ps1"), "-Json",
+                                       "-PackageZip", zp],
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=_clean_env())
+
+    def _fim_uo(raiz: str, proc: subprocess.Popen) -> tuple[int, str, str]:
+        out, err = proc.communicate()
+        with open(os.path.join(raiz, "engine", "x.md"), "r", encoding="utf-8") as fh:
+            return proc.returncode, fh.read().strip(), (out + err).decode("utf-8", "replace")
+
+    # as duas rodadas em paralelo (instancias separadas), para caber no teto de 30 s
+    _uo_verm845 = _inicia_uo(*_instancia_uo("uo-vermelho", 1))
+    _uo_verde845 = _inicia_uo(*_instancia_uo("uo-verde", 0))
 
 # ---- squad-bridge -Only (2.0.6): fixture isolada, 4 chamadas de powershell (~1-2 s cada) ----
 # Sobe numa THREAD aqui no topo (custo isolado: roda enquanto o resto corre) e e coletada no fim.
@@ -1015,7 +1117,6 @@ check("(h) frescor.py --check sai 0 sem Client velho", _proc_check_ok.returncode
 
 # ---------------------------------------------------------------------------
 print("\n=== TASK-845: publicacao, segredo, kernel na instancia, fechamento com veredito ===")
-_T845 = _sandbox_tempdir("alia-v2-t845-")
 _DISPATCH_845 = os.path.join(V2, "hooks", "dispatch.py")
 
 
@@ -1135,42 +1236,6 @@ if os.path.isfile(_oficina_settings845):
               "(SessionStart startup|resume|compact) - pendente de migrate.py apply, fora do "
               "escopo desta Task (o arquivo nao e editado a mao)")
 
-# item 5 (E07): register-task.ps1 recusa done sem -GateVerdict em qualquer tipo
-_reg845 = os.path.abspath(os.path.join(V2, "..", "scripts", "register-task.ps1"))
-if os.path.isfile(_reg845):
-    _st845 = os.path.join(_T845, "state.json")
-    with open(_st845, "w", encoding="utf-8") as fh:
-        json.dump({"clients": [{"id": "acme", "squad": {"gateway": "gw", "specialists": ["bruno"]}, "projects": ["p"]}],
-                   "tasks": []}, fh)
-    _art845 = os.path.join(_T845, "entrega.md")
-    with open(_art845, "w", encoding="utf-8") as fh:
-        fh.write("Entrega de prova da TASK-845: registro de fechamento com veredito do Gate. " * 8 + "\n")
-    _led845 = os.path.join(_T845, "activity.jsonl")
-    with open(_led845, "w", encoding="utf-8") as fh:
-        fh.write(json.dumps({"event": "review_verdict", "task_id": "TASK-001", "veredito": "PASS"}) + "\n")
-
-    # register-task.ps1 e WRAPPER da CLI `alia`. A recusa de done sem veredito e a de projeto fora do
-    # cadastro vem da CLI (prova de cada recusa, com mutante, em test_espinha.py); aqui so o wrapper.
-    def _reg(extra: list[str], projeto: str = "p") -> tuple[int, str]:
-        p = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", _reg845,
-                            "-Client", "acme", "-Project", projeto, "-Title", "t845 ate o criterio de aceite",
-                            "-Type", "construcao", "-Status", "done", "-Artifact", _art845,
-                            "-Paths", _art845, "-Consumidor", "WARDEN", "-Destino", "interno",
-                            "-ExemploFalha", "fechar sem veredito", "-StateFile", _st845, *extra],
-                           stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                           env=_clean_env({"ALIA_LEDGER_PATH": _led845, "CLAUDE_PROJECT_DIR": _T845,
-                                           "ALIA_CURRENT_TASK_PATH": os.path.join(_T845, ".cur.json")}))
-        return p.returncode, (p.stdout + p.stderr).decode("utf-8", "replace")
-
-    _rc845, _o845 = _reg([])
-    check("E07 negativo: done sem -GateVerdict e recusado pelo wrapper",
-          _rc845 != 0 and "GateVerdict" in _o845, _o845[-300:])
-    _rc845, _o845 = _reg(["-GateVerdict", "PASS"], projeto="projeto-que-ninguem-cadastrou")
-    check("E07 negativo: projeto fora do cadastro e recusado pela CLI atras do wrapper",
-          _rc845 != 0 and "projeto_fora_do_cadastro" in _o845, _o845[-300:])
-    _rc845, _o845 = _reg(["-GateVerdict", "PASS"])
-    check("E07 positivo: o mesmo done, projeto cadastrado e veredito no ledger, fecha", _rc845 == 0, _o845[-400:])
-
 # ---------------------------------------------------------------------------
 print("\n=== TASK-845: janela de 6.000 bytes e rollback do update-online pelo check.py ===")
 with open(os.path.join(_alvo845, "AGENTS.md"), "rb") as fh:
@@ -1193,46 +1258,23 @@ check("janela negativo: apply recusa instancia que passaria de 6.000 bytes e nao
 
 _uo845 = os.path.abspath(os.path.join(V2, "..", "scripts", "update-online.ps1"))
 if os.path.isfile(_uo845):
-    import zipfile  # noqa: E402
-
-    def _instancia_uo(nome: str, check_sai: int) -> tuple[str, str]:
-        raiz = os.path.join(_T845, nome)
-        for rel, txt in (("VERSION", "2.0.4\n"), ("alia.config.json", "{}\n"),
-                         ("engine/x.md", "velho\n"), ("v2/proof/check.py", "import sys\nsys.exit(0)\n")):
-            os.makedirs(os.path.dirname(os.path.join(raiz, rel)), exist_ok=True)
-            with open(os.path.join(raiz, rel), "w", encoding="utf-8") as fh:
-                fh.write(txt)
-        os.makedirs(os.path.join(raiz, "scripts"), exist_ok=True)
-        shutil.copy2(_uo845, os.path.join(raiz, "scripts", "update-online.ps1"))
-        zp = os.path.join(_T845, nome + ".zip")
-        with zipfile.ZipFile(zp, "w") as z:
-            z.writestr("pkg-main/VERSION", "2.0.5\n")
-            z.writestr("pkg-main/engine/x.md", "novo\n")
-            z.writestr("pkg-main/v2/proof/check.py", f"import sys\nsys.exit({check_sai})\n")
-            with open(_uo845, "rb") as fh:
-                z.writestr("pkg-main/scripts/update-online.ps1", fh.read())
-        return raiz, zp
-
-    def _inicia_uo(raiz: str, zp: str) -> tuple[str, subprocess.Popen]:
-        return raiz, subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                                       os.path.join(raiz, "scripts", "update-online.ps1"), "-Json",
-                                       "-PackageZip", zp],
-                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=_clean_env())
-
-    def _fim_uo(raiz: str, proc: subprocess.Popen) -> tuple[int, str, str]:
-        out, err = proc.communicate()
-        with open(os.path.join(raiz, "engine", "x.md"), "r", encoding="utf-8") as fh:
-            return proc.returncode, fh.read().strip(), (out + err).decode("utf-8", "replace")
-
-    # as duas rodadas em paralelo (instancias separadas), para caber no teto de 30 s
-    _uo_verm845 = _inicia_uo(*_instancia_uo("uo-vermelho", 1))
-    _uo_verde845 = _inicia_uo(*_instancia_uo("uo-verde", 0))
     _rc845, _x845, _o845 = _fim_uo(*_uo_verm845)
     check("update-online negativo: check.py vermelho no pacote reverte o motor (exit != 0, engine volta)",
           _rc845 != 0 and _x845 == "velho", f"rc={_rc845} x={_x845} {_o845[-300:]}")
     _rc845, _x845, _o845 = _fim_uo(*_uo_verde845)
     check("update-online positivo: check.py verde aplica o pacote",
           _rc845 == 0 and _x845 == "novo", f"rc={_rc845} x={_x845} {_o845[-300:]}")
+
+# E07 (coleta): as 3 chamadas do register-task.ps1 subiram em paralelo la em cima
+if "_f_e07" in globals():
+    _rc845, _o845 = _f_e07[0].result()
+    check("E07 negativo: done sem -GateVerdict e recusado pelo wrapper",
+          _rc845 != 0 and "GateVerdict" in _o845, _o845[-300:])
+    _rc845, _o845 = _f_e07[1].result()
+    check("E07 negativo: projeto fora do cadastro e recusado pela CLI atras do wrapper",
+          _rc845 != 0 and "projeto_fora_do_cadastro" in _o845, _o845[-300:])
+    _rc845, _o845 = _f_e07[2].result()
+    check("E07 positivo: o mesmo done, projeto cadastrado e veredito no ledger, fecha", _rc845 == 0, _o845[-400:])
 
 # ---------------------------------------------------------------------------
 print("\n=== PULSO (Operacao Deep, TASK-847, WARDEN): calculo, decaimento, teto, guard ===")
@@ -1373,52 +1415,6 @@ check("cold start: 1a chamada de recompute() nunca reconstroi retroativamente (F
 check("cold start: offset gravado bate o tamanho do ledger na hora (nunca 0 com ledger nao-vazio)",
       _pulso_cold847.get("_ledger_offset", 0) == os.path.getsize(_ledger_cold847),
       str(_pulso_cold847.get("_ledger_offset")))
-
-# Coleta das baterias-script (largadas no topo; coletar aqui deixa o trabalho em processo acima
-# rodar ENQUANTO elas correm).
-# ---------------------------------------------------------------------------
-print("=== bateria: guard + ledger (I1/I4, hooks/dispatch.py + lib/ledger.py) ===")
-rc, out, dt = collect_script(os.path.join(HERE, "run_proofs.py"))
-check("run_proofs.py (guard/ledger/SubagentStop) sai verde", rc == 0, f"{dt*1000:.0f} ms")
-if rc != 0:
-    print(chr(10).join(l for l in out.splitlines() if "[FAIL]" in l))  # o FAIL nunca cai fora da cauda
-    print(out[-3000:])
-
-print("\n=== bateria: flow/risk.py (I6) ===")
-rc, out, dt = collect_script(os.path.join(V2, "flow", "test_risk.py"))
-check("test_risk.py sai verde", rc == 0, f"{dt*1000:.0f} ms")
-if rc != 0:
-    print(out[-2000:])
-
-print("\n=== bateria: flow/slice.py (TASK-812 item B, fatiar tarefa grande) ===")
-rc, out, dt = collect_script(os.path.join(V2, "flow", "test_slice.py"))
-check("test_slice.py sai verde", rc == 0, f"{dt*1000:.0f} ms")
-if rc != 0:
-    print(out[-2000:])
-
-print("\n=== bateria: bin/task.py (I2, CLI open/close/context) ===")
-rc, out, dt = collect_script(os.path.join(HERE, "test_task.py"))
-check("test_task.py sai verde", rc == 0, f"{dt*1000:.0f} ms")
-if rc != 0:
-    print(out[-3000:])
-
-print("\n=== bateria: ciclo de trabalho sem deadlock (2.1.2, TASK-862) ===")
-rc, out, dt = collect_script(os.path.join(HERE, "test_ciclo.py"))
-check("test_ciclo.py sai verde (toda acao do ciclo tem ator liberado + mutantes pegos)", rc == 0, f"{dt*1000:.0f} ms")
-if rc != 0:
-    print(out[-3000:])
-
-print("\n=== bateria: bin/gate.py (TASK-838, ponteiro verificavel em funciona/goal-backward) ===")
-rc, out, dt = collect_script(os.path.join(HERE, "test_gate.py"))
-check("test_gate.py sai verde", rc == 0, f"{dt*1000:.0f} ms")
-if rc != 0:
-    print(out[-3000:])
-
-print("\n=== bateria: bin/migrate.py (D1, achado do Gate do NEXUS: apply/undo sem prova automatica) ===")
-rc, out, dt = collect_script(os.path.join(HERE, "test_migrate.py"))
-check("test_migrate.py sai verde", rc == 0, f"{dt*1000:.0f} ms")
-if rc != 0:
-    print(out[-3000:])
 
 # squad-bridge -Only (thread largada no topo)
 print("\n=== squad-bridge -Only: nunca apaga bundle fora do escopo (v2/squad/squad-bridge.ps1, fixture isolada) ===")
@@ -1825,15 +1821,72 @@ if os.path.isfile(_LEDGER_MD):
 else:
     print("[INFO] law-ledger.md ausente nesta instalacao - conferencia pulada")
 
+# 2.1.5 (tempo): a COLETA das baterias-script ficou DEPOIS das secoes em processo que nao dependem delas: coletar
+# cedo deixava a thread principal parada esperando a mais lenta do pool (test_ciclo) com trabalho proprio por fazer.
+# Coleta das baterias-script (largadas no topo; coletar aqui deixa o trabalho em processo acima
+# rodar ENQUANTO elas correm).
+# ---------------------------------------------------------------------------
+print("=== bateria: guard + ledger (I1/I4, hooks/dispatch.py + lib/ledger.py) ===")
+rc, out, dt = collect_script(os.path.join(HERE, "run_proofs.py"))
+check("run_proofs.py (guard/ledger/SubagentStop) sai verde", rc == 0, f"{dt*1000:.0f} ms")
+if rc != 0:
+    print(chr(10).join(l for l in out.splitlines() if "[FAIL]" in l))  # o FAIL nunca cai fora da cauda
+    print(out[-3000:])
+
+print("\n=== bateria: flow/risk.py (I6) ===")
+rc, out, dt = collect_script(os.path.join(V2, "flow", "test_risk.py"))
+check("test_risk.py sai verde", rc == 0, f"{dt*1000:.0f} ms")
+if rc != 0:
+    print(out[-2000:])
+
+print("\n=== bateria: flow/slice.py (TASK-812 item B, fatiar tarefa grande) ===")
+rc, out, dt = collect_script(os.path.join(V2, "flow", "test_slice.py"))
+check("test_slice.py sai verde", rc == 0, f"{dt*1000:.0f} ms")
+if rc != 0:
+    print(out[-2000:])
+
+print("\n=== bateria: bin/task.py (I2, CLI open/close/context) ===")
+rc, out, dt = collect_script(os.path.join(HERE, "test_task.py"))
+check("test_task.py sai verde", rc == 0, f"{dt*1000:.0f} ms")
+if rc != 0:
+    print(out[-3000:])
+
+print("\n=== bateria: ciclo de trabalho sem deadlock (2.1.2, TASK-862) ===")
+rc, out, dt = collect_script(os.path.join(HERE, "test_ciclo.py"))
+check("test_ciclo.py sai verde (toda acao do ciclo tem ator liberado + mutantes pegos)", rc == 0, f"{dt*1000:.0f} ms")
+if rc != 0:
+    print(out[-3000:])
+
+print("\n=== bateria: bin/gate.py (TASK-838, ponteiro verificavel em funciona/goal-backward) ===")
+rc, out, dt = collect_script(os.path.join(HERE, "test_gate.py"))
+check("test_gate.py sai verde", rc == 0, f"{dt*1000:.0f} ms")
+if rc != 0:
+    print(out[-3000:])
+
+print("\n=== bateria: bin/migrate.py (D1, achado do Gate do NEXUS: apply/undo sem prova automatica) ===")
+rc, out, dt = collect_script(os.path.join(HERE, "test_migrate.py"))
+check("test_migrate.py sai verde", rc == 0, f"{dt*1000:.0f} ms")
+if rc != 0:
+    print(out[-3000:])
+
 # ---------------------------------------------------------------------------
 print("\n=== provas ligadas (RSI reincidencia, memoria_check, divida renovavel, grafo) ===")
 for _tn, _rot in (("test_rsi_reincidencia.py", "rsi_reincidencia.py (teste de reincidencia por aprendizado, com negativo)"),
                   ("test_memoria_check.py", "memoria_check.py (orfa + valido_de, com negativo)"),
                   ("test_frescor_divida.py", "frescor: divida renovavel no maximo 1 vez"),
                   ("test_grafo.py", "grafo_saude / grafo_uso"),
-                  ("test_espinha.py", "espinha: CLI alia, schema, adaptadores, trava do grafo/wiki (cada recusa com mutante)")):
+                  ("test_espinha.py", "espinha: CLI alia, schema, adaptadores, trava do grafo/wiki (cada recusa com mutante)"),
+                  ("test_layout.py", "layout: portao de pastas (caminho novo bloqueia, existente passa, cada regra com mutante)")):
     _rc, _out, _dt = collect_script(os.path.join(HERE, _tn))
     check(f"{_rot} - {_tn} sai verde", _rc == 0, (_out[-300:] if _rc else f"{_dt*1000:.0f} ms"))
+# TASK-870: o legado de pastas da oficina so encolhe (catraca em studio/layout-baseline.txt). Sem baseline (produto
+# publicado) a conferencia nao se aplica - e INFO, nunca SKIP.
+_ly_rc, _ly_out, _ly_dt = run_py([os.path.join(V2, "lib", "layout.py"), "--check", "--perfil", "oficina", "--root", os.path.dirname(V2)])
+if _ly_rc == 2:
+    print("[INFO] layout: sem studio/layout-baseline.txt nesta instalacao - catraca de pastas nao se aplica")
+else:
+    check("layout: legado de pastas da oficina so encolhe (nenhum item novo fora do manifesto)", _ly_rc == 0,
+          _ly_out.strip().replace(chr(10), " | ")[:300] if _ly_rc else f"{_ly_dt*1000:.0f} ms")
 _rsi_rc, _rsi_out, _ = run_py([os.path.join(V2, "bin", "rsi_reincidencia.py"), "--root", os.path.dirname(os.path.dirname(os.path.dirname(V2))), "--check"])
 print(f"[MEDIDO] rsi_reincidencia.py no estudio real: exit {_rsi_rc} (reincidencia real e sinal para a Alia, nao falha da prova): "
       + (_rsi_out.strip().splitlines() or ["sem saida"])[-1][:160])
@@ -1980,6 +2033,13 @@ check("negativo SKIP: mutante que nunca reprova e pego (deixa o SKIP passar na c
 check("nenhuma prova pulada na copia de empacotamento (SKIP so e tolerado no estudio, e contado)",
       not skips_reprovam(_EMPACOTAMENTO, SKIPS), f"{len(SKIPS)} SKIP(s)" if SKIPS else "")
 
+# TASK-870: as medidas de LATENCIA do hook (mediana quente 150 ms, Stop 300 ms) rodam AQUI, em serie, com o pool ja
+# terminado: medida de relogio disputando CPU com 12 processos reprovava por vizinhanca. Metas inalteradas.
+print("\n=== relogio isolado (serie, depois do pool paralelo) ===")
+_rl_rc, _rl_out, _rl_dt = run_script(os.path.join(HERE, "relogio.py"))
+print(_rl_out.strip())
+check("relogio.py (mediana quente < 150 ms, Stop < 300 ms, Stop 50 mil linhas < 300 ms) sai verde", _rl_rc == 0, f"{_rl_dt*1000:.0f} ms")
+
 DT_TOTAL = time.perf_counter() - T0
 print(f"\n=== resultado ({DT_TOTAL:.2f} s) ===")
 check("tempo total ate 30 s (alvo do contrato)", DT_TOTAL <= 30, f"{DT_TOTAL:.2f} s")
@@ -2028,7 +2088,8 @@ if _estado_marcador == "gravado":
     print(f"[MEDIDO] marcador de check verde gravado: {_marker_path} (repo={_repo_dir} head={_head})")
 elif _estado_marcador == "repo_diferente":
     print(f"[MEDIDO] marcador NAO gravado: o repo {_repo_dir} (VERSION {_versao(_repo_dir)}) nao e a copia verificada "
-          f"(VERSION {_versao(os.path.dirname(V2))}); publicacao segue travada")
+          f"(VERSION {_versao(os.path.dirname(V2))}); publicacao segue travada. Para publicar o produto, rode a COPIA verificada "
+          "apontando o repo: python clients/alia-flow-lab/v2/proof/check.py --repo <produto>")
 else:
     print(f"[MEDIDO] marcador NAO gravado: {_repo_dir} sem HEAD de git; publicacao segue travada")
 

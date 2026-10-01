@@ -18,6 +18,15 @@ testado na instancia viva (a instancia aplicada) antes de fechar. Um update = um
 reversivel. Fluxo: alterar engine -> bump VERSION -> entrada no CHANGELOG -> smoke-test-studio
 ALL GREEN -> tag.
 
+## [2.1.5] - 2026-10-01
+
+A 2.1.5 saiu em 01/10 e trouxe o portão de pastas e o fechamento das pendências da 2.1.4:
+
+- Novo portão de pastas (`v2/lib/layout.py`, `layout-manifesto.json`, `test_layout.py`), ligado ao despachante: pasta fora do desenho do manifesto é barrada, a lista de exceções só encolhe e `--sweep` apenas lista, sem mexer em nada.
+- A trava do mapa passou a tratar `/scratchpad/` como infraestrutura e a ignorar linha do registro que não seja um objeto.
+- A prova oficial ganhou trava de execução no `check.py`, e a mensagem da cópia verificada agora indica o uso com `--repo`.
+- As medidas de latência da prova oficial passaram a rodar isoladas, depois do pool de provas (`v2/proof/relogio.py`), sem mudar as metas, para a disputa de CPU não reprovar a prova.
+
 ## [2.1.4] - 2026-10-01
 
 A 2.1.4 saiu em 01/10 às 18:20 e trouxe 6 mudanças:

@@ -1,0 +1,41 @@
+{
+  "versao": 1,
+  "nota": "Manifesto de layout lido por v2/lib/layout.py. Fontes: arquitetura-pastas.md (R1-R15), pastas-clientes.md (C1-C10), skills/file-organization/SKILL.md. Sem pasta coringa isenta: so infra e o que esta em 'opacas' (saida gerada por script ou codigo-fonte dentro do estudio) escapam das regras.",
+  "infra_topo": ["memory", "_backups", ".claude", ".agents", ".opencode", ".alia", ".git", ".github", ".impeccable", ".playwright-mcp", ".secrets", ".work"],
+  "infra_qualquer": ["node_modules", ".git", "scratchpad", "__pycache__", "target", "dist", ".next"],
+  "coringa": "(^|[-_.])(tmp|temp|misc|novo|nova|final|copy|copia|recovered)([-_.]|$)",
+  "nome_ok": "^[a-z0-9_.][a-z0-9._-]*$",
+  "nome_md_ok": "^[A-Za-z0-9_][A-Za-z0-9._-]*[.]md$",
+  "nome_excecoes": ["LICENSE", "VERSION", "Dockerfile", "Makefile", "CODEOWNERS", "Cargo.toml", "Cargo.lock"],
+  "artifacts_projeto": "^[a-z0-9-]+-[0-9]{4}-[0-9]{2}-[0-9]{2}(-[a-z0-9-]+)?$",
+  "artifacts_task": "^TASK-[0-9]+$",
+  "artifacts_reservadas": ["coordination"],
+  "fonte_unica": {
+    "nomes": ["CLAIMS.md", "BRAND.md", "PRD.md"],
+    "onde": "clients/alia-flow-lab/docs/"
+  },
+  "client_com_codigo_se_tem": ["package.json", "Cargo.toml"],
+  "perfis": {
+    "estudio": {
+      "raiz_arquivos": ["README.md", "PRIMEIROS-PASSOS.md", "AGENTS.md", "CHANGELOG.md", "LICENSE", "CREDITS.md", "VERSION", "alia.config.json", "iniciar-alia.bat", "atualizar-alia.bat", "CLAUDE.md", "mission-control.html", "state.json", "studio.yaml", ".gitignore", ".gitattributes", ".mcp.json", "opencode.json", "reverter-alia.bat", "skills-lock.json"],
+      "raiz_pastas": ["engine", "v2", "scripts", "skills", "clients", "memory", "docs", "studio", "research", "out", "_arquivo", "_backups", "onboarding", "optional-mcps", "_inbox", "_retired", "tests", ".claude", ".agents", ".opencode", ".alia", ".git", ".github", ".impeccable", ".playwright-mcp", ".secrets", ".work"],
+      "opacas": []
+    },
+    "client": {
+      "raiz_arquivos": ["client.md", "loops.yaml", "client.json", "README.md"],
+      "raiz_pastas": ["squad", "docs", "brand", "research", "artifacts", "out", "_arquivo"]
+    },
+    "oficina": {
+      "raiz_arquivos": ["AGENTS.md", "CATALOG.md", "CHANGELOG.md", "CLAUDE.md", "CONTRIBUTING.md", "CREDITS.md", "LICENSE", "PRIMEIROS-PASSOS.md", "README.md", "VERSION", "alia.config.json", "atualizar-alia.bat", "iniciar-alia.bat", "opencode.json", "reverter-alia.bat", ".gitignore", ".gitattributes"],
+      "raiz_pastas": ["artifacts", "benchmarks", "brand", "clients", "docs", "engine", "graphify-out", "onboarding", "opportunities", "optional-mcps", "release", "release-reviews", "research", "rsi-backlog", "scripts", "skills", "squad", "studio", "studio.example", "tests", "v2", "memory", "_backups", ".agents", ".claude", ".github", ".opencode", ".work"],
+      "opacas": ["release", "graphify-out", "studio.example"]
+    }
+  },
+  "destinos": {
+    "script": "scripts/ (automacao do motor) ou scripts/studio/ (so do estudio)",
+    "doc": "docs/ (documento vivo; trabalho datado numa subpasta AAAA-MM-DD-tema/)",
+    "dado": "studio/ (estado, ledger, baseline, log)",
+    "saida": "out/ (saida descartavel, expira em 14 dias) ou clients/<id>/artifacts/<projeto-AAAA-MM-DD>/",
+    "outro": "docs/ (documento), clients/<id>/ (dado de Client) ou out/ (saida descartavel)"
+  }
+}

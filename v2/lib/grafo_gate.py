@@ -23,7 +23,7 @@ import espinha
 import paths
 import trava
 
-INFRA = ("/node_modules/", "/scratchpad", "/.git/")  # em qualquer ponto
+INFRA = ("/node_modules/", "/scratchpad/", "/.git/")  # em qualquer ponto
 INFRA_RAIZ = ("memory", "_backups", ".claude")  # so na raiz do estudio (um /memory/ de codebase externo e codigo)
 RELATORIOS = ("graph_report.md", "graph.json")
 # Consulta ao grafo = comando que COMECA por `python -m graphify query|path|explain` (nao qualquer menção)
@@ -177,6 +177,8 @@ def _lido_no_transcript(transcript: str, mapa: str, escopo: str = "") -> bool:
                 try:
                     obj = json.loads(linha)
                 except json.JSONDecodeError:
+                    continue
+                if not isinstance(obj, dict):  # 2.1.4: linha JSON valida mas nao-objeto (lista, numero) nao tem .get
                     continue
                 cwd = str(obj.get("cwd") or "")
                 conteudo = (obj.get("message") or {}).get("content") if isinstance(obj.get("message"), dict) else None
