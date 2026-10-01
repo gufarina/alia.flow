@@ -187,6 +187,36 @@ def _print(obj: dict) -> None:
     sys.stdout.write("\n")
 
 
+def registrar(task: str, parecer: str, session: str = "", ledger_path: str = "") -> tuple[int, dict]:
+    """Valida o parecer e grava o gate_check. Ponto unico: gate.py (CLI) e `alia gate record` chamam
+    isto. Devolve (exit, objeto): 0 = evento gravado; 1 = recusado (nenhum evento)."""
+    if not os.path.isfile(parecer):
+        return 1, {"ok": False, "error": "parecer nao encontrado no disco", "parecer": parecer}
+
+    with open(parecer, "rb") as fh:
+        bruto = fh.read()
+    texto = bruto.decode("utf-8", errors="replace")
+
+    avaliacao = validar_parecer(texto, parecer)
+    if avaliacao["problemas"]:
+        return 1, {"ok": False, "error": "parecer invalido contra o contrato do gate",
+                   "problemas": avaliacao["problemas"]}
+
+    evento = {
+        "event": "gate_check",
+        "task_id": task,
+        "veredito": avaliacao["veredito"],
+        "parecer_sha256": hashlib.sha256(bruto).hexdigest(),
+        "parecer_path": os.path.abspath(parecer),
+        "criterios": avaliacao["criterios"],
+    }
+    if session:
+        evento["session_id"] = session
+
+    gravado = ledger.append_event(ledger_path or paths.ledger_path(), evento)
+    return 0, {"ok": True, "event": gravado}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="gate.py")
     parser.add_argument("--task", required=True)
@@ -194,36 +224,9 @@ def main() -> int:
     parser.add_argument("--session", default="", help="session_id do host, se conhecido")
     parser.add_argument("--ledger", default="", help="caminho do ledger (teste); default = paths.ledger_path()")
     args = parser.parse_args()
-
-    if not os.path.isfile(args.parecer):
-        _print({"ok": False, "error": "parecer nao encontrado no disco", "parecer": args.parecer})
-        return 1
-
-    with open(args.parecer, "rb") as fh:
-        bruto = fh.read()
-    texto = bruto.decode("utf-8", errors="replace")
-
-    avaliacao = validar_parecer(texto, args.parecer)
-    if avaliacao["problemas"]:
-        _print({"ok": False, "error": "parecer invalido contra o contrato do gate",
-                "problemas": avaliacao["problemas"]})
-        return 1
-
-    ledger_path = args.ledger or paths.ledger_path()
-    evento = {
-        "event": "gate_check",
-        "task_id": args.task,
-        "veredito": avaliacao["veredito"],
-        "parecer_sha256": hashlib.sha256(bruto).hexdigest(),
-        "parecer_path": os.path.abspath(args.parecer),
-        "criterios": avaliacao["criterios"],
-    }
-    if args.session:
-        evento["session_id"] = args.session
-
-    gravado = ledger.append_event(ledger_path, evento)
-    _print({"ok": True, "event": gravado})
-    return 0
+    codigo, obj = registrar(args.task, args.parecer, args.session, args.ledger)
+    _print(obj)
+    return codigo
 
 
 if __name__ == "__main__":

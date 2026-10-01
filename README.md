@@ -4,7 +4,7 @@
 
 **Você diz o que quer. A Alia faz acontecer.**
 
-`MIT` · [`VERSION`](VERSION) · Windows (PowerShell 5.1+) · roda dentro do Claude Code
+`MIT` · [`VERSION`](VERSION) · Windows (PowerShell 5.1+) · Python 3 · roda dentro do Claude Code
 
 ---
 
@@ -90,7 +90,7 @@ irm https://raw.githubusercontent.com/gufarina/alia.flow/main/scripts/install.ps
 ```
 
 A linha acima responde publicamente hoje. Ainda não existe um arquivo pronto para baixar na página
-de releases, e a versão publicada está uma atrás da atual.
+de releases. Precisa de Python 3 instalado: as proteções da Alia rodam nele.
 
 O melhor primeiro pedido é um trabalho de verdade. Diga quem você é, para quem você vende e o que
 precisa ficar pronto. Exemplo: "Tenho uma barbearia em Curitiba, público jovem. Quero um post de
@@ -233,13 +233,12 @@ reprocessar tudo.
 
 Tudo roda localmente, dentro do processo do agente que você já usa. Sem servidor remoto, sem banco
 hospedado. O fluxo completo está validado de ponta a ponta em Windows, PowerShell 5.1 ou superior,
-dentro do Claude Code. Codex e OpenCode têm o disco pronto, mas a última prova ao vivo é anterior e
-não foi repetida. Isso não é promessa de compatibilidade.
+dentro do Claude Code, com Python 3. Só o Claude Code é suportado: as proteções usam o formato de
+ganchos dele.
 
 ## Verificações
 
-497 verificações determinísticas passam hoje, sem chamar IA
-(`scripts/smoke-test.ps1`).
+A prova é `python v2/proof/check.py`, sem chamar IA.
 
 ## Licença
 

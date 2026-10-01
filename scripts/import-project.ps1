@@ -1,4 +1,4 @@
-<#
+﻿<#
   import-project.ps1 - Helper deterministico da skill importar-projeto (skills/importar-projeto/SKILL.md).
   Faz SO a parte bracal dos passos 2 e 6 da receita: SCAFFOLD do cliente novo + REGISTRO no state.json.
   NAO monta squad nem knowledge (isso e o Squad Creator). NAO desenha loops (isso e o Loop Designer).
@@ -13,7 +13,7 @@
     - em -DryRun: so mostra o que faria, nada e escrito.
 
   Origem (SourcePath) e SO referencia - este script NUNCA escreve na origem.
-  Escrita .NET UTF-8 sem BOM. ErrorActionPreference Stop.
+  Escrita .NET UTF-8 com BOM (TASK-787, item 4 do cinco-porques-1.83). ErrorActionPreference Stop.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Id,

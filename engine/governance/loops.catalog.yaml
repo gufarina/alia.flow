@@ -48,6 +48,8 @@ tiers:
     scope: "audita os Owners por excecao: loops rodaram, gates passaram, ha drift, projeto evoluiu"
 
 # Loops dinamicos - disparam por evento, sem cadencia.
+# TASK-845 (medido 27/09/2026): nenhum codigo dispara estes 4 hoje. Client nao declara nenhum
+# deles como active ate existir o disparo; no maximo proposed.
 dynamic_loops:
   - id: gate-on-artifact
     trigger: event

@@ -109,11 +109,18 @@ function Get-SmokeSummary([string]$output) {
   }
 }
 
+function Invoke-CheckPy([string]$py) {
+  # TASK-845: a prova e check.py; o resumo sai no formato "PASS: N" / "FAIL: N" que Get-SmokeSummary le.
+  if (-not (Test-Path -LiteralPath $py)) { return "" }
+  $out = (& python $py 2>&1) -join "`n"
+  $p = ([regex]::Matches($out, '(?m)^\[PASS\]')).Count
+  $f = ([regex]::Matches($out, '(?m)^\[FAIL\]')).Count
+  return ("PASS: $p`nFAIL: $f`n" + $out)
+}
+
 function Invoke-Smokes([string]$root) {
-  $studioScript = Join-Path $root "scripts/smoke-test-studio.ps1"
-  $labScript    = Join-Path $root "clients/alia-flow-lab/scripts/smoke-test.ps1"
-  $studioOut = if (Test-Path -LiteralPath $studioScript) { (& $studioScript 6>&1 2>&1) -join "`n" } else { "" }
-  $labOut    = if (Test-Path -LiteralPath $labScript)    { (& $labScript 6>&1 2>&1) -join "`n" }    else { "" }
+  $studioOut = Invoke-CheckPy (Join-Path $root "v2/proof/check.py")
+  $labOut    = Invoke-CheckPy (Join-Path $root "clients/alia-flow-lab/v2/proof/check.py")
   return [PSCustomObject]@{
     Studio = Get-SmokeSummary $studioOut
     Lab    = Get-SmokeSummary $labOut

@@ -35,7 +35,7 @@ lugar - e diga isso em uma frase, sem inventar deteccao.
 - `delegation_mode=spawn` - o host tem sub-agente nativo. No passo DELEGA voce dispara o
   Specialist como sub-agente: Claude Code le `.claude/agents/{client}-{id}.md`, OpenCode le
   `.opencode/agent/{client}-{id}.md` (invocavel por `@nome`). Nao existe o agente ainda? Gere com
-  `scripts/squad-bridge.ps1` no modo do host (`-Mode spawn` ou `-Mode opencode`) - e lembre do
+  `python v2/bin/client.py use <client>` (chama `v2/squad/bridge.ps1`; `-Target opencode` para o OpenCode) - e lembre do
   limite conhecido: agente recem-gerado so fica acionavel em SESSAO NOVA; no meio da sessao a
   saida e o context-load.
 - `delegation_mode=context-load` - o host NAO tem sub-agente nativo (Codex, ou desconhecido). No

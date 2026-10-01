@@ -1,0 +1,30 @@
+{
+  "_doc": "Matriz de adaptadores. bloqueia = o host recusa a acao quando a CLI `alia` sai 1; avisa = so devolve contexto/aviso. graph_gate = modo da trava de adocao do grafo/wiki neste host (bloqueia | avisa | nao_alcanca). Adaptador nao tem regra: traduz evento em chamada `alia`.",
+  "claude": {
+    "adaptador": "v2/hooks/dispatch.py (importa alia.run)",
+    "graph_gate": "bloqueia",
+    "bloqueia": ["PreToolUse Agent|Task -> alia task dispatch", "PreToolUse Grep|Glob -> alia graph check"],
+    "avisa": ["SessionStart -> alia open", "Stop -> alia task pending", "alia graph check --transcript (a leitura do mapa e achada no transcript; Read nao e hookado de proposito)"]
+  },
+  "opencode": {
+    "adaptador": "v2/adapters/opencode/alia-espinha.mjs",
+    "graph_gate": "bloqueia",
+    "bloqueia": ["tool.execute.before task -> alia task dispatch", "tool.execute.before grep|glob -> alia graph check"],
+    "avisa": ["session.created -> alia open", "tool.execute.before read -> alia graph read (so registra)"],
+    "lacuna": "a doc nao diz se tool.execute.before vale para chamada de subagente"
+  },
+  "codex": {
+    "adaptador": "v2/adapters/codex/codex_hook.py + hooks.toml",
+    "graph_gate": "bloqueia",
+    "bloqueia": ["PreToolUse Bash (rg|grep|find em Client) -> alia graph check"],
+    "avisa": ["SessionStart -> alia open", "PreToolUse Bash (cat/type de GRAPH_REPORT) -> alia graph read (so registra)"],
+    "lacuna": "sem Grep/Glob nativo e sem ferramenta de subagente no hook: task dispatch nao alcanca; ferramentas hospedadas (WebSearch) ficam fora do PreToolUse. Sem Codex CLI nesta maquina: so teste de unidade da traducao."
+  },
+  "pi": {
+    "adaptador": "v2/adapters/pi/alia-espinha.mjs",
+    "graph_gate": "bloqueia",
+    "bloqueia": ["tool_call grep|find -> alia graph check"],
+    "avisa": ["before_agent_start -> alia open", "tool_call read -> alia graph read (so registra)"],
+    "lacuna": "Pi nao tem subagente nativo (task dispatch nao se aplica). O host que comanda o Pi DEVE proibir --no-extensions: com ele a descoberta de extensoes some e a trava junto."
+  }
+}

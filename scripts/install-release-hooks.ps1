@@ -9,10 +9,15 @@
 # docs/INTEGRIDADE.md, secao "Hook pre-push (TASK-617)".
 #
 # Uso: powershell -File scripts/install-release-hooks.ps1 -Repo <caminho do repo do produto>
+#
+# TASK-822 N2 (conserto do re-gate do NEXUS): -ReviewsDir e opcional e so existe para a fixture do
+# smoke-test.ps1 apontar release-gate.ps1 (dentro do hook) para uma pasta descartavel - vazio
+# (default) grava o hook SEM -ReviewsDir, o comportamento real de producao continua identico.
 
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory)][string]$Repo
+  [Parameter(Mandatory)][string]$Repo,
+  [string]$ReviewsDir = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -36,13 +41,19 @@ $gateScriptFwd = $gateScriptItem.FullName -replace '\\', '/'
 $repoFullFwd = $repoFull -replace '\\', '/'
 $hookPath = Join-Path $hooksDir "pre-push"
 
+$reviewsDirArg = ""
+if ($ReviewsDir -ne "") {
+  $reviewsDirFwd = ($ReviewsDir -replace '\\', '/')
+  $reviewsDirArg = ' -ReviewsDir "' + $reviewsDirFwd + '"'
+}
+
 $hookLines = @(
   '#!/bin/sh'
   '# Instalado por scripts/install-release-hooks.ps1 (TASK-617) - NAO editar a mao.'
   '# .git/hooks nunca viaja no clone: se este repo for clonado de novo, ou .git for recriado,'
   '# reinstale com: powershell -ExecutionPolicy Bypass -File scripts/install-release-hooks.ps1 -Repo <repo>'
   '# (o script do gate mora na oficina, caminho gravado no ato da instalacao abaixo)'
-  ('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + $gateScriptFwd + '" -Repo "' + $repoFullFwd + '"')
+  ('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + $gateScriptFwd + '" -Repo "' + $repoFullFwd + '"' + $reviewsDirArg)
   'STATUS=$?'
   'if [ "$STATUS" -ne 0 ]; then'
   '  echo "release-gate.ps1 REPROVOU - push abortado (TASK-617). Rode o gate a mao para ver o motivo." >&2'

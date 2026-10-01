@@ -1,0 +1,6 @@
+{
+  "p": "Leia clients/alia-flow-lab/skills/leitura-em-massa/SKILL.md e diga quantas leituras no maximo um especialista pode pedir ao leitor por Task e o limite de caracteres do prompt. Cite a linha.",
+  "deve": ["\\b3\\b", "2\\.?500", "L\\d+"],
+  "nao": ["\\bnao sei\\b"],
+  "gabarito": "SKILL.md linha 58-60: no maximo 3 leituras por Task, prompt ate 2.500 caracteres"
+}

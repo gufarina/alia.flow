@@ -232,20 +232,24 @@ if (-not $temSmokeStudio) {
 # o molde de smoke-test-studio.ps1). So a PRIMEIRA string entre aspas apos "Check" vira o needle
 # (mesma logica de antes: prefixo, ate 30 chars, casado literal no disco) - o resto da concatenacao
 # (variavel, mais texto) nunca precisa bater, so o prefixo fixo que identifica a linha.
-$refPattern = '([A-Za-z0-9_./\\-]+\.ps1):(\d+)\s*`Check\s*\(?\s*"([^"]*)"'
+# CONSERTO TASK-787 (item C, cinco-porques-1.83): o ponteiro deixa de citar NUMERO DE LINHA -
+# qualquer edicao acima do check deslocava a linha e quebrava o ponteiro (medido: 3 vezes na
+# mesma sessao, 13 ponteiros por vez). O ponteiro agora cita so "script.ps1" + o NOME do Check (o
+# texto estavel do primeiro argumento) - o `(?::\d+)?` abaixo ainda TOLERA um ":NNN" antigo que
+# nao foi migrado (nunca quebra por causa dele), mas NUNCA mais exige que bata com a linha real: a
+# prova e "o Check com esse nome existe neste script HOJE", em QUALQUER linha.
+$refPattern = '([A-Za-z0-9_./\\-]+\.ps1)(?::\d+)?\s*`Check\s*\(?\s*"([^"]*)"'
 $refs = [regex]::Matches($ledgerTxt, $refPattern)
 Write-Host ("citacoes encontradas: " + $refs.Count)
 Write-Host ""
 
 $scriptCache = @{}
-$mismatches = 0
 $missing = 0
 $semMaquinaCount = 0
 $ok = 0
 foreach ($m in $refs) {
     $scriptRelRaw = $m.Groups[1].Value
-    $lineCited = [int]$m.Groups[2].Value
-    $snippet = $m.Groups[3].Value
+    $snippet = $m.Groups[2].Value
 
     # normaliza para caminho relativo canonico "scripts/xxx.ps1"
     $scriptRel = $scriptRelRaw
@@ -259,7 +263,7 @@ foreach ($m in $refs) {
     }
 
     if (-not (Test-Path -LiteralPath $scriptPath)) {
-        Bad ($scriptRel + " (citado com :" + $lineCited + ") nao existe nesta instancia")
+        Bad ($scriptRel + " nao existe nesta instancia")
         $missing++
         continue
     }
@@ -271,27 +275,19 @@ foreach ($m in $refs) {
     $content = $scriptCache[$scriptPath]
 
     # a citacao traz so o INICIO do texto entre aspas (pode estar truncada por "..."); casa o
-    # prefixo ate 30 chars. $snippet ja e o texto puro (grupo 3 do regex, sem "Check"/parenteses/
-    # aspas ao redor - CONSERTO TASK-157, cobre as 2 formas Check "..." e Check ("..." + $var)).
+    # prefixo ate 30 chars, EM QUALQUER LINHA do script (nome, nao posicao - item C).
     $needle = $snippet.Substring(0, [Math]::Min(30, $snippet.Length))
     $idx = $content.IndexOf($needle)
     if ($idx -lt 0) {
-        Bad ($scriptRel + ":" + $lineCited + " - texto citado (" + $snippet.Substring(0, [Math]::Min(50, $snippet.Length)) + "...) NAO encontrado no script - ponteiro morto ou texto mudou")
+        Bad ($scriptRel + " - Check com o nome '" + $snippet.Substring(0, [Math]::Min(50, $snippet.Length)) + "...' NAO existe mais neste script - ponteiro morto ou nome mudou")
         $missing++
         continue
     }
 
-    $realLine = ($content.Substring(0, $idx) -split "`n").Count
-    if ($realLine -ne $lineCited) {
-        Bad ($scriptRel + ": ponteiro cita :" + $lineCited + " mas o texto esta em :" + $realLine + " - corrija o ledger")
-        $mismatches++
-    } else {
-        $ok++
-    }
-
+    $ok++
 }
 Write-Host ""
-Write-Host ("resumo (B): " + $ok + " ponteiro(s) OK | " + $mismatches + " linha(s) errada(s) | " + $missing + " ausente(s)/nao encontrado(s) | " + $semMaquinaCount + " sem maquina nesta instancia (nao contam como erro, contam como divida de honestidade se o ledger disser COBERTA)")
+Write-Host ("resumo (B): " + $ok + " ponteiro(s) OK (por NOME, item C) | " + $missing + " ausente(s)/nao encontrado(s) | " + $semMaquinaCount + " sem maquina nesta instancia (nao contam como erro, contam como divida de honestidade se o ledger disser COBERTA)")
 
 # ---------------------------------------------------------------------------
 # (C) CHECKS DE FORMATO - poda do law-ledger (09/08/2026): leis que eram SEM TESTE e ganharam

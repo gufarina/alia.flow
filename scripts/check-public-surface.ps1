@@ -86,7 +86,9 @@ try {
         Write-Host "=== Superficie publica (git): $repoRaiz ===" -ForegroundColor Cyan
 
         Write-Host ""
-        $arquivos = & git ls-files
+        # So `git ls-files` nao ve arquivo novo ainda nao rastreado -
+        # o proximo `git add .` o publicaria. Entra tambem o que o git NAO ignora e nao rastreia.
+        $arquivos = @(& git ls-files) + @(& git ls-files --others --exclude-standard) | Where-Object { $_ } | Sort-Object -Unique
     } else {
         if (-not (Test-Path -LiteralPath $repoRaiz)) {
             Write-Host "[FAIL] Pasta nao existe: $repoRaiz - nao consigo conferir a superficie publica." -ForegroundColor Red
@@ -210,7 +212,7 @@ try {
             $selfRegex = New-Object System.Text.RegularExpressions.Regex ('(?i)' + $selfPat)
         }
 
-        $textExt = @(".ps1",".py",".md",".json",".yaml",".yml",".html",".js",".ts",".bat",".txt")
+        $textExt = @(".ps1",".py",".md",".json",".yaml",".yml",".html",".js",".ts",".bat",".txt",".svg")
         $scanFiles = $arquivos | Where-Object {
             ($textExt -contains [IO.Path]::GetExtension($_)) -and
             ($_ -notmatch '(^|/)graphify-out/cache/') -and
@@ -461,6 +463,61 @@ try {
 
         }
 
+    }
+
+    # ---- (1.8) e-mail pessoal, caminho de usuario real e autoria do historico.
+    # (1.5) so conhece nome de Client; nada aqui olhava e-mail pessoal, `<unidade>:\Users\<nome>`
+    # nem quem assinou os commits - o que o git publica ALEM dos arquivos. Agulhas por FORMATO
+    # (nunca cravadas por operador): dominio de e-mail de consumidor, e `<unidade>:\Users\<nome>` com
+    # nome que nao e placeholder. Mais o e-mail do git global DESTA maquina, quando houver.
+    $emailRe = New-Object System.Text.RegularExpressions.Regex ('(?i)\b[\w.+-]+@(?:gmail|outlook|hotmail|live|yahoo|icloud|me|proton(?:mail)?|protonmail)\.(?:com|com\.br|me)\b')
+    $homeRe  = New-Object System.Text.RegularExpressions.Regex ('(?i)\b[A-Z]:[\/]+Users[\/]+(?!(?:Public|Default|All Users|Usuario|User|Users|Name|Nome|Voce|You|YourName|SeuNome|Username|Example|Exemplo|operador|Jane|John|Alice|Bob|Fulano|Beltrano|me|x)\b)[^\/\s"''<>*:|?%${}]+')
+    $emailGit = ""
+    try { $emailGit = (& git config --global user.email 2>$null | Out-String).Trim() } catch { $emailGit = "" }
+    if ($emailGit -and $emailGit -notmatch '(?i)noreply|@example\.|@test\.|\.local$|\.invalid$') {
+        $emailRe = New-Object System.Text.RegularExpressions.Regex ($emailRe.ToString() + '|' + [regex]::Escape($emailGit))
+    }
+    $extPessoal = @(".ps1",".py",".md",".json",".yaml",".yml",".html",".js",".ts",".cjs",".mjs",".bat",".cmd",".txt",".svg",".css",".toml",".sh")
+    $pessoalLeaks = @()
+    foreach ($rel in ($arquivos | Where-Object { ($extPessoal -contains [IO.Path]::GetExtension($_)) -and ($_ -notmatch '(^|/)graphify-out/cache/') -and ($_ -notmatch '^studio\.example/') })) {
+        $full = Join-Path $repoRaiz ($rel -replace '/', [IO.Path]::DirectorySeparatorChar)
+        if (-not (Test-Path -LiteralPath $full)) { continue }
+        $conteudo = Get-Content -LiteralPath $full -Raw -Encoding utf8 -ErrorAction SilentlyContinue
+        if ([string]::IsNullOrEmpty($conteudo)) { continue }
+        $m1 = $emailRe.Match($conteudo)
+        if ($m1.Success) { $pessoalLeaks += [pscustomobject]@{ arq = $rel; motivo = "e-mail pessoal" } }
+        $m2 = $homeRe.Match($conteudo)
+        if ($m2.Success) { $pessoalLeaks += [pscustomobject]@{ arq = $rel; motivo = "caminho de usuario real da maquina" } }
+        # Plano interno citado em superficie publica: pasta de operacao e id de etapa (so em comentario/doc,
+        # pra nao pegar nome de variavel, task id ou teste). O muro do dispatch e o proprio check usam o
+        # caminho de operacao como dado funcional, por isso so esses dois arquivos escapam da primeira agulha.
+        if ($rel -notmatch '^v2/(hooks/dispatch|proof/check)\.py$' -and $conteudo -match 'docs[/]ops[/]') { $pessoalLeaks += [pscustomobject]@{ arq = $rel; motivo = "cita pasta interna de operacao" } }
+        if ($conteudo -match '(?m)(?:^\s*(?:#|//|>|\*)|\s#\s|\s//\s|""").*\bW[0-9]+[a-z]?\b') { $pessoalLeaks += [pscustomobject]@{ arq = $rel; motivo = "cita id de etapa interna (plano)" } }
+    }
+    if ($pessoalLeaks.Count -eq 0) {
+        Ok ("Nenhum e-mail pessoal nem caminho de usuario real na superficie (" + $arquivos.Count + " arquivo(s))")
+    } else {
+        foreach ($x in ($pessoalLeaks | Sort-Object arq, motivo -Unique)) { Bad ("pessoal vazou: " + $x.arq + "  (" + $x.motivo + ")") }
+    }
+
+    if ($ehGit) {
+        $autoriaRuim = @()
+        $linhasAutoria = @(& git log --all --format='%an|%ae|%cn|%ce' 2>$null)
+        foreach ($ln in ($linhasAutoria | Sort-Object -Unique)) {
+            $c = "$ln".Split('|')
+            if ($c.Count -lt 4) { continue }
+            foreach ($mail in @($c[1], $c[3])) {
+                if ($mail -and $mail -notmatch '(?i)(@users\.noreply\.github\.com|^noreply@alia-flow\.local)$') { $autoriaRuim += $mail }
+            }
+        }
+        $autoriaRuim = @($autoriaRuim | Sort-Object -Unique)
+        if ($linhasAutoria.Count -eq 0) {
+            Write-Host "[INFO] Autoria: repo sem commit - nada a conferir."
+        } elseif ($autoriaRuim.Count -eq 0) {
+            Ok ("Autoria do historico: todo autor/committer e noreply (" + @($linhasAutoria | Sort-Object -Unique).Count + " identidade(s))")
+        } else {
+            foreach ($mail in $autoriaRuim) { Bad ("autoria: autor/committer do historico nao e noreply: " + $mail) }
+        }
     }
 
     # ---- (2) a oficina nao pode ter remoto (so faz sentido em repo git) ----

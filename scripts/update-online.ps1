@@ -28,7 +28,8 @@ param(
   [switch]$DryRun,
   [switch]$Json,
   [string]$EventLog,
-  [switch]$ConfirmMajor
+  [switch]$ConfirmMajor,
+  [string]$PackageZip
 )
 
 $ErrorActionPreference = "Stop"
@@ -37,7 +38,7 @@ $root = Split-Path -Parent $PSScriptRoot
 # Repo publico do Alia Flow (open source). Branch main.
 $repo   = "gufarina/alia.flow"
 $branch = "main"
-$zipUrl = "https://github.com/$repo/archive/refs/heads/$branch.zip"
+$zipUrl = if ($PackageZip) { $PackageZip } else { "https://github.com/$repo/archive/refs/heads/$branch.zip" }
 
 $isCheck = $Check -or $DryRun
 
@@ -68,7 +69,8 @@ function Get-Package {
     [Parameter(Mandatory)][string]$TmpDir
   )
   try {
-    Invoke-WebRequest -UseBasicParsing -Uri $ZipUrl -OutFile $TmpZip
+    if (Test-Path -LiteralPath $ZipUrl) { Copy-Item -LiteralPath $ZipUrl -Destination $TmpZip -Force }
+    else { Invoke-WebRequest -UseBasicParsing -Uri $ZipUrl -OutFile $TmpZip }
   } catch {
     throw [System.Exception]::new("PHASE:DOWNLOAD|" + $_.Exception.Message)
   }
@@ -95,8 +97,8 @@ function Get-CopySet {
   # Junta engineDirs + productFiles que realmente existem no pacote baixado.
   param(
     [Parameter(Mandatory)][string]$PackageDir,
-    [Parameter(Mandatory)][string[]]$EngineDirs,
-    [Parameter(Mandatory)][string[]]$ProductFiles
+    [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$EngineDirs,
+    [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$ProductFiles
   )
   $items = @()
   foreach ($d in $EngineDirs) {
@@ -513,22 +515,23 @@ try {
     exit 1
   }
 
-  Write-UpdateEvent -EventLogPath $EventLog -Phase "smoke" -Pct 85 -Message "rodando o smoke-test"
-  $smokeScript = Join-Path $root "scripts\smoke-test.ps1"
-  if (Test-Path -LiteralPath $smokeScript) {
-    & $smokeScript | Out-Null
-    $smokeGreen = ($LASTEXITCODE -eq 0)
-  } else {
-    $smokeGreen = $true
+  # TASK-845: a prova e python v2/proof/check.py. Sem check.py ou sem python = vermelho = rollback.
+  Write-UpdateEvent -EventLogPath $EventLog -Phase "smoke" -Pct 85 -Message "rodando a prova (check.py)"
+  $checkPy = Join-Path $root "v2\proof\check.py"
+  $smokeGreen = $false
+  if (Test-Path -LiteralPath $checkPy) {
+    Push-Location $root
+    try { & python $checkPy *> $null; $smokeGreen = ($LASTEXITCODE -eq 0) } catch { $smokeGreen = $false }
+    finally { Pop-Location }
   }
 
   if (-not $smokeGreen) {
-    Write-UpdateEvent -EventLogPath $EventLog -Phase "rollback" -Pct 90 -Message "smoke vermelho, restaurando o motor anterior"
+    Write-UpdateEvent -EventLogPath $EventLog -Phase "rollback" -Pct 90 -Message "check.py vermelho, restaurando o motor anterior"
     Restore-Engine -DestDir $root -BackupDir $backupDir -CopySet $copySet
     $rolledBack = $true
     $applied = $false
     Write-Host "[ROLLBACK] motor anterior restaurado."
-    Emit-Result -fromVersion $verInst -toVersion $verPkg -eventMessage "smoke vermelho, revertido" -result "rolledback"
+    Emit-Result -fromVersion $verInst -toVersion $verPkg -eventMessage "check.py vermelho, revertido" -result "rolledback"
     exit 1
   }
 
@@ -537,5 +540,6 @@ try {
   Emit-Result -fromVersion $verInst -toVersion $verPkg -eventMessage "atualizado" -result "ok"
   exit 0
 } finally {
-  Remove-Item $tmpZip, $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+  # limpeza e melhor esforco: caminho curto (8.3) no TEMP gerava erro aqui e virava exit 1
+  try { Remove-Item -LiteralPath $tmpZip, $tmpDir -Recurse -Force -ErrorAction SilentlyContinue } catch { }
 }

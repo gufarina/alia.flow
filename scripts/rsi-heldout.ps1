@@ -1,11 +1,11 @@
-<#
+﻿<#
   rsi-heldout.ps1 - PECA 4 do motor de RSI: conjunto FIXO de assercoes deterministicas que
   representam decisoes JA TOMADAS pelo dono. Nenhuma proposta (PECA 1, rsi-apply.ps1) pode
   violar nenhuma delas - e o passo (e) do portao de APLICA.
 
   A lista NAO e inventada: cada assercao aponta pra uma linha de docs/CLAIMS.md (vetos/claims
   vigentes) ou de uma LEI ja registrada no law-ledger. Fonte de cada uma, no comentario acima
- do bloco. UTF-8 sem BOM.
+ do bloco. UTF-8 com BOM (TASK-787, item 4 do cinco-porques-1.83).
 
   Uso:
     scripts/rsi-heldout.ps1 [-Root <caminho>]        - roda as assercoes contra Root (default: a

@@ -87,17 +87,47 @@ Seis perguntas, todas inegociaveis. Reprovar uma e reprovar o Artifact.
 ## Porta de saida em maquina (checks antes do julgamento)
 
 Antes do julgamento humano/LLM dos 6 criterios acima, `scripts/gate-check.ps1` (TASK-782, WARDEN)
-roda 6 checks deterministicos e sem rede sobre o Artifact declarado: existe (caminho no disco, com
-conteudo), travessao (zero em/en dash), emoji (zero emoji), marca (HTML de pasta de operacao do
-Studio nao pode citar a cor de marca do PRODUTO nem visual legado), minimo (peca nao pode ser stub
-vazio) e encoding (UTF-8 valido, sem mojibake). Nasceu de uma auditoria que mediu o motivo: das 466
-Tasks aprovadas com Artifact, 20 dos 100 HTML que existiam em disco tinham travessao e 5 tinham
-emoji - o Gate em prosa aprovava defeito que uma maquina pega de graca. FAIL de maquina e resultado
-NORMAL do Gate, nunca um acidente a esconder. Artifact que nao da pra verificar por caminho (URL,
-prosa, string sem arquivo real) vira CONCERN, NUNCA PASS - ausencia de prova nao e prova de
-qualidade. `scripts/register-task.ps1` chama o gate-check ao fechar Task com `-GateVerdict` e
-`-Artifact`, grava o resultado em `gate_check` e avisa em FAIL - nunca bloqueia o registro nem
-sobrescreve o veredito humano (`-GateVerdict` continua sendo quem decide).
+roda 6 checks deterministicos e sem rede sobre o Artifact declarado: existe (cada item resolve para
+arquivo, pasta ou link - ver formato canonico abaixo), travessao (zero em/en dash), emoji (zero
+pictograma de verdade), marca (regra vem de um arquivo do operador, `studio/brand-rules.json` -
+nada de cor/termo fixo no motor, que e produto publico), minimo (peca nao pode ser stub vazio) e
+encoding (UTF-8 valido - o check nao julga o CONTEUDO decodificado, so se a decodificacao falha de
+verdade). Nasceu de uma auditoria que mediu o motivo: Tasks aprovadas com Artifact continham
+travessao, emoji e item que nao resolvia para nada em disco - o Gate em prosa aprovava defeito que
+uma maquina pega de graca. FAIL de maquina e resultado NORMAL do Gate, nunca um acidente a esconder.
+
+**Formato canonico do Artifact** (item A, TASK-787 - a mesma causa-raiz do numero publico falso da
+1.83.0): itens separados por ponto e virgula (`;`); cada item e um caminho de ARQUIVO, de PASTA ou
+um LINK (http/https) - nunca prosa solta, nunca "+" entre arquivos. `scripts/register-task.ps1`
+IMPOE esse formato no registro de toda Task fechada como `done` desde esta versao (texto livre
+recusa o fechamento, com a mensagem citando o item e o formato certo - nao ha mais adivinhacao de
+"isto parece um caminho?"). `scripts/gate-check.ps1` (a mesma funcao de resolucao,
+`Resolve-ArtifactItems` em `scripts/_studio.ps1` - nenhum dos dois decide sozinho) so SABE se um
+item RESOLVEU ou nao; item que nao resolve e **FAIL**, com o motivo "nao resolve para arquivo,
+pasta ou link: `<item>`" - nunca "nao existe em disco" (essa frase afirmava uma certeza que o
+mecanismo nao tem: texto que nunca foi caminho tambem "nao resolve", e chamar isso de "nao existe"
+foi a mesma confusao que produziu o numero falso). Link (http/https) e **SKIP** (nao verificavel por
+caminho, a prova mora fora do disco). Registros de Tasks anteriores a esta versao (sem a trava de
+escrita) sao HISTORICO - continuam podendo conter prosa livre em `artifact`, e se medem A PARTE,
+nunca misturados com a contagem de conformidade daqui pra frente.
+
+Cada check sai em um de quatro estados: **PASS** (checou e esta certo), **FAIL** (checou e achou
+defeito real - qualquer FAIL derruba o veredito inteiro), **SKIP** (devia ter checado e nao deu -
+link sem arquivo, config de marca corrompida, marca ambigua que so humano resolve; prova nao
+verificavel nunca vira PASS por omissao) e **NA** (o check nao se aplica a este arquivo - kind
+errado, sem regra de marca configurada, arquivo binario). NA nao e duvida, entao nao conta para
+CONCERN - so PASS/FAIL/SKIP entram na conta. Veredito: qualquer FAIL -> FAIL; senao, qualquer SKIP
+-> CONCERN; senao PASS. `scripts/register-task.ps1` chama o gate-check ao fechar Task com
+`-GateVerdict` e `-Artifact`, grava o resultado em `gate_check` e avisa em FAIL - nunca bloqueia o
+registro nem sobrescreve o veredito humano (`-GateVerdict` continua sendo quem decide).
+
+## Registro de volta (L79, TASK-787)
+
+Todo veredito de gate de peça é registrado por volta num arquivo `.gate.md` ao lado da peça. Cada
+volta ganha uma seção nova; nunca se apaga ou se reescreve a volta anterior. Reescrita aprovada
+numa volta só entra na volta seguinte, citando a regra que mudou. Origem desta lei: numa entrega
+real o gate da marca se contradisse entre voltas por não existir esse registro (ver
+`opportunities/divulgacao-versoes-1.79-a-1.83.gate.md`, três voltas, exemplo do formato certo).
 
 ## Resultado (verdict)
 

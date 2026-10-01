@@ -17,6 +17,10 @@
 
   Modo de aplicacao: DIFF-ONLY. Compara lab -> instancia por hash SHA256 e copia SO os
   arquivos NOVOS/ALTERADOS; remove SO os que sumiram do lab (nas pastas de espelho).
+  Arquivo que sumiu do lab NAO e apagado por padrao (e ORFAO: pode ser script/skill LOCAL da instancia,
+  ex.: smoke privado do estudio, hooks ainda ligados no settings.json). So -Prune remove.
+  -SemMerge pula as pastas de MERGE (.claude, docs, .opencode, .agents): instancia com settings.json e
+  agentes proprios (o estudio) nao pode ter isso sobrescrito pelos arquivos da oficina.
   Antes de sobrescrever ou remover, o arquivo antigo ganha copia dentro do backup datado
   em _backups\ (o mesmo backup que ja guarda state/config - um backup so).
 
@@ -26,7 +30,9 @@
 param(
   [string]$From = "",
   [switch]$DryRun,
-  [switch]$Check
+  [switch]$Check,
+  [switch]$Prune,
+  [switch]$SemMerge
 )
 if ($DryRun) { $Check = $true }
 
@@ -73,20 +79,23 @@ Write-Host ("  modo: " + $(if ($Check) { "CHECK (so relata o que mudaria, nada m
 Write-Host ""
 
 # --- Portao: so propaga o que esta verde (no -Check nao ha propagacao, entao pula o portao) ---
-$labSmoke = Join-Path $lab "scripts\smoke-test.ps1"
+$labCheck = Join-Path $lab "v2\proof\check.py"
 if ($Check) {
-  Write-Host "1/3 (modo CHECK - portao de smoke do lab pulado, nada sera propagado)"
-} elseif (Test-Path -LiteralPath $labSmoke) {
-  Write-Host "1/3 Validando o laboratorio (so propaga motor que passa no smoke)..."
-  & $labSmoke | Out-Null
-  if ($LASTEXITCODE -ne 0) {
-    Write-Host "[ERRO] o laboratorio NAO esta verde. Abortei sem tocar em nada."
-    Write-Host "       Rode  clients\alia-flow-lab\scripts\smoke-test.ps1  para ver o que falta."
+  Write-Host "1/3 (modo CHECK - portao do lab pulado, nada sera propagado)"
+} else {
+  Write-Host "1/3 Validando o laboratorio (so propaga motor que passa no check.py)..."
+  $labOk = $false
+  if (Test-Path -LiteralPath $labCheck) {
+    Push-Location $lab
+    try { & python $labCheck *> $null; $labOk = ($LASTEXITCODE -eq 0) } catch { $labOk = $false }
+    finally { Pop-Location }
+  }
+  if (-not $labOk) {
+    Write-Host "[ERRO] o laboratorio NAO esta verde (ou nao tem v2\proof\check.py). Abortei sem tocar em nada."
+    Write-Host "       Rode  python clients\alia-flow-lab\v2\proof\check.py  para ver o que falta."
     exit 1
   }
-  Write-Host "    laboratorio OK (ALL GREEN)."
-} else {
-  Write-Host "1/3 (laboratorio sem smoke-test.ps1 - pulando o portao)"
+  Write-Host "    laboratorio OK (check.py verde)."
 }
 Write-Host ""
 
@@ -184,10 +193,10 @@ foreach ($d in $engineDirs) {
   $excl = if ($d -eq "engine") { @("rsi\_archive","rsi\_candidates") } elseif ($d -eq "v2") { @("proof\__pycache__","proof\_sandbox","proof\_sandbox2","proof\_sandbox_check","proof\_sandbox_task") } else { @() }
   $diff = Get-MirrorDiff $src $dst $excl
   $n = $diff.New.Count; $c = $diff.Changed.Count; $r = $diff.Removed.Count
-  Write-Host ("    [motor]   " + $d + "\ (espelho diff-only): " + $n + " NOVO, " + $c + " ALTERADO, " + $r + " REMOVIDO")
+  Write-Host ("    [motor]   " + $d + "\ (espelho diff-only): " + $n + " NOVO, " + $c + " ALTERADO, " + $r + $(if ($Prune) { " REMOVIDO" } else { " ORFAO (mantidos; -Prune remove)" }))
   foreach ($rel in $diff.New)     { Write-Host ("        NOVO      " + $d + "\" + $rel) }
   foreach ($rel in $diff.Changed) { Write-Host ("        ALTERADO  " + $d + "\" + $rel) }
-  foreach ($rel in $diff.Removed) { Write-Host ("        REMOVIDO  " + $d + "\" + $rel) }
+  foreach ($rel in $diff.Removed) { Write-Host ("        " + $(if ($Prune) { "REMOVIDO" } else { "ORFAO (mantido)" }) + "  " + $d + "\" + $rel) }
   $totNew += $n; $totChanged += $c; $totRemoved += $r
   [void]$overlayReport.Add("### " + $d + "/ (espelho diff-only, motor)")
   [void]$overlayReport.Add("- NOVO: " + $n + " | ALTERADO: " + $c + " | REMOVIDO: " + $r)
@@ -207,6 +216,7 @@ foreach ($d in $engineDirs) {
     Copy-Item -LiteralPath (Join-Path $src $rel) -Destination $to -Force
   }
   foreach ($rel in $diff.Removed) {
+    if (-not $Prune) { continue }   # causa dos 26 REMOVIDO: espelho apagava arquivo LOCAL da instancia
     $to = Join-Path $dst $rel
     Backup-InstanceFile $bkp $d $rel $to
     Remove-Item -LiteralPath $to -Force
@@ -220,6 +230,7 @@ foreach ($d in $engineDirs) {
   }
 }
 foreach ($d in $mergeDirs) {
+  if ($SemMerge) { Write-Host ("    [merge]   " + $d + "\ PULADO (-SemMerge)"); continue }
   $src = Join-Path $lab $d
   if (Test-Path -LiteralPath $src) {
     Write-Host ("    [merge]   " + $d + "\ (soma - preserva ajustes locais)")
@@ -254,7 +265,7 @@ foreach ($f in $productFiles) {
   }
 }
 Write-Host ""
-Write-Host ("    Total: " + $totNew + " NOVO, " + $totChanged + " ALTERADO, " + $totRemoved + " REMOVIDO" + $(if ($Check) { " (nada aplicado)" } else { " aplicados" }))
+Write-Host ("    Total: " + $totNew + " NOVO, " + $totChanged + " ALTERADO, " + $totRemoved + $(if ($Prune) { " REMOVIDO" } else { " ORFAO mantidos" }) + $(if ($Check) { " (nada aplicado)" } else { " aplicados" }))
 Write-Host ""
 
 # TASK-213 (item 5b): persiste o Get-MirrorDiff em studio/instance-overlay.md no DESTINO - registro
@@ -303,14 +314,14 @@ Write-Host ""
 # desenhado pra rodar tanto na oficina quanto contra uma "instancia ja aplicada" (comentarios do
 # proprio arquivo, secao README/GUARD-NUM) - e a validacao certa aqui, nao um remendo do estudio
 # especifico do operador.
-$validationScript = Join-Path $root "scripts\smoke-test.ps1"
+$validationScript = Join-Path $root "v2\proof\check.py"
 if (-not (Test-Path -LiteralPath $validationScript)) {
   Write-Host ("[RESSALVA] Validacao pos-update NAO RODOU nesta instancia: arquivo ausente -> " + $validationScript)
   Write-Host "=== MOTOR ATUALIZADO (copia concluida). Validacao pos-update pulada - veja a ressalva acima. Seus clientes e dados intactos. ==="
   exit 0
 }
-& $validationScript
-$rc = $LASTEXITCODE
+Push-Location $root
+try { & python $validationScript; $rc = $LASTEXITCODE } catch { $rc = 1 } finally { Pop-Location }
 Write-Host ""
 if ($rc -eq 0) {
   Write-Host "=== MOTOR ATUALIZADO (instancia ALL GREEN). Seus clientes e dados intactos. ==="

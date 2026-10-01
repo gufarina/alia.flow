@@ -38,7 +38,11 @@
 
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory)][string]$Repo
+  [Parameter(Mandatory)][string]$Repo,
+  # TASK-822b/smoke: pasta de release-reviews a consultar. Vazio = default (release-reviews/ na
+  # raiz da oficina, ao lado deste script). Parametro existe so para a fixture do smoke-test.ps1
+  # apontar para uma pasta descartavel, sem nunca escrever revisao de teste na pasta real.
+  [string]$ReviewsDir = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -124,6 +128,63 @@ Write-Host ("  repo: " + $repoFull)
 Write-Host ""
 
 $fail = 0
+
+Write-Host "-- cadeado de versao (TASK-822a): VERSION == primeira entrada do CHANGELOG.md (repo do produto) --"
+$verPath = Join-Path $repoFull "VERSION"
+$changelogPath = Join-Path $repoFull "CHANGELOG.md"
+$verAtual = ""
+if (-not (Test-Path -LiteralPath $verPath)) {
+  $fail++
+  Write-Host ("[FAIL] VERSION nao encontrado em " + $verPath) -ForegroundColor Red
+} elseif (-not (Test-Path -LiteralPath $changelogPath)) {
+  $fail++
+  Write-Host ("[FAIL] CHANGELOG.md nao encontrado em " + $changelogPath) -ForegroundColor Red
+} else {
+  $verAtual = ((Get-Content -LiteralPath $verPath) -join "").Trim()
+  $changelogTxt = [System.IO.File]::ReadAllText($changelogPath)
+  $topoMatch = [regex]::Match($changelogTxt, '(?m)^##\s*\[(.+?)\]')
+  $changelogTopo = if ($topoMatch.Success) { $topoMatch.Groups[1].Value } else { "" }
+  if ($verAtual -ne $changelogTopo) {
+    $fail++
+    Write-Host ("[FAIL] VERSION (" + $verAtual + ") diverge da primeira entrada do CHANGELOG.md (" + $changelogTopo + ")") -ForegroundColor Red
+  } else {
+    Write-Host ("[OK] VERSION (" + $verAtual + ") bate com a primeira entrada do CHANGELOG.md")
+  }
+}
+Write-Host ""
+
+# TASK-822b: mesma regra do passo 0 de package-release.ps1 (mesma logica, mesma mensagem) -
+# nenhuma versao sai sem revisao de release aprovada. Aqui reaplicada no push do produto, nao
+# so no empacotamento.
+Write-Host "-- cadeado de versao (TASK-822b): release-reviews/<VERSION>.md aprovado (oficina) --"
+if ($verAtual -eq "") {
+  $fail++
+  Write-Host "[ERRO] sem VERSION valida do repo do produto - nao da pra conferir a revisao de release" -ForegroundColor Red
+} else {
+  $oficinaRoot = Split-Path -Parent $here
+  $reviewsRoot = if ($ReviewsDir -ne "") { $ReviewsDir } else { Join-Path $oficinaRoot "release-reviews" }
+  $reviewPath = Join-Path $reviewsRoot ($verAtual + ".md")
+  if (-not (Test-Path -LiteralPath $reviewPath)) {
+    $fail++
+    Write-Host ("[ERRO] versao " + $verAtual + " sem revisao de release aprovada - acione o squad. Esperado: " + $reviewPath) -ForegroundColor Red
+  } else {
+    $reviewTxt = [System.IO.File]::ReadAllText($reviewPath)
+    $reviewVerMatch = [regex]::Match($reviewTxt, '(?m)^versao:\s*(\S+)\s*$')
+    $reviewVerdMatch = [regex]::Match($reviewTxt, '(?m)^veredito:\s*(\S+)\s*$')
+    $reviewVer = if ($reviewVerMatch.Success) { $reviewVerMatch.Groups[1].Value } else { "" }
+    $reviewVerd = if ($reviewVerdMatch.Success) { $reviewVerdMatch.Groups[1].Value } else { "" }
+    if ($reviewVerd -ne "PASS") {
+      $fail++
+      Write-Host ("[ERRO] versao " + $verAtual + " sem revisao de release aprovada - acione o squad. " + $reviewPath + " tem veredito '" + $reviewVerd + "' (precisa ser PASS).") -ForegroundColor Red
+    } elseif ($reviewVer -ne $verAtual) {
+      $fail++
+      Write-Host ("[ERRO] versao " + $verAtual + " sem revisao de release aprovada - acione o squad. " + $reviewPath + " declara versao '" + $reviewVer + "', divergente da versao atual (" + $verAtual + ").") -ForegroundColor Red
+    } else {
+      Write-Host ("    revisao aprovada: " + $reviewPath + " (veredito PASS, versao confere).")
+    }
+  }
+}
+Write-Host ""
 
 Write-Host "-- 1/4: identidade de commit (allowlist, TASK-617) --"
 $idResult = Test-CommitIdentities -RepoPath $repoFull -Allowlist $AllowedCommitIdentities

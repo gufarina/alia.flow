@@ -1,0 +1,10 @@
+# hooks.toml - config de hooks do Codex para a espinha da Alia. [INFERIDO] do formato da doc de hooks [X1];
+# NAO exercitado em host (sem Codex CLI instalado). Copiar para ~/.codex/config.toml ou .codex/config.toml.
+# Declaracao: bloqueia PreToolUse Bash de busca (rg|grep|find) em Client sem mapa lido; so avisa SessionStart.
+
+[[hooks.SessionStart]]
+command = "python v2/adapters/codex/codex_hook.py"
+
+[[hooks.PreToolUse]]
+matcher = "Bash"
+command = "python v2/adapters/codex/codex_hook.py"

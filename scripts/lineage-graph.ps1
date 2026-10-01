@@ -1,4 +1,4 @@
-<#
+﻿<#
   lineage-graph.ps1 - Le o ledger de Tasks (state.json) como MAPA de linhagem, nao como lista.
 
   O ledger ja e um grafo: cada Task carrega client, project, artifact (o que entregou),

@@ -107,7 +107,7 @@ Specialist deve carregar antes de agir.
 
 > Medido em 09/09/2026 (auditoria-harness-v2.html, secao 03): nenhum campo do yaml era obrigatorio,
 > tudo caia em default silencioso - foi assim que persona sem freio produziu laudo errado. Estes 4
-> campos fecham essa lacuna. `scripts/squad-bridge.ps1` reprova (throw, sem bundle, sem bypass)
+> campos fecham essa lacuna. `v2/squad/bridge.ps1` (o nucleo unico) reprova (throw, sem bundle em NENHUM alvo, sem bypass)
 > qualquer `agents/{id}.yaml` que nao os declare.
 
 ```
@@ -136,12 +136,27 @@ sobre um Client por lembranca ou nome parecido.
 
 **Sem campo, sem bundle.** `entry_point` (quando `knowledge[]` nao vazio), `budget.tool_calls` e
 `output_contract.max_lines`/`evidence_tags` (camada B/C) e `grounding` (toda camada) sao
-verificados por `squad-bridge.ps1` ANTES de gerar `.claude/agents/{client}-{id}.md`: campo ausente
+verificados por `v2/squad/bridge.ps1` ANTES de gerar `.claude/agents/{client}-{id}.md`: campo ausente
 para o processo daquele agente com `throw` (mensagem nomeia o campo e o default sugerido pela
 camada) - nao escreve bundle nenhum, sem flag de bypass. `knowledge[]` nao vazio sem
 `knowledge/MAP.md` no disco tambem reprova, mandando rodar `scripts/kb-index.ps1 -KnowledgePath
-<dir>`. Squad existente sem os campos: `squad-bridge.ps1 -MigrateContract` adiciona so o que falta,
-com o default da camada, sem sobrescrever campo ja preenchido.
+<dir>`. Squad existente sem os campos: preencha o yaml (a mensagem do `throw` traz o default da camada);
+o `-MigrateContract` saiu na modularizacao de 01/10/2026.
+
+### Bridge modular, macro e persona sem fantasia
+
+- **Uma fonte, N saidas.** Fonte: `agents/{id}.md` + `.yaml` + `squad.yaml`. O nucleo `v2/squad/bridge.ps1`
+  valida e monta um objeto neutro; `v2/squad/targets/{claude,opencode,pi,context-load}.ps1` renderizam.
+  `-Target claude,opencode,pi`. `scripts/squad-bridge.ps1` e ponteiro. Bundle leva `source_hash`.
+- **Sem reserva.** `.claude/squads/` nao existe; `client.py use <client>` chama a bridge
+  (`-Only <client>`, com `-Prune` so se pedido). Roster da sessao = 3 macro + o Client.
+- **3 macro** (`engine/macro/agents/`, client `macro`): `LEITOR`, `PROVA`, `TEXTO`. Sem conhecimento de
+  Client (leem o brief da Alia); cada um tem knowledge, checklist, tools minimas e `.accept.json`
+  (sem eles a bridge nao publica). Gateways ficam por time; a Alia nunca assume o papel.
+- **Persona sem fantasia.** A bridge corta, por regra, as secoes Voz, Como pensa, Alma, Afeto,
+  owner_soul, Tracos, Personalidade e Tom de voz. Ficam Faz, Nao faz, conhecimento, checklist
+  (`checklist:` no yaml), tools e aceite. Nao se edita persona a mao para isso.
+- **Fechamento da Task do squad:** `alia task close` (ver `orchestration.md`, passo FECHA).
 
 ## Como a Alia spawna o Squad Creator
 

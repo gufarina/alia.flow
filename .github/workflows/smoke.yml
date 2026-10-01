@@ -1,8 +1,7 @@
 name: smoke
 
-# O trilho do Alia Flow como porta de CI: todo push e todo PR contra main roda o
-# smoke-test.ps1 e o doctor. Vermelho bloqueia o merge - a mesma prova que roda na
-# maquina do contribuidor roda aqui. Sem acentos, sem emojis.
+# Porta de CI: todo push e todo PR contra main roda a prova oficial do motor 2.0
+# (python v2/proof/check.py, TASK-845). Vermelho bloqueia o merge.
 
 on:
   push:
@@ -19,14 +18,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Trilho (smoke-test)
-        shell: pwsh
-        run: |
-          ./scripts/smoke-test.ps1
-          if ($LASTEXITCODE -ne 0) { throw "smoke vermelho (exit $LASTEXITCODE)" }
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-      - name: Doctor (diagnostico read-only)
+      - name: Prova oficial (check.py)
         shell: pwsh
         run: |
-          ./scripts/doctor.ps1
-          if ($LASTEXITCODE -ne 0) { throw "doctor reprovou (exit $LASTEXITCODE)" }
+          python v2/proof/check.py
+          if ($LASTEXITCODE -ne 0) { throw "check.py vermelho (exit $LASTEXITCODE)" }

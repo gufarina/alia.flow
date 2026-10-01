@@ -12,13 +12,13 @@
 - [LAW-MAP.md](LAW-MAP.md) - o mapa das 78 LEIs da 1.84 (Canon): destino por modulo, o que morre e
   as 6 com mecanismo fraco. Insumo de `proof/check.py`.
 - [squad/squad-bridge.ps1](squad/squad-bridge.ps1) - o gerador de agentes (I5). Agent/Task so em
-  `gateway: true`, Skill em todo Specialist, descricao encurtada a "acionar quando". `-Reserve`
-  (so com `-Client -Mode spawn`) grava em `.claude/squads/{client}/` em vez de `.claude/agents`.
+  `gateway: true`, Skill em todo Specialist, descricao encurtada a "acionar quando". (o
+  gerador agora e `squad/bridge.ps1`; `squad-bridge.ps1` e ponteiro; sem reserva `.claude/squads`.)
   TASK-804 e7: o ritual fixo de leitura (MAP/grounding/GRAPH_REPORT) so entra no corpo do Gateway
   (Camada A) - o Specialist recebe contexto pelo brief da Task, nao pelo corpo do agente.
 - [bin/client.py](bin/client.py) - CLI `list`/`use` do squad ativo. Sincroniza `.claude/agents`
   com so o squad do Client escolhido (+ `--keep` explicito; `alia-flow-lab` NAO entra por padrao,
-  Ajuste 0). Idempotente e reversivel, nunca toca arquivo de Client sem reserva.
+  Ajuste 0). Chama a bridge; idempotente, so apaga com `--prune`.
 - [bin/brief.py](bin/brief.py) - CLI `open` do brief de Task (TASK-804 e7, mudanca 3). Devolve so
   os 6 campos do checklist + fatias `caminho#Lx-Ly` (embute a fatia se menor que 2 KB); recusa
   fatia que nao resolve no disco; nunca inclui texto de coordenacao (risco, justificativa, nota de
@@ -49,6 +49,15 @@
   com Client exige recibo de conhecimento (`lib/frescor.recibo_de_fechamento`, L80); raiz em
   `--studio-root`, senao pasta do `--state` com `clients/`, senao estudio da sessao; sem pasta do
   Client grava `SEM_PASTA`.
+- [lib/pulso.py](lib/pulso.py) - PULSO (Operacao Deep, TASK-847, Warden): estado dinamico
+  Alia-operador (`pressao`, `calor`, `confianca_acumulada`, `historia`) e, por extensao, de todo
+  Specialist/Gateway (`{client}-{specialist}`), calculado so de `ledger.read_events_from()`
+  (fatia por offset, nunca o ledger inteiro) e decaido por meia-vida (pressao 4h, calor 1h,
+  confianca nunca decai sozinha). `render(agent_id, state)` monta o bloco de template fixo (teto
+  600 caracteres para "alia", 400 para sub-agente) que `hooks/dispatch.py` injeta no
+  SessionStart (`startup`/`resume`) e no PreToolUse de Agent/Task (via `updatedInput`, provado
+  funcionando no host real). Arquivo em disco `pulso.json` ao lado do ledger; so o hook (Stop)
+  escreve, Write/Edit/Bash direto nele e negado pelo guard.
 - [lib/frescor.py](lib/frescor.py) + [bin/frescor.py](bin/frescor.py) - conferencia de FRESCOR do
   conhecimento por Client (TASK-856, Warden, L67): mapa semantico, indice estrutural, entregas e
   ficha de produto atrasada, cada um com veredito OK/VELHO/AUSENTE (divida em
@@ -64,3 +73,4 @@
 Ainda faltam nesta pasta (fora do escopo desta entrega, donos declarados em CONTRACTS.md):
 o restante dos incrementos I6/I8/I10 (parcialmente entregues em sessoes anteriores, ver `proof/`
 para o historico).
+- `v2/REFERENCIA.md`: glossario e squad ativo, sob demanda (saiu do AGENTS.md na TASK-845).

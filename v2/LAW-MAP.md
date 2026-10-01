@@ -33,7 +33,7 @@ Laudo do Canon (papel só-leitura), salvo pela coordenação, TASK-801, 23/09/20
 | L23 | Raiz limpa (arquivo) | proof | prova |
 | L24 | studio.example | MORRE | nunca se aplicou aqui |
 | L25 | Marca fora do produto | release | check-public-surface |
-| L26 | Mapa forjado não vale | memória | graph-check |
+| L26 | Mapa forjado não vale | memória | graph-check (mapa forjado/STALE do grafo, ver `scripts/graph-check.ps1`) |
 | L27 | Adoção do grafo medida | MORRE | graph-usage-sensor morre |
 | L28 | Fato de memória nunca se apaga | memória | validade |
 | L29 | Fronteira fato vs decisão | flow | função de risco |
@@ -65,7 +65,7 @@ Laudo do Canon (papel só-leitura), salvo pela coordenação, TASK-801, 23/09/20
 | L55 | Linhagem órfã | proof | prova |
 | L56 | Ciclo de vida da Task | ledger | task-sweep |
 | L57 | Capacidade com prova datada | gate | contrato |
-| L58 | Memória promove sozinha | memória | Refletor e Curador (I8) |
+| L58 | Memória promove sozinha | memória | SEM MECANISMO (v2/learn saiu na TASK-845, nunca ligado) |
 | L59 | Acentuação da entrega | proof | prova |
 | L60 | Leitura inteira negada | context | FRACA (ver fim) |
 | L61 | Olho oficial, fonte única | proof | FRACA (ver fim) |

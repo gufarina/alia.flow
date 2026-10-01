@@ -1,4 +1,4 @@
-<#
+﻿<#
   validate-workflow.ps1 - o teste que libera a camada de execucao (squad-bridge.ps1).
 
   Problema que resolve: squad-bridge.ps1 gera 47 especialistas acionaveis (modo spawn, para

@@ -70,6 +70,19 @@ def check_marker_path() -> str:
     return os.path.join(studio_root(), ".alia", "check-ok.json")
 
 
+def pulso_path() -> str:
+    """Caminho do pulso.json (Operacao Deep, TASK-847). ALIA_PULSO_PATH explicito primeiro,
+    senao a MESMA pasta de ledger_path() (nao project_dir() direto): em producao ledger_path()
+    mora em project_dir(), entao pulso.json cai ao lado do state.json como o desenho pede; em
+    prova/sandbox, quem ja isola o ledger com ALIA_LEDGER_PATH isola o PULSO de graca, sem
+    precisar lembrar de uma 2a variavel - evita pulso.recompute() (chamado a cada Stop) escrever
+    fora do sandbox de teste em qualquer prova que ja existia antes desta Task."""
+    explicit = os.environ.get("ALIA_PULSO_PATH")
+    if explicit:
+        return explicit
+    return os.path.join(os.path.dirname(ledger_path()) or ".", "pulso.json")
+
+
 def ledger_path() -> str:
     """Caminho unico do activity.jsonl. Ordem: ALIA_LEDGER_PATH explicito (provas e sandboxes)
     -> CLAUDE_PROJECT_DIR/activity.jsonl (uso real) -> studio/activity.jsonl relativo a este

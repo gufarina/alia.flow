@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "alia-state-schema-1",
+  "title": "state.json da Alia: espinha Cliente > Projeto > Tarefa",
+  "description": "Contrato do dado. Quem escreve e a CLI `alia` (v2/bin/alia.py); task_model.py e o nucleo das transicoes. `task` aceita o legado (857 tasks antigas); `task_nova` e o que toda escrita nova precisa cumprir. Validador: v2/lib/espinha.py (subconjunto: $ref, type, required, properties, enum, pattern, items, uniqueItems, allOf, x-por-status).",
+  "type": "object",
+  "required": ["clients", "tasks"],
+  "properties": {
+    "clients": {"type": "array", "items": {"$ref": "#/$defs/client"}},
+    "tasks": {"type": "array", "items": {"$ref": "#/$defs/task"}}
+  },
+  "$defs": {
+    "id_canonico": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"},
+    "veredito": {"enum": ["PASS", "FAIL", "CONCERN"]},
+    "client": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": {"type": "string"},
+        "squad": {
+          "type": "object",
+          "properties": {
+            "gateway": {"type": "string"},
+            "specialists": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "projects": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id_canonico"}}
+      }
+    },
+    "task": {
+      "type": "object",
+      "required": ["id", "client", "status"],
+      "properties": {
+        "id": {"type": "string"},
+        "client": {"type": "string"},
+        "status": {"enum": ["open", "review", "done", "retired", "cancelled"]},
+        "gate_verdict": {"type": "string"},
+        "coordenacao": {"type": "boolean"},
+        "gateway_ack": {"type": "object", "required": ["by", "at"]},
+        "dispatches": {"type": "array", "items": {"type": "object", "required": ["specialist", "at"]}}
+      }
+    },
+    "task_nova": {
+      "allOf": [{"$ref": "#/$defs/task"}],
+      "required": ["project", "title", "destino", "type"],
+      "properties": {
+        "project": {"$ref": "#/$defs/id_canonico"},
+        "destino": {"enum": ["publico", "interno"]},
+        "gate_verdict": {"$ref": "#/$defs/veredito"}
+      },
+      "x-por-status": {
+        "done": {"required": ["artifact", "gate_verdict"], "properties": {"gate_verdict": {"enum": ["PASS"]}}},
+        "review": {"required": ["artifact", "gate_verdict"], "properties": {"gate_verdict": {"enum": ["FAIL", "CONCERN"]}}}
+      }
+    },
+    "gate": {
+      "description": "Evento gate_check no ledger (gate.py / alia gate record).",
+      "type": "object",
+      "required": ["event", "task_id", "veredito"],
+      "properties": {"event": {"enum": ["gate_check"]}, "task_id": {"type": "string"}, "veredito": {"$ref": "#/$defs/veredito"}}
+    },
+    "sessao": {
+      "description": "Evento session_opened no ledger (alia open).",
+      "type": "object",
+      "required": ["event", "session_id"],
+      "properties": {"event": {"enum": ["session_opened"]}, "session_id": {"type": "string"}}
+    }
+  },
+  "x-transicoes": {
+    "<nova>": ["open"],
+    "open": ["review", "done"],
+    "review": ["review", "done"],
+    "done": []
+  },
+  "x-recusas": {
+    "projeto_fora_do_cadastro": "alia task open: project nao esta em client.projects[]",
+    "fechar_sem_veredito": "alia task close: veredito fora de PASS|FAIL|CONCERN",
+    "fechar_sem_artifact": "alia task close: artifact vazio",
+    "artifact_inexistente": "alia task close: artifact nao existe em disco",
+    "dispatch_sem_gateway_ack": "alia task dispatch: Specialist antes do Gateway do squad",
+    "alia_sem_coordenacao": "alia task dispatch: specialist alia sem coordenacao:true na Task",
+    "specialist_de_outro_client": "alia task dispatch: Specialist do squad de outro Client",
+    "dispatch_sem_task": "alia task dispatch: sessao sem Task aberta",
+    "grafo_nao_lido": "alia graph check: varredura de codigo/wiki sem ter lido GRAPH_REPORT/index.md na sessao"
+  }
+}

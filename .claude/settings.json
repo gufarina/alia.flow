@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Write|Edit|Bash|Agent|Task",
+        "matcher": "Write|Edit|NotebookEdit|Bash|PowerShell|Agent|Task|Grep|Glob",
         "hooks": [
           {
             "type": "command",
@@ -47,6 +47,33 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/v2/hooks/dispatch.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/v2/hooks/dispatch.py\"",
+            "timeout": 10
+          }
+        ]
+      }
     ]
+  },
+  "env": {
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "40"
   }
 }

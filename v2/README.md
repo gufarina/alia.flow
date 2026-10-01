@@ -23,8 +23,8 @@ guarda estado proprio.
 3. **Adaptador do host** - onde e como o motor roda (deteccao de harness, `v2/hooks/dispatch.py`
    como despachante unico de PreToolUse/PostToolUse/SubagentStop). Cada host (Claude Code, Codex,
    OpenCode) tem um modo de delegacao diferente; o adaptador decide qual usar na entrada.
-4. **Aprendizado** - o que fica de uma volta para a proxima (`v2/learn/curator.py`,
-   `promote.py`, `reflector.py`). Licao so entra com causa-raiz declarada.
+4. **Aprendizado** - `v2/learn/` saiu na TASK-845 (27/09/2026): nunca foi ligado a nenhum
+   gancho. Volta so quando houver disparo real e prova no check.py.
 
 ## Comandos
 

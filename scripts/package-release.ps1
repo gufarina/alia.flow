@@ -4,7 +4,7 @@
   engine, scripts, skills, onboarding, optional-mcps, docs, studio.example + os arquivos de topo
   (AGENTS, README, CHANGELOG, VERSION, LICENSE, alia.config.json, launchers, .git*).
   NUNCA inclui dado de operador/interno: studio/, opportunities/, rsi-backlog/, memory/, state.json,
-  studio.yaml, _retired/. Portao: so empacota se o smoke estiver verde E se existir revisao de
+  studio.yaml, _retired/. Portao: so empacota se `python v2/proof/check.py` estiver verde E se existir revisao de
   release aprovada para a versao atual (release-reviews/<VERSION>.md, veredito PASS - ver
   engine/governance/public-surface.md). Valida o pacote no fim. UTF-8 sem BOM.
   Convencao de commit publico (docs/RELEASE-STATUS.md, secao "Convencao de commit publico"):
@@ -51,13 +51,52 @@ if ($reviewVer -ne $ver) {
   exit 1
 }
 Write-Host ("    revisao aprovada: " + $reviewPath + " (veredito PASS, versao confere).")
+
+# ITEM B (TASK-787, cinco-porques-1.83): NUMERO PUBLICO REPRODUTIVEL. Causa raiz que isto fecha:
+# numero fabricado chegou ao CHANGELOG publico porque ninguem tinha que reproduzir o numero de
+# outra pessoa antes de publicar. release-reviews/<VERSION>.md tem que ter a secao "Numeros
+# publicados" (tabela numero|comando|quem-mediu|quem-reproduziu, quem-mediu != quem-reproduziu)
+# ou a linha "nenhum numero nesta versao" - qualquer coisa fora disso ABORTA.
+Write-Host "0b/3 Conferindo secao 'Numeros publicados' da revisao..."
+if ($reviewTxt -match '(?im)^\s*nenhum numero nesta versao\s*$') {
+  Write-Host "    nenhum numero publicado nesta versao (declarado explicitamente)."
+} else {
+  $npSectionM = [regex]::Match($reviewTxt, '(?is)##\s*Numeros publicados.*?(?=\n##\s|\z)')
+  if (-not $npSectionM.Success) {
+    Write-Host ("[ERRO] " + $reviewPath + " sem a secao 'Numeros publicados' (item B) - declare a tabela numero/comando/quem-mediu/quem-reproduziu, ou a linha 'nenhum numero nesta versao'.")
+    exit 1
+  }
+  $npBody = $npSectionM.Value
+  $npRows = @([regex]::Matches($npBody, '(?m)^\|(?!\s*-{2,})(.+)\|\s*$') | Where-Object { $_.Value -notmatch '(?i)numero\s*\|\s*comando' })
+  if ($npRows.Count -eq 0) {
+    Write-Host ("[ERRO] " + $reviewPath + ": secao 'Numeros publicados' sem nenhuma linha de dado (nem a linha 'nenhum numero nesta versao').")
+    exit 1
+  }
+  foreach ($r in $npRows) {
+    $cols = @($r.Groups[1].Value -split '\|' | ForEach-Object { $_.Trim() })
+    if ($cols.Count -lt 4) {
+      Write-Host ("[ERRO] " + $reviewPath + ": linha da tabela 'Numeros publicados' com menos de 4 colunas -> " + $r.Value)
+      exit 1
+    }
+    $npComando = $cols[1]; $npMediu = $cols[2]; $npReproduziu = $cols[3]
+    if ([string]::IsNullOrWhiteSpace($npComando)) {
+      Write-Host ("[ERRO] " + $reviewPath + ": linha da tabela 'Numeros publicados' com comando vazio -> " + $r.Value)
+      exit 1
+    }
+    if ($npMediu -eq $npReproduziu) {
+      Write-Host ("[ERRO] " + $reviewPath + ": 'quem mediu' e 'quem reproduziu' sao o mesmo (" + $npMediu + ") - reproducao tem que ser por OUTRA mao -> " + $r.Value)
+      exit 1
+    }
+  }
+  Write-Host ("    Numeros publicados: " + $npRows.Count + " linha(s), todas com comando e reproducao por outra mao.")
+}
 Write-Host ""
 
 # 1/3 Portao: so empacota o que esta verde.
-Write-Host "1/3 Validando o produto (smoke)..."
-& (Join-Path $PSScriptRoot "smoke-test.ps1") | Out-Null
-if ($LASTEXITCODE -ne 0) { Write-Host "[ERRO] smoke vermelho. Abortei sem empacotar."; exit 1 }
-Write-Host "    produto OK (ALL GREEN)."
+Write-Host "1/3 Validando o produto (check.py)..."
+& python (Join-Path $root "v2\proof\check.py") | Out-Null
+if ($LASTEXITCODE -ne 0) { Write-Host "[ERRO] check.py vermelho. Abortei sem empacotar."; exit 1 }
+Write-Host "    produto OK (check.py verde)."
 Write-Host ""
 
 # 2/3 Montar o pacote CLEAN.
@@ -86,7 +125,7 @@ New-Item -ItemType Directory -Force -Path $out | Out-Null
 # AGENTS.md em prosa - a palavra de acordar nao existe e a delegacao volta a depender de spawn que
 # aquele host nao tem. .claude/skills/ entra pelo robocopy /E de ".claude" (a exclusao continua
 # sendo so .claude/agents, que e material de CLIENTE e nunca viaja).
-$shipDirs  = @("engine","skills","onboarding","optional-mcps","studio.example",".github",".claude",".opencode",".agents")
+$shipDirs  = @("engine","v2","skills","onboarding","optional-mcps","studio.example",".github",".claude",".opencode",".agents")
 $shipFiles = @("AGENTS.md","CLAUDE.md","README.md","PRIMEIROS-PASSOS.md","CONTRIBUTING.md","CHANGELOG.md","VERSION","LICENSE","CREDITS.md","alia.config.json","opencode.json","iniciar-alia.bat","atualizar-alia.bat","reverter-alia.bat",".gitattributes",".gitignore")
 # Excluido de proposito (dado de operador/interno): studio, opportunities, rsi-backlog, memory, release, _retired, state.json, studio.yaml
 # "scripts" saiu de $shipDirs de proposito (auditoria de superficie, 10/08/2026): a pasta inteira
@@ -109,6 +148,9 @@ foreach ($d in $shipDirs) {
     # dependencias da maquina de quem empacotou.
     $xd = @("_retired","_dev","_drafts","release","node_modules")
     if ($d -eq ".claude") { $xd += (Join-Path $src "agents") }
+    # v2/ (motor 2.0) ship inteiro, com a prova (v2\proof\check.py roda DENTRO do pacote no passo 3/3);
+    # so sandbox e cache de teste ficam fora (mesma regra de identity_guard._classify_oficina_relative).
+    if ($d -eq "v2") { $xd += @("_sandbox*","__pycache__"); $xd += (Join-Path $src ("proof\deep")) }  # deep/ = equipamento de teste da Operacao Deep, fica na oficina
     $xf = @()
     if ($d -eq ".opencode") { $xf = @("package.json","package-lock.json","bun.lock") }
     # engine/governance/edges.json e DERIVED (TASK-587/588/590): nasce de kb-index.ps1 -Roots
@@ -121,7 +163,7 @@ foreach ($d in $shipDirs) {
     # de bancada com TASK-N/comentario de auditoria - nenhum script da allowlist de scripts/ le
     # o conteudo deles em runtime (capability-check.ps1 le docs\CAPACIDADE-REAL.md, nao este
     # arquivo; secrets.md nao tem leitor). law-ledger.md e persistence-catalog.md FICAM: o
-    # smoke-test.ps1 shipado le o conteudo deles para checks reais dentro do proprio pacote.
+    # v2/proof/check.py shipado le o conteudo deles para checks reais dentro do proprio pacote.
     if ($d -eq "engine") { $xf += (Join-Path $src "governance\capability-ledger.md"); $xf += (Join-Path $src "governance\secrets.md") }
     if ($xf.Count -gt 0) {
       robocopy $src (Join-Path $out $d) /E /XD $xd /XF $xf /NFL /NDL /NP /NS /NC /NJH /NJS | Out-Null
@@ -142,7 +184,7 @@ foreach ($d in $shipDirs) {
 # Fora de proposito, com o motivo:
 #   - smoke-test-studio.ps1  : smoke DA INSTANCIA aplicada do operador (le clientes/squads do operador em
 #                               state.json do studio) - nao existe essa instancia aplicada numa instalacao
-#                               limpa; o smoke do MOTOR (o que ship) e scripts/smoke-test.ps1.
+#                               limpa; a prova do MOTOR (o que ship) e v2/proof/check.py.
 #   - migrate-to-studio.ps1  : migracao UNICA do sistema legado do dono (caminhos da maquina dele).
 #   - extract-secrets.ps1    : idem - opera em studio/state.json especifico da migracao do dono.
 $scriptsAllow = @(
@@ -153,7 +195,7 @@ $scriptsAllow = @(
   "lineage-graph.ps1","make-manifest.ps1","memory-curator.ps1","mission-control.ps1",
   "package-release.ps1","promote-memory.ps1","publish-gate.ps1","reflect-check.ps1","register-task.ps1",
   "response-guard.ps1","rsi-patterns.ps1","semantic-lint.ps1","session-reflection.ps1",
-  "session-search.py","smoke-test.ps1","squad-bridge.ps1","squad-report.ps1","stale-tasks.ps1",
+  "session-search.py","squad-bridge.ps1","squad-report.ps1","stale-tasks.ps1",
   "task-context.ps1","task-sweep.ps1","update-engine.ps1","update-online.ps1","validate-workflow.ps1","verify-manifest.ps1",
   "secret.ps1","secret-write-guard.ps1","pre-tool-use.ps1","session-start.ps1","session-baton.ps1","session-baton-guard.ps1",
   "harness-baseline.ps1","ensure-graphify.ps1","rsi-apply.ps1","rsi-heldout.ps1","_rsi-lib.ps1","sync-harness-adapters.ps1","rsi-promote-pattern.ps1","capability-check.ps1","task-sweep.ps1","read-shunt-guard.ps1","budget-gate.ps1","release-gate.ps1","leitor-gate.ps1","revert-alia.ps1","install-release-hooks.ps1"
@@ -167,13 +209,48 @@ if (Test-Path $scriptsSrc) {
   }
   Write-Host ("    [dir]  scripts\ (" + $scriptsAllow.Count + " arquivo(s), allowlist)")
   # scripts/fixtures/ ship a parte (nao denylist aqui): sao fixtures deterministicas, sem segredo,
-  # que o proprio scripts/smoke-test.ps1 do PACOTE (shipado acima) le para se auto-validar no passo
+  # que as provas do PACOTE (v2/proof/check.py, shipado acima) leem para se auto-validar no passo
   # 3/3 abaixo (guard de superficie, budget, lineage, stale-tasks) - sem elas o smoke do pacote quebra.
   $fixturesSrc = Join-Path $scriptsSrc "fixtures"
   if (Test-Path $fixturesSrc) {
     robocopy $fixturesSrc (Join-Path $out "scripts\fixtures") /E /NFL /NDL /NP /NS /NC /NJH /NJS | Out-Null
     Write-Host "    [dir]  scripts\fixtures\ (fixtures do smoke, sem segredo)"
   }
+
+  # ITEM F (TASK-787, cinco-porques-1.83): REFERENCIA ENTRE SCRIPTS NO PACOTE - causa raiz do
+  # defeito 5 (update-engine.ps1 chamava scripts/smoke-test-studio.ps1, que por desenho nunca
+  # embarca). So conta INVOCACAO real (Join-Path $var "scripts\X.ps1" / "scripts/X.ps1"), nunca
+  # mencao em comentario ou em array de denylist (ex.: $internalFiles acima, que cita de proposito
+  # scripts que NUNCA devem estar no pacote - contar isso como "chamada" seria falso-positivo).
+  $packagedScriptNames = @{}
+  foreach ($psItem in (Get-ChildItem -LiteralPath (Join-Path $out "scripts") -Filter "*.ps1" -File -ErrorAction SilentlyContinue)) {
+    $packagedScriptNames[$psItem.Name.ToLowerInvariant()] = $true
+  }
+  $refBrokenF = @()
+  foreach ($sf in $scriptsAllow) {
+    $spath = Join-Path $out ("scripts\" + $sf)
+    if (-not (Test-Path -LiteralPath $spath)) { continue }
+    # so linha de codigo conta: comentario e sonda Test-Path (guarda de ausencia, ex.: law-ledger-check.ps1) nao sao chamada
+    $stxt = (([System.IO.File]::ReadAllLines($spath) | Where-Object { $_.TrimStart() -notlike '#*' -and $_ -notmatch 'Test-Path' }) -join "`n")
+    $refMs = [regex]::Matches($stxt, 'Join-Path\s+\$\w+\s+"scripts[\\/]([A-Za-z0-9_.-]+\.ps1)"')
+    $seenF = @{}
+    foreach ($rm in $refMs) {
+      $calleeName = $rm.Groups[1].Value
+      $calleeLower = $calleeName.ToLowerInvariant()
+      if ($calleeLower -eq $sf.ToLowerInvariant()) { continue }
+      if ($seenF.ContainsKey($calleeLower)) { continue }
+      $seenF[$calleeLower] = $true
+      if (-not $packagedScriptNames.ContainsKey($calleeLower)) {
+        $refBrokenF += ($sf + " chama " + $calleeName + ", que NAO esta no pacote")
+      }
+    }
+  }
+  if ($refBrokenF.Count -gt 0) {
+    Write-Host "[ERRO] referencia entre scripts quebrada no pacote (item F):"
+    foreach ($rb in $refBrokenF) { Write-Host ("       " + $rb) }
+    exit 1
+  }
+  Write-Host ("    referencias entre scripts do pacote: OK (" + $scriptsAllow.Count + " script(s) conferido(s), item F)")
 }
 
 foreach ($f in $shipFiles) {
@@ -300,12 +377,15 @@ Write-Host ""
 # "(N na versao atual" com o total real deste contexto, se estiver errada. Copia a correcao de
 # volta pra raiz da oficina (a fonte) - senao a proxima edicao manual do README perderia o numero
 # certo nesta mesma pasta, mas o proximo empacotamento a partir da raiz voltaria a vazar o antigo.
-& (Join-Path $out "scripts\smoke-test.ps1") -UpdateReadme | Out-Null
-Copy-Item -LiteralPath (Join-Path $out "README.md") -Destination (Join-Path $root "README.md") -Force
-Write-Host "    numero publico do README.md sincronizado com o total real (gerado, nao mais escrito a mao)."
-
-& (Join-Path $out "scripts\smoke-test.ps1") | Out-Null
-if ($LASTEXITCODE -ne 0) { Write-Host "[ERRO] o pacote nao passou no proprio smoke."; exit 1 }
+# a prova roda numa COPIA fora de qualquer instancia: o pacote aninhado na oficina enxerga a identidade do
+# operador pelos ancestrais e reprova provas que so valem num checkout limpo (o que o usuario recebe).
+$packChk = Join-Path ([System.IO.Path]::GetTempPath()) ("alia-pack-check-" + [guid]::NewGuid().ToString("N"))
+robocopy $out $packChk /E /NFL /NDL /NP /NS /NC /NJH /NJS | Out-Null
+& python (Join-Path $packChk "v2\proof\check.py") | Out-Null
+$packChkExit = $LASTEXITCODE
+Remove-Item -Recurse -Force $packChk -ErrorAction SilentlyContinue
+$global:LASTEXITCODE = $packChkExit
+if ($LASTEXITCODE -ne 0) { Write-Host "[ERRO] o pacote nao passou no proprio check.py."; exit 1 }
 
 # TASK-565: rodar o smoke DENTRO do pacote (linhas acima) pode criar studio/ como efeito
 # colateral de runtime (ex.: detect-harness.ps1 grava studio/harness-baseline.txt na maquina

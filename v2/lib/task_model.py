@@ -114,10 +114,11 @@ def classificar_risco(brief: dict) -> dict:
     return _risk.classificar(brief_normalizado)
 
 
-def abrir(brief: dict, clients_validos: list[str]) -> dict:
+def abrir(brief: dict, clients_validos: list[str], projetos_cadastrados: dict) -> dict:
     """Constroi o registro de uma Task nova (status "open") a partir do brief. Levanta
-    TaskError se: checklist incompleto, Client invalido, destino fora do enum, ou fatia de
-    contexto (paths) que nao resolve no disco."""
+    TaskError se: checklist incompleto, Client invalido, projeto fora do cadastro do Client
+    (client.projects[]), destino fora do enum, ou fatia de contexto (paths) que nao resolve
+    no disco."""
     resultado = classificar_risco(brief)
     if resultado["faltando"]:
         raise TaskError("checklist de brief incompleto", faltando=resultado["faltando"])
@@ -125,6 +126,15 @@ def abrir(brief: dict, clients_validos: list[str]) -> dict:
     client = brief["client"]
     if client not in clients_validos:
         raise TaskError("client invalido", client_recebido=client)
+
+    cadastrados = projetos_cadastrados.get(client) or []
+    if brief["project"] not in cadastrados:
+        raise TaskError(
+            "projeto fora do cadastro do Client: cadastre antes (alia project add)",
+            regra="projeto_fora_do_cadastro", client=client, projeto_recebido=brief["project"],
+            projetos_cadastrados=cadastrados,
+            como_resolver=f"alia project add --client {client} --id <id-canonico>",
+        )
 
     if brief.get("destino") not in DESTINOS_VALIDOS:
         raise TaskError(
@@ -152,6 +162,8 @@ def abrir(brief: dict, clients_validos: list[str]) -> dict:
         "gatilhos": resultado["gatilhos"],
         "modo": resultado["modo"],
     }
+    if brief.get("coordenacao") is True:
+        task["coordenacao"] = True  # unica forma de o specialist "alia" ser acionado (alia task dispatch)
     if brief.get("supersedes"):
         task["supersedes"] = brief["supersedes"]
     if brief.get("criterio_aceite"):
@@ -184,8 +196,21 @@ def _gate_check_mais_recente(task_id: str, events: list[dict]) -> Optional[dict]
     return mais_recente
 
 
+def artifacts_inexistentes(artifact: str, bases: list[str]) -> list[str]:
+    """Itens de `artifact` (separados por `;`) que nao existem em disco. URL http(s) e o prefixo
+    `ext:` (repo externo, declarado) valem sem disco. Caminho relativo e tentado em cada base."""
+    faltam: list[str] = []
+    for item in (artifact or "").split(";"):
+        item = item.strip().strip("'\"")
+        if not item or item.lower().startswith(("http://", "https://", "ext:")):
+            continue
+        if not any(os.path.exists(item if os.path.isabs(item) else os.path.join(b, item)) for b in bases):
+            faltam.append(item)
+    return faltam
+
+
 def fechar(task: dict, veredito: str, artifact: str, events: list[dict],
-           root_cause: str = "", criterio_reprovado: str = "") -> dict:
+           root_cause: str = "", criterio_reprovado: str = "", bases: Optional[list[str]] = None) -> dict:
     """Aplica a transicao de fechamento. Levanta TaskError se: a Task ja esta done (nao reabre
     por cima), falta --artifact, veredito fora do enum, Task de correcao sem root_cause, ou
     falta evidencia de veredito no ledger. Devolve uma COPIA da Task com os campos de
@@ -195,9 +220,14 @@ def fechar(task: dict, veredito: str, artifact: str, events: list[dict],
         raise TaskError("Task done nao reabre por cima", id=task.get("id"), status_atual="done")
 
     if not artifact:
-        raise TaskError("close exige --artifact (o que resolve o criterio de aceite)")
+        raise TaskError("close exige --artifact (o que resolve o criterio de aceite)", regra="fechar_sem_artifact")
     if veredito not in VEREDITOS_VALIDOS:
-        raise TaskError("close exige --veredito em PASS, FAIL ou CONCERN", veredito_recebido=veredito)
+        raise TaskError("close exige --veredito em PASS, FAIL ou CONCERN", regra="fechar_sem_veredito",
+                        veredito_recebido=veredito)
+    faltam_disco = artifacts_inexistentes(artifact, bases or [os.getcwd()])
+    if faltam_disco:
+        raise TaskError("close recusado: artifact nao existe em disco", regra="artifact_inexistente",
+                        itens=faltam_disco)
     if task.get("type") == "correcao" and not root_cause:
         raise TaskError("Task de correcao exige --root-cause (5 porques)", id=task.get("id"))
 

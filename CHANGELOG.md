@@ -18,6 +18,51 @@ testado na instancia viva (a instancia aplicada) antes de fechar. Um update = um
 reversivel. Fluxo: alterar engine -> bump VERSION -> entrada no CHANGELOG -> smoke-test-studio
 ALL GREEN -> tag.
 
+## [2.1.2] - 2026-10-01
+
+A 2.1.2 saiu em 01/10 e trouxe quatro mudanças:
+
+- A sessão principal agora consegue publicar: um comando único (`scripts/publish-release.ps1`) empacota, copia, commita e envia, e o check verde passa a valer para o repositório do produto (`python v2/proof/check.py --repo <caminho>`). A mensagem de recusa ensina o comando.
+- A muralha deixa passar só os comandos de publicar e de atualizar o motor; o resto continua barrado.
+- Uma notificação de tarefa em segundo plano, ou uma frase entre aspas, não libera mais a sessão principal por engano.
+- Uma prova nova percorre o ciclo inteiro (abrir, delegar, entregar, fechar, memória, publicar, atualizar) e reprova se alguma etapa ficar sem ninguém autorizado.
+
+## [2.1.1] - 2026-10-01
+
+A 2.1.1 saiu em 01/10 e trouxe uma mudança:
+
+- Procurar dentro de um arquivo só já não exige ler o mapa antes: só varrer pasta exige. Isso deixava perguntas simples bem mais caras.
+
+## [2.1.0] - 2026-10-01
+
+A 2.1.0 saiu em 01/10 e trouxe sete mudanças:
+
+- Toda Task passa por um só caminho: só abre em projeto cadastrado, só fecha com veredito e com a prova existindo no disco.
+- O especialista só recebe trabalho depois que o líder do time aceitou a Task, em qualquer agente que tenha o gancho.
+- Uma sessão chama no máximo 20 subagentes; o 21º é recusado com aviso.
+- Antes de varrer o código, a Alia lê o mapa ou o wiki do cliente.
+- Aprendizado que se repete sem diminuir agora reprova, e o aviso de mapa velho só pode ser adiado uma vez.
+- Os especialistas são gerados de uma fonte só para Claude Code, OpenCode e Pi, sem a parte de personagem.
+- A verificação antes de publicar acusa e-mail pessoal, caminho da máquina, arquivo não rastreado e autor que não é anônimo.
+
+## [2.0.8] - 2026-09-30
+
+A 2.0.8 saiu em 30/09 às 22:30 e trouxe uma mudança:
+
+- O PULSO, vetado pela segurança, fica desligado salvo opt-in: sem a opção explícita, nada dele
+  entra na abertura da sessão nem no pedido ao especialista, e o estado dele deixa de ser regravado
+  a cada fim de resposta.
+
+## [2.0.7] - 2026-09-30
+
+A 2.0.7 saiu em 30/09 às 22:10 e trouxe duas mudanças:
+
+- A Alia, na conversa principal, agora só delega: se tentar escrever arquivo de trabalho ou rodar
+  script que escreve, o motor nega e diz a quem passar a tarefa. Memória, notas de operação e
+  estado da tarefa continuam livres.
+- Ela só executa sozinha quando o próprio CEO pede isso na mensagem dele; a liberação vale por uma
+  sessão, no máximo 60 minutos, e ela não consegue se liberar por conta própria.
+
 ## [2.0.6] - 2026-09-29
 
 A 2.0.6 saiu em 29/09 às 15:46 e trouxe uma mudança:
@@ -101,38 +146,52 @@ A 2.0.1 saiu em 24/09 às 20:49 e trouxe cinco mudanças:
 - A linha de status mostra a versão certa depois de migrar o estúdio (antes ficava presa na versão
   antiga).
 
-## [2.0.0] - 2026-09-24
+## [2.0.0] - 2026-09-23 (publicada)
 
-A Alia Flow 2.0 chega mais rapida e mais economica, com numeros que voce confere. Ela responde na
-hora: cada acao, que antes esperava de 426 a 1.050 milissegundos, agora leva 60 milissegundos. O
-texto que o motor carrega para comecar a trabalhar caiu 61% (de 18.873 para 7.343 bytes). A
-conferencia completa, que levava 279 segundos em 611 checagens, agora leva de 4,1 a 4,6 segundos.
+Reescrita enxuta do motor, instalada numa copia de teste (`Projetos\studio-farina-v2-teste`), sem
+tocar o estudio real. Texto do motor ao abrir cai de 18.873 para 7.343 bytes (61% menos); a espera
+por acao da Alia cai de 426-1.050 ms para 60 ms; a conferencia completa cai de 279 s (611
+checagens) para 4,1 a 4,6 s. Tarefa fechada com conferencia registrada deixa de ser 36,5% (a
+1.84 media a coisa errada) e passa a obrigatoria: sem veredito, a Task nao fecha. Agentes
+carregados por sessao caem de 97 para 82. Das 78 regras do motor, 70 ganharam peca nova e 8 foram
+aposentadas com motivo escrito.
 
-Toda entrega agora fecha com prova registrada: antes isso acontecia em pouco mais de 1 a cada 3
-tarefas (36,5%); na 2.0 e obrigatorio, sem prova a tarefa nao fecha.
+Nos dois pedidos reais medidos as cegas pelo Nexus: um prototipo real de cliente (TASK-548) foi de
+reprovado (190 mil tokens) para aprovado de primeira (125 mil, 34% menos, com a dieta de token);
+o texto publico da pagina (TASK-568) foi de com ressalva (310 mil tokens) para aprovado de
+primeira (227 mil, 27% menos, com a dieta). A Laya perdeu nos 5 testes com dado real e fica
+opcional, so observando. O gasto desta fase chegou a 27,4 milhoes de tokens no total (a maior
+parte, 8 milhoes, da propria coordenacao relendo a conversa inteira a cada volta); o teto era ate
+12 milhoes, com parada combinada em 10, e a fase parou em 12,2 no orcamento proprio dela.
 
-Nos mesmos pedidos reais, depois da dieta de tokens: num prototipo real de cliente, a 1.84
-reprovou (190 mil tokens, aumentou o raio que era para diminuir) e a 2.0 gastou 34% menos (125 mil
-tokens), com ressalva (o raio da tarefa ficou 1px acima do atual). No texto publico de uma pagina,
-a 1.84 ficou com ressalva (310 mil tokens, numeros sem fonte) e a 2.0 gastou 27% menos (227 mil
-tokens), aprovada de primeira. Ressalva sobre os dois numeros: a 2.0 rodou primeiro em cada par (a
-vantagem de cache ficou com a 1.84) e o brief da 2.0 no segundo pedido ja trazia a licao
-"infografico abstrato reprova".
+- Brief por 6 campos com criterio de aceite. Todo pedido diz o que e falhar antes de comecar.
+- Especialista recebe fatia exata (`caminho#Lx-Ly`), nunca leitura fixa de abertura.
+- Squad ativo por Client. So o squad do Client escolhido fica visivel ao host.
+- Registro que nasce sozinho. Quem executou, quanto gastou e quanto tempo levou, gravado pela
+  propria maquina.
+- Regra de risco (R1/R2) decide quando debater: peca publica, irreversivel, seguranca ou ordem
+  direta do Operator.
+- Migracao com backup datado e undo que devolve o hash original.
+- Porta opcional para a Laya, sem ela decidir nada.
+- Pendente: Gateway (modo gerente de time) nao provado ao vivo; Codex e OpenCode seguem so
+  contrato; conferencia final e teste do CEO na copia antes de aplicar no estudio real.
 
-Como usar: a pasta v2/ chega junto deste pacote, ao lado do motor atual (que continua sendo o que
-responde por padrao). Abra uma copia do seu estudio, rode a 2.0 nela e compare com seus proprios
-olhos. Aprovado, a troca do seu estudio de verdade e um comando (`python v2/bin/migrate.py
-apply --source v2 --target <sua instancia>`), com backup automatico e um comando de volta
-(`python v2/bin/migrate.py undo --target <sua instancia>`).
+## [1.84.0] - 2026-09-22
 
-O que a 2.0 ainda nao faz: o modo gerente de time (Gateway) nao foi provado ao vivo; Codex e
-OpenCode seguem so contrato, sem sessao real ponta a ponta; a Laya (roteamento aprendido) perdeu
-nos 5 testes com dado real e fica opcional, nunca decidindo sozinha.
+Correção da 1.83.0. A nota da versão anterior publicou números errados sobre a medição retroativa: 95 Tasks reprovadas, 159 com ressalva, 69 limpas e 66 provas inexistentes. A contagem tratava "o texto não é um caminho" como "a prova não existe", e são coisas diferentes. A remedição separa as duas perguntas. De 481 Tasks aprovadas com prova declarada, 287 têm prova em formato que a máquina confere e que resolve, 185 têm prova em texto livre e 9 apontam para uma prova que não resolve. Das 287 verificáveis, 255 estão limpas e 32 tinham defeito de conteúdo: travessão em 24, marca em 10, emoji em 2 e codificação em 1 (uma Task pode ter mais de um). A base também não é a mesma da nota anterior, então as proporções das duas notas não se comparam. Os números foram medidos por um comando e reproduzidos por outro especialista, com resultado idêntico em todos os campos. A nota da 1.83.0 fica como foi publicada; a correção mora aqui.
 
-Quem ja tem o Alia Flow instalado: rode `scripts/update-online.ps1` (ou `atualizar-alia.bat`) DUAS
-vezes em sequencia para receber a pasta v2/ (a primeira rodada atualiza o proprio script de
-atualizacao; a segunda traz a 2.0 - o motor atual em uso hoje nao e tocado). Prova da 2.0:
-`python v2/proof/check.py`.
+Esta versão ataca a causa, não o efeito. O número errado nasceu porque a prova de uma Task era texto livre e ninguém conferia se ela apontava para algo real. E chegou ao público porque nenhum número precisava ser reproduzido por outra mão antes de sair. As duas portas agora existem na máquina.
+
+- Prova nasce válida. Fechar uma Task como feita exige prova que resolve para arquivo, pasta ou link, no formato canônico de itens separados por ponto e vírgula. Abrir uma Task nunca é bloqueado, e os registros antigos continuam como histórico, sem reescrita. É isso que impede as 185 provas em texto livre de voltarem a nascer.
+- Correção exige causa. Task de correção só fecha como feita com a causa-raiz declarada. Consertar o sintoma sem dizer por que ele apareceu deixa de ser possível.
+- Número público se escreve sozinho. A contagem de verificações que vai para o registro público é gravada pela própria bateria, nunca mais digitada à mão.
+- Empacotamento mais exigente. O pacote reprova se um script empacotado chama outro que ficou de fora, e reprova se a revisão de release não traz a tabela de números com o comando que os reproduz e com quem reproduziu, que tem de ser diferente de quem mediu.
+- Falha rápida. A bateria abre checando a sintaxe de todos os scripts e para em segundos se houver erro, em vez de acusar só no fim.
+- Portão de saída mais honesto. Uma regra única decide se a prova resolve, a mesma no registro e no portão, e o motivo de falha diz "não resolve", nunca "não existe", porque o portão só sabe o primeiro. Checagem que não se aplica aparece como NA, separada de SKIP; emoji é reconhecido por lista explícita; arquivo binário é reconhecido por byte zero; erro interno por caractere inválido vira SKIP em vez de derrubar a checagem.
+- Veredito de gate registrado por volta. Toda volta de gate sobre uma peça fica registrada ao lado dela, e uma reescrita aprovada só cai numa volta seguinte citando a regra que mudou.
+- Manutenção. O registro de leis aponta os testes pelo nome, não pelo número da linha, e para de quebrar a cada edição da bateria. Script com acento passou a exigir marca de codificação, para o PowerShell não trocar o caractere na leitura.
+
+Atenção ao atualizar: o registro de Task passa a recusar dois fechamentos que antes aceitava, prova que não resolve e Task de correção sem causa-raiz. Quem fecha Task por automação com texto livre na prova precisa passar para o formato canônico.
 
 ## [1.83.0] - 2026-09-21
 

@@ -32,10 +32,11 @@ import sys
 import time
 
 SETTINGS_HOOKS = {
+    "env": {"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "40"},
     "hooks": {
         "PreToolUse": [
             {
-                "matcher": "Write|Edit|Bash|PowerShell|Agent|Task",
+                "matcher": "Write|Edit|NotebookEdit|Bash|PowerShell|Agent|Task|Grep|Glob",
                 "hooks": [{
                     "type": "command",
                     "command": "python \"${CLAUDE_PROJECT_DIR}/v2/hooks/dispatch.py\"",
@@ -96,8 +97,30 @@ def _iter_source_files(source: str):
             yield rel.replace("\\", "/")
 
 
+JANELA_MAX_BYTES = 6000  # AGENTS.md + CLAUDE.md da instancia, carregados em toda janela
+
+
+def _bytes_por_janela(source: str, target: str) -> int:
+    """TASK-845: o que entra em TODA janela da instancia = AGENTS.md do motor + CLAUDE.md dela
+    (com a linha @AGENTS.md que o apply garante). Teto fixo, nunca sobe."""
+    agents = os.path.getsize(os.path.join(source, "AGENTS.md"))
+    claude_path = os.path.join(target, "CLAUDE.md")
+    if not os.path.exists(claude_path):
+        return agents + len("@AGENTS.md\n")
+    with open(claude_path, "r", encoding="utf-8") as fh:
+        texto = fh.read()
+    if "@AGENTS.md" not in texto.splitlines():
+        texto = "@AGENTS.md\n\n" + texto
+    return agents + len(texto.encode("utf-8"))
+
+
 def cmd_apply(source: str, target: str) -> int:
     source = os.path.abspath(source)
+    _janela = _bytes_por_janela(source, os.path.abspath(target))
+    if _janela > JANELA_MAX_BYTES:
+        print(f"apply recusado: a janela da instancia teria {_janela} bytes (AGENTS.md + CLAUDE.md), "
+              f"teto {JANELA_MAX_BYTES}. Enxugue o CLAUDE.md da instancia; nada foi tocado.")
+        return 3
     target = os.path.abspath(target)
     if not os.path.isdir(source):
         print(f"erro: source nao existe: {source}", file=sys.stderr)
@@ -142,9 +165,17 @@ def cmd_apply(source: str, target: str) -> int:
 
     claude_path = os.path.join(target, "CLAUDE.md")
     if os.path.exists(claude_path):
-        # CLAUDE.md do alvo carrega as leis da INSTANCIA (nunca do motor) - preservado, nunca
-        # sobrescrito. So cria "@AGENTS.md" quando o alvo ainda nao tem CLAUDE.md proprio.
-        manifest["preserved"] = manifest.get("preserved", []) + ["CLAUDE.md"]
+        # CLAUDE.md do alvo carrega as leis da INSTANCIA (nunca do motor): o texto dele fica
+        # intacto. TASK-845 (E02): sem a linha "@AGENTS.md" o kernel nunca carregava na
+        # instancia; o apply poe a importacao no topo, uma vez so.
+        with open(claude_path, "r", encoding="utf-8") as fh:
+            claude_atual = fh.read()
+        if "@AGENTS.md" in claude_atual.splitlines():
+            manifest["preserved"] = manifest.get("preserved", []) + ["CLAUDE.md"]
+        else:
+            _backup_and_note("CLAUDE.md")
+            with open(claude_path, "w", encoding="utf-8") as fh:
+                fh.write("@AGENTS.md\n\n" + claude_atual)
     else:
         _backup_and_note("CLAUDE.md")
         with open(claude_path, "w", encoding="utf-8") as fh:

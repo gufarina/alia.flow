@@ -10,7 +10,7 @@ A dor ou o motivo. Se fecha uma issue, referencie (`Closes #N`).
 
 - [ ] `VERSION` subida (PATCH / MINOR / MAJOR conforme o tipo de mudanca)
 - [ ] Entrada no `CHANGELOG.md` (topo, com o porque)
-- [ ] Smoke test ALL GREEN: `powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1`
+- [ ] Prova verde: `python v2/proof/check.py`
 - [ ] Sem acentos/emojis nos arquivos do produto (motor, scripts, docs de produto)
 - [ ] Termos novos entraram em `engine/glossary.md` antes de usar no codigo/doutrina
 

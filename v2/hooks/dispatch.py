@@ -32,7 +32,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
 import sys
 import time
 
@@ -40,6 +39,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
 import identity_guard  # noqa: E402
 import ledger  # noqa: E402
 import paths  # noqa: E402
+# pulso (Operacao Deep, TASK-847) importado SO dentro de quem usa (handle_pretooluse_pulso_inject,
+# handle_stop, handle_session_start) - import tardio, nunca no topo: a maioria dos eventos
+# despachados (Write/Edit/Bash negados ou nao, PostToolUse, SubagentStop) nunca precisa de PULSO,
+# e cada subprocesso novo de dispatch.py paga o custo de importar do zero (nao ha cache entre
+# processos) - medido, custava alguns segundos a mais na bateria inteira de proof/run_proofs.py.
 
 
 def _ledger_path() -> str:
@@ -71,6 +75,38 @@ def handle_pre_agent(event: dict) -> None:
     })
 
 
+SUBAGENT_CAP = 20  # teto de Agent/Task por sessao - o 21o e negado
+
+
+def _subagent_cap_check(event: dict) -> dict | None:
+    """Conta Agent/Task por sessao num sidecar do ledger (O(1), nunca le o activity.jsonl).
+    Devolve a negacao quando a sessao ja gastou o teto; senao incrementa e devolve None.
+    Sem session_id nao ha como contar: libera (falha aberta, so este teto)."""
+    sid = event.get("session_id")
+    if not sid:
+        return None
+    path = _ledger_path() + ".subagentes.json"
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            cont = json.load(fh)
+        if not isinstance(cont, dict):
+            cont = {}
+    except (OSError, json.JSONDecodeError):
+        cont = {}
+    n = int(cont.get(sid, 0))
+    if n >= SUBAGENT_CAP:
+        return _deny(f"guard: teto de {SUBAGENT_CAP} subagentes por sessao atingido ({n} ja acionados). "
+                     "Feche esta sessao e abra outra, ou trabalhe sem delegar mais.")
+    cont[sid] = n + 1
+    try:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(cont, fh)
+    except OSError:
+        pass
+    return None
+
+
 def _infer_task_id(event: dict) -> str | None:
     tool_input = event.get("tool_input") or {}
     text = str(tool_input.get("prompt") or "") + " " + str(tool_input.get("description") or "")
@@ -80,6 +116,44 @@ def _infer_task_id(event: dict) -> str | None:
     # ALIA_TASK_ID nunca era definido (achado da revisao independente, TASK-804): a fonte
     # real e o arquivo que `task.py open` grava por sessao (lib/paths.py).
     return paths.read_current_task(event.get("session_id"))
+
+
+# ---------------------------------------------------------------------------
+# PULSO (Operacao Deep, TASK-847): PreToolUse de Agent/Task anexa o bloco do sub-agente ao fim
+# do prompt via updatedInput. permissionDecision "allow" e seguro aqui porque handle_pre_agent
+# (chamado antes desta funcao) nunca nega Agent/Task hoje - so registra no ledger; "allow" so
+# formaliza o que o guard ja deixaria passar, nunca afrouxa negacao nenhuma.
+# ---------------------------------------------------------------------------
+
+def _pulso_on() -> bool:
+    """PULSO (TASK-847) foi vetado pela seguranca: desligado, salvo opt-in ALIA_PULSO=1. Sem a
+    flag nada e injetado (sub-agente, SessionStart) nem regravado (Stop)."""
+    return os.environ.get("ALIA_PULSO") == "1"
+
+
+def handle_pretooluse_pulso_inject(event: dict) -> dict:
+    if not _pulso_on():
+        return _no_decision()
+    tool_input = event.get("tool_input") or {}
+    agent_id = tool_input.get("subagent_type")
+    if not agent_id:
+        return _no_decision()
+    try:
+        import pulso  # noqa: E402 (import tardio - ver comentario no topo do arquivo)
+        state = pulso.load_state(paths.pulso_path())
+        bloco = pulso.render(agent_id, state)
+    except Exception:
+        return _no_decision()  # PULSO nunca bloqueia nem quebra a delegacao
+    if not bloco:
+        return _no_decision()  # agente sem entrada no PULSO = nada injetado
+    prompt_original = str(tool_input.get("prompt") or "")
+    novo_input = dict(tool_input)
+    novo_input["prompt"] = f"{prompt_original}\n\n{bloco}" if prompt_original else bloco
+    return {"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "allow",
+        "updatedInput": novo_input,
+    }}
 
 
 _USAGE_FIELDS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
@@ -230,12 +304,30 @@ def _deny(reason: str) -> dict:
 
 SECRET_PATTERNS = [
     re.compile(r"sk-[A-Za-z0-9]{20,}"),
+    # TASK-845 (E03): formatos que passavam pela trava (medido 27/09 com valor falso).
+    re.compile(r"sk-(?:ant|proj)-[A-Za-z0-9_\-]{20,}"),
+    re.compile(r"gh[pousr]_[A-Za-z0-9]{30,}"),
+    re.compile(r"github_pat_[A-Za-z0-9_]{40,}"),
+    re.compile(r"nvapi-[A-Za-z0-9_\-]{30,}"),
+    re.compile(r"pplx-[A-Za-z0-9]{30,}"),
+    re.compile(r"eyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}"),
+    re.compile(r"\b[A-Z0-9_]*(?:KEY|TOKEN|SECRET)\s*[:=]\s*['\"]?[A-Za-z0-9_\-]{20,}"),
     re.compile(r"AKIA[0-9A-Z]{16}"),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
     re.compile(r"(?i)api[_-]?key\s*[:=]\s*['\"][A-Za-z0-9_\-]{16,}['\"]"),
 ]
 
-PUBLISH_PATTERNS = re.compile(r"(?i)\b(git push|npm publish|package-release)\b")
+PUBLISH_PATTERNS = re.compile(r"(?i)\b(git push|npm publish|package-release|publish-release)\b")
+# 2.1.2 (TASK-862): comandos regidos SO por L70 + marcador de check valido, fora da muralha L80
+# (a sessao principal e a unica que publica/propaga; barrar a escrita dela ai deixava zero ator).
+# update-engine nao exige marcador: so sai da muralha. A passagem vale SO para o comando INTEIRO
+# `powershell|pwsh [-NoProfile] [-ExecutionPolicy X] -File <...>publish-release|update-engine.ps1
+# [args]`: sem -Command/-c, sem encadeamento nem redirecionamento, so esses dois scripts.
+_WALL_PASS_RE = re.compile(
+    r"""(?ix)^\s*(?:powershell|pwsh)(?:\.exe)?(?:\s+-NoProfile)?(?:\s+-ExecutionPolicy\s+\w+)?
+    \s+-File\s+(?P<q>["']?)(?:[^"'\s;&|<>`$()]*[\\/])?(?:publish-release|update-engine)\.ps1(?P=q)
+    (?:\s+[\w.:\\/\-"']+)*\s*$""")
+_WALL_PASS_BAD_ARG_RE = re.compile(r"(?i)\s-(?:c|command|e|ec|encodedcommand)(?:\s|$)")
 
 # lista EXPLICITA do kernel (revisao independente: a checagem antiga procurava "/kernel/",
 # uma pasta que nao existe - o kernel real e este punhado de arquivo + a pasta engine/).
@@ -264,7 +356,7 @@ _NEWITEM_RE = re.compile(r"^new-item\b", re.IGNORECASE)
 _IOFILE_WRITE_RE = re.compile(r"\[(?:system\.)?io\.file\]::write\w*\s*\(\s*['\"]([^'\"]+)['\"]", re.IGNORECASE)
 _SED_INPLACE_RE = re.compile(r"^sed\b", re.IGNORECASE)
 # alvo entre aspas (com espaco dentro - achado do NEXUS, Gate: caminho real do usuario quase
-# sempre tem espaco, ex. "C:\Users\Nome Completo\...", e (\S+) ou .split() ingenuo cortava no
+# sempre tem espaco, ex. "<unidade>:\Users\Nome Completo\...", e (\S+) ou .split() ingenuo cortava no
 # espaco, deixando so o pedaco ATE o espaco como "alvo" - a identidade nunca era vista dentro da
 # parte cortada fora, e o alvo incompleto raramente batia numa pasta publicavel de verdade).
 _QUOTED_OR_TOKEN = r'''(?:"[^"]*"|'[^']*'|\S+)'''
@@ -392,6 +484,15 @@ def _is_source_path(path: str) -> bool:
     return SOURCE_PATH_MARKER in p
 
 
+# PULSO (Operacao Deep, TASK-847): so o proprio hook (Stop -> pulso.recompute) escreve o
+# arquivo; Write/Edit/Bash/PowerShell da sessao contra pulso.json e sempre negado. Basename puro
+# (mesmo estilo de KERNEL_FILES) - o nome e distintivo o bastante para nao colidir com outro
+# arquivo legitimo.
+def _is_pulso_write_target(path: str) -> bool:
+    basename = _norm(path).lower().rsplit("/", 1)[-1]
+    return basename == "pulso.json"
+
+
 def _is_kernel_path(path: str) -> bool:
     if _is_source_path(path):
         return False
@@ -399,7 +500,16 @@ def _is_kernel_path(path: str) -> bool:
     if "/engine/" in p or p.endswith("/engine") or p == "engine":
         return True
     basename = p.rsplit("/", 1)[-1]
-    return basename in KERNEL_FILES
+    if basename in KERNEL_FILES:
+        return True
+    # config do host e scripts de skill sao gravaveis pelo
+    # agente e rodam como hook - mexer neles e mexer na propria trava.
+    pn = "/" + p.lstrip("/")
+    if basename.startswith("settings") and basename.endswith(".json") and pn.rsplit("/", 2)[-2] == ".claude":
+        return True
+    if "/.claude/skills/" in pn and "/scripts/" in pn.split("/.claude/skills/", 1)[1]:
+        return True
+    return False
 
 
 def _bash_targets_kernel(command: str) -> bool:
@@ -426,6 +536,76 @@ def _bash_carries_inline_content(command: str) -> bool:
         if _INLINE_WRITE_CMD_RE.match(clausula.strip()):
             return True
     return False
+
+
+_HEREDOC_BODY_RE = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n(.*?)(?:\n\s*\1\b|\Z)", re.DOTALL)
+_SETCONTENT_FAMILY_RE = re.compile(r"(?i)^(set-content|add-content|out-file)\b")
+_CLAUSULA_SPLIT_RE = re.compile(r"(?<![0-9&])[;&]+|\n|(?<!\|)\|(?!\|)")
+
+
+def _ate_redirecionamento(texto: str) -> str:
+    """Corta `texto` no primeiro `>`/`>>` fora de aspas (o que vem depois e o ALVO, nao conteudo)."""
+    aspa = ""
+    for i, ch in enumerate(texto):
+        if aspa:
+            if ch == aspa:
+                aspa = ""
+        elif ch in "'\"":
+            aspa = ch
+        elif ch == ">" and not (i > 0 and texto[i - 1] == "&") and texto[i + 1:i + 2] != "&":
+            return texto[:i]
+    return texto
+
+
+def _inline_content_text(command: str) -> str:
+    """So o TEXTO ESCRITO pelo comando: corpo de heredoc, argumento
+    de echo/printf/Write-Output (ate o redirecionamento), `-Value` de Set-Content/Add-Content/
+    Out-File e o que vem por pipe para eles. O resto (`cd <estudio> &&`, caminhos de origem/destino)
+    nunca entra - o caminho do estudio num `cd` e legitimo, so o conteudo que vai pro arquivo vaza."""
+    partes: list[str] = [m.group(2) for m in _HEREDOC_BODY_RE.finditer(command)]
+    resto = _HEREDOC_BODY_RE.sub(lambda m: m.group(0).split("\n", 1)[0], command)
+    clausulas = [c.strip() for c in _CLAUSULA_SPLIT_RE.split(resto)]
+    for i, c in enumerate(clausulas):
+        if not c:
+            continue
+        m_cmd = _INLINE_WRITE_CMD_RE.match(c)
+        if m_cmd:
+            corpo = c[m_cmd.end():]
+            if _SETCONTENT_FAMILY_RE.match(c):
+                m_val = re.search(r"(?i)-Value\s+(.*)$", corpo)
+                corpo = m_val.group(1) if m_val else ""
+            partes.append(_ate_redirecionamento(corpo))
+            continue
+        prox = clausulas[i + 1] if i + 1 < len(clausulas) else ""
+        if prox and (_SETCONTENT_FAMILY_RE.match(prox) or re.match(r"(?i)^tee\b", prox)):
+            partes.append(_ate_redirecionamento(c))
+    return "\n".join(partes)
+
+
+_TASK_CLOSE_RE = re.compile(r"(?i)\btask\.py\b.*?\bclose\b")
+_REGISTER_DONE_RE = re.compile(r"(?i)\bregister-task\.ps1\b.*?-Status\s+['\"]?done\b")
+_ARTIFACT_ARG_RE = re.compile(rf"(?i)(?:--artifact|-Artifact)[\s=]+({_QUOTED_OR_TOKEN})")
+
+
+def _artifacts_que_nao_existem(command: str, event: dict) -> list[str]:
+    """fechar Task exige artifact que EXISTA. Itens
+    separados por `;`; `http(s)://` e o prefixo `ext:` (repo externo, declarado) valem sem disco.
+    Resolve contra o cwd do evento e a raiz do projeto. So olha `task.py close` e
+    `register-task.ps1 -Status done` - abrir/atualizar Task nunca e barrado."""
+    if not (_TASK_CLOSE_RE.search(command) or _REGISTER_DONE_RE.search(command)):
+        return []
+    m = _ARTIFACT_ARG_RE.search(command)
+    if not m:
+        return []  # sem --artifact o proprio task.py recusa (L65/L76); aqui so o que cita e nao existe
+    bases = [b for b in (event.get("cwd"), _project_dir(), os.getcwd()) if b]
+    faltam: list[str] = []
+    for item in m.group(1).strip("'\"").split(";"):
+        item = item.strip()
+        if not item or item.lower().startswith(("http://", "https://", "ext:")):
+            continue
+        if not any(os.path.exists(item if os.path.isabs(item) else os.path.join(b, item)) for b in bases):
+            faltam.append(item)
+    return faltam
 
 
 def _has_secret(text: str) -> bool:
@@ -483,6 +663,7 @@ CHECK_MARKER_MAX_AGE_S = 30 * 60  # 30 minutos (mandato do CEO, 24/09/2026)
 
 
 def _current_git_head(repo_dir: str) -> str | None:
+    import subprocess  # tardio: so a trava de publicacao usa; no topo custava ~10-80 ms em TODO spawn
     try:
         proc = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_dir,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -515,12 +696,145 @@ def _check_marker_valido() -> bool:
             dados = json.load(fh)
     except (OSError, json.JSONDecodeError):
         return False
+    # TASK-845 (E01): marcador sem HEAD nao libera nada; o HEAD gravado tem que bater com o
+    # HEAD atual do repo alvo (campo "repo" do marcador, ou a raiz do studio quando ausente).
     head_gravado = dados.get("head")
-    if head_gravado:
-        repo_dir = os.path.dirname(os.path.dirname(marker))
-        if _current_git_head(repo_dir) != head_gravado:
-            return False
-    return True
+    if not head_gravado:
+        return False
+    repo_dir = dados.get("repo") or os.path.dirname(os.path.dirname(marker))
+    return _current_git_head(repo_dir) == head_gravado
+
+
+# ---------------------------------------------------------------------------
+# MURO DE DELEGACAO (mandato do CEO, 30/09/2026) - a Alia na SESSAO PRINCIPAL so delega.
+# Distincao: PreToolUse carrega agent_id so quando a chamada nasce num sub-agente; sem agent_id
+# = sessao principal. Ai Write/Edit/NotebookEdit e Bash/PowerShell de escrita so passam em infra
+# liberada (memoria, docs/ops, state.json, task corrente, briefs) ou com a LIBERACAO do CEO.
+# Liberacao: <studio>/.alia/direto.json {session_id, granted_at, expires_at, ceo_quote}, nasce SO
+# do hook UserPromptSubmit (handle_user_prompt_submit) quando a mensagem do CEO traz o pedido
+# expresso; grava evento direct_grant no ledger; vale 1 sessao e no maximo 60 min. A sessao
+# principal nunca a cria: qualquer comando dela que cite direto.json e negado pelo proprio muro. Interruptor: ALIA_DELEGATION_WALL_OFF=1 ou
+# .claude/delegation-wall.off (padrao end-lock.off/graph-gate.off; desliga so o bloqueio).
+# ---------------------------------------------------------------------------
+
+WALL_ALLOW_FRAGMENTS = ("/memory/", "/docs/ops/", "/briefs/", "/artifacts/coordination/")
+WALL_DIRECT_MAX_S = 60 * 60
+_WALL_NULL_SINKS = ("/dev/null", "nul", "$null")
+_WALL_INTERP_RE = re.compile(r"(?i)\b(python3?|py|node|pwsh|powershell)(\.exe)?\b[^\n]*"
+                             r"(\s-c\b|\s-e\b|\s-command\b|<<|\s-\s*<)")
+_WALL_WRITE_TOKENS_RE = re.compile(r"(?i)(open\s*\([^)]*['\"][wa]|write_text|write_bytes|writefile|"
+                                   r"fs\.\w*write|set-content|add-content|out-file|\.write\()")
+
+
+def _wall_off() -> bool:
+    if os.environ.get("ALIA_DELEGATION_WALL_OFF") == "1":
+        return True
+    return os.path.exists(os.path.join(_project_dir(), ".claude", "delegation-wall.off"))
+
+
+def _direct_grant_path() -> str:
+    return os.path.join(paths.studio_root(), ".alia", "direto.json")
+
+
+def _direct_grant_valid(session_id: str | None) -> bool:
+    try:
+        with open(_direct_grant_path(), "r", encoding="utf-8") as fh:
+            g = json.load(fh)
+        now = time.time()
+        return (bool(session_id) and g.get("session_id") == session_id
+                and len(str(g.get("ceo_quote") or "").strip()) >= 5
+                and now < float(g["expires_at"])
+                and float(g["expires_at"]) - float(g["granted_at"]) <= WALL_DIRECT_MAX_S)
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+
+def _wall_path_allowed(path: str) -> bool:
+    p = "/" + _norm(path).strip().strip("'\"").lower().lstrip("/")
+    if p.lstrip("/") in _WALL_NULL_SINKS:
+        return True
+    if any(a in p for a in WALL_ALLOW_FRAGMENTS):
+        return True
+    base = p.rsplit("/", 1)[-1]
+    return base in ("state.json", os.path.basename(paths.current_task_path()).lower())
+
+
+def _wall_target_hint(path: str) -> str:
+    m = re.search(r"/clients/([a-z0-9\-]+)/", _norm(path).lower())
+    if m and m.group(1) == "alia-flow-lab":
+        return "o motor: acione alia-flow-lab-nexus (Gateway), que roteia ao Specialist dono (WARDEN hooks/prova, GAUGE contexto, CANON leis...)"
+    if m:
+        return f"acione o Gateway do Client {m.group(1)} (agente {m.group(1)}-*), que roteia ao Specialist dono"
+    return "acione o Specialist dono do dominio via Agent/Task (Gateway do Client em caso de duvida)"
+
+
+def _wall_check(event: dict) -> dict | None:
+    """Devolve _deny(...) quando a SESSAO PRINCIPAL tenta escrever fora da infra liberada."""
+    if event.get("_is_subagent") or _wall_off():
+        return None
+    tool = event.get("tool_name")
+    ti = event.get("tool_input") or {}
+    if tool in ("Bash", "PowerShell") and re.search(r"(?i)direto\.json|direto\.py", str(ti.get("command") or "")):
+        return _deny("muralha de delegacao: a sessao principal nao cria a propria liberacao - so o "
+                     "pedido expresso do CEO na mensagem dele (hook de prompt) libera.")
+    if tool in ("Write", "Edit", "NotebookEdit"):
+        alvos = [ti.get("file_path") or ti.get("notebook_path") or ""]
+        inline = False
+    else:
+        cmd = str(ti.get("command") or "")
+        alvos = _extract_write_targets(cmd)
+        # passagem: o proprio comando de publicar/propagar, sem encadear nada, nao e "script inline
+        # que escreve arquivo" (invocado via -Command). Alvo de escrita explicito segue valendo.
+        passa = bool(_WALL_PASS_RE.match(cmd) and not _WALL_PASS_BAD_ARG_RE.search(cmd))
+        inline = bool(_WALL_INTERP_RE.search(cmd) and _WALL_WRITE_TOKENS_RE.search(cmd)) and not passa
+    fora = [a for a in alvos if not _wall_path_allowed(a)]
+    if not fora and not inline:
+        return None
+    if _direct_grant_valid(event.get("session_id")):
+        return None
+    alvo = fora[0] if fora else "(script inline que escreve arquivo)"
+    return _deny(
+        f"muralha de delegacao: a sessao principal so delega - escrita em {alvo} negada. "
+        f"Quem faz: {_wall_target_hint(alvo)}. Se o CEO pediu EXPRESSAMENTE que voce faca e voce "
+        "confirmou, o CEO precisa pedir isso na mensagem dele (o hook de prompt libera, vale esta "
+        "sessao, max 60 min) - voce nao se libera sozinha.")
+
+
+_DIRECT_ASK_RE = re.compile(
+    r"(?i)(fa[cz]a|faz|executa|execute|resolve|resolva|mexe|mexa)\s+(voce|vc)\s+mesm[ao]"
+    r"|(pode|quero que)\s+(voce|vc)\s+(mesm[ao]\s+)?(faz|fazer|execute|executar|mexer)"
+    r"|sem\s+delegar|nao\s+delegue|libera(r)?\s+(a\s+)?alia\s+(pra|para)\s+(fazer|executar)")
+
+
+_HARNESS_PROMPT_MARKERS = ("<task-notification>", "[system notification", "<system-reminder>")
+
+
+def handle_user_prompt_submit(event: dict) -> dict:
+    """Unica origem da liberacao do muro: o prompt do CEO traz o pedido expresso. Devolve contexto
+    mandando a Alia CONFIRMAR ao CEO que vai executar direto."""
+    import unicodedata
+    prompt = str(event.get("prompt") or "")
+    # 2.1.2 (TASK-862, caso C): notificacao do harness (tarefa em segundo plano) nao e mensagem do
+    # CEO, e frase entre aspas/crase/citacao (>) e citacao, nao pedido. O regex abaixo nao mudou.
+    if any(m in prompt.lower() for m in _HARNESS_PROMPT_MARKERS):
+        return {}
+    pedido = re.sub(r'(?m)"[^"\n]*"|“[^”]*”|`[^`]*`|^\s*>.*$', " ", prompt)
+    norm = unicodedata.normalize("NFKD", pedido).encode("ascii", "ignore").decode("ascii")
+    sid = event.get("session_id")
+    if not sid or not _DIRECT_ASK_RE.search(norm):
+        return {}
+    agora = time.time()
+    grant = {"session_id": sid, "granted_at": agora, "expires_at": agora + WALL_DIRECT_MAX_S,
+             "ceo_quote": prompt.strip()[:300]}
+    gp = _direct_grant_path()
+    os.makedirs(os.path.dirname(gp), exist_ok=True)
+    with open(gp, "w", encoding="utf-8") as fh:
+        json.dump(grant, fh, ensure_ascii=False)
+    ledger.append_event(_ledger_path(), {"event": "direct_grant", "session_id": sid,
+                                         "ceo_quote": grant["ceo_quote"], "expires_at": grant["expires_at"]})
+    return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext":
+            "[MURALHA] O CEO pediu para voce executar direto. Confirme a ele numa frase que vai "
+            "executar sozinha; a liberacao vale esta sessao por ate 60 min."}}
 
 
 def handle_pretooluse_guard(event: dict) -> dict:
@@ -530,10 +844,15 @@ def handle_pretooluse_guard(event: dict) -> dict:
     # quando a chamada nasce dentro de um sub-agente (campo comum documentado
     # na doc oficial de hooks). Sem agent_id = sessao principal.
     event["_is_subagent"] = bool(event.get("agent_id"))
+    if tool_name in ("Write", "Edit", "NotebookEdit", "Bash", "PowerShell"):
+        _negado_muralha = _wall_check(event)
+        if _negado_muralha:
+            return _negado_muralha
 
-    if tool_name in ("Write", "Edit"):
-        path = tool_input.get("file_path", "")
-        content = str(tool_input.get("content") or tool_input.get("new_string") or "")
+    if tool_name in ("Write", "Edit", "NotebookEdit"):
+        path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
+        content = str(tool_input.get("content") or tool_input.get("new_string")
+                      or tool_input.get("new_source") or "")
         # MultiEdit nao existe hoje neste dispatch (grep sem ocorrencia) - quando existir, some
         # o texto de "edits" aqui antes de checar identidade (mesma trava, sem tool novo).
         for edit_extra in (tool_input.get("edits") or []):
@@ -542,6 +861,9 @@ def handle_pretooluse_guard(event: dict) -> dict:
         if _is_kernel_path(path):
             return _deny("guard: escrita no kernel negada (AGENTS.md, CLAUDE.md, "
                          "CONTRACTS.md ou engine/)")
+        if _is_pulso_write_target(path):
+            return _deny("guard: escrita direta em pulso.json negada - so o hook "
+                         "(Stop -> pulso.recompute) regrava o PULSO")
         if _has_secret(content) or _has_secret(path):
             return _deny("guard: segredo detectado no conteudo ou caminho")
         # TASK-841/842 (WARDEN): trava na ESCRITA - arquivo publicavel do motor (oficina
@@ -575,9 +897,16 @@ def handle_pretooluse_guard(event: dict) -> dict:
         command = str(tool_input.get("command") or "")
         if _has_secret(command):
             return _deny("guard: segredo detectado no comando")
+        _faltam_artifact = _artifacts_que_nao_existem(command, event)
+        if _faltam_artifact:
+            return _deny("guard: fechar Task exige artifact que EXISTA em disco - nao resolve: "
+                         + "; ".join(_faltam_artifact) + " (repo externo: prefixo ext:)")
         if _bash_targets_kernel(command):
             return _deny("guard: Bash redireciona/copia para o kernel (AGENTS.md, "
                          "CLAUDE.md, CONTRACTS.md ou engine/) - negado")
+        if any(_is_pulso_write_target(alvo) for alvo in _extract_write_targets(command)):
+            return _deny("guard: Bash/PowerShell escrevendo em pulso.json negado - "
+                         "so o hook (Stop -> pulso.recompute) regrava o PULSO")
         # TASK-841/842 (R2, achado do revisor LATTICE): Bash/PowerShell tambem escreve arquivo
         # sem passar por Write/Edit (heredoc, echo/Set-Content com texto inline). So confere
         # identidade quando ha ALVO PUBLICAVEL entre os alvos de escrita extraidos E o comando
@@ -591,7 +920,7 @@ def handle_pretooluse_guard(event: dict) -> dict:
         _alvos_escrita = _extract_write_targets(command)
         _alvos_publicaveis = [a for a in _alvos_escrita if identity_guard.classify_target(a)]
         if _alvos_publicaveis and _bash_carries_inline_content(command):
-            _texto_sem_alvo = command
+            _texto_sem_alvo = _inline_content_text(command)
             for _alvo_pub in _alvos_publicaveis:
                 for _forma_alvo in (_alvo_pub, f'"{_alvo_pub}"', f"'{_alvo_pub}'"):
                     _texto_sem_alvo = _texto_sem_alvo.replace(_forma_alvo, " ")
@@ -604,9 +933,15 @@ def handle_pretooluse_guard(event: dict) -> dict:
                     "real fica na pasta privada (opportunities/)."
                 )
         if PUBLISH_PATTERNS.search(command):
+            if event["_is_subagent"]:
+                return _deny("guard: especialista nunca publica (L70) - publicacao so pela "
+                             "sessao principal, depois do check verde")
             if not _check_marker_valido():
                 return _deny("guard: publicacao sem check (marcador de check ausente, "
-                             "vencido ha mais de 30 min, ou HEAD divergente)")
+                             "vencido ha mais de 30 min, ou HEAD divergente). Rode da raiz do "
+                             "studio: python v2/proof/check.py --repo <caminho do repo a publicar> "
+                             "(grava " + paths.check_marker_path() + " com o HEAD desse repo) e "
+                             "repita o comando em ate 30 min, sem novo commit no repo.")
         return _no_decision()
 
     return _no_decision()
@@ -625,18 +960,6 @@ def _end_lock_off() -> bool:
     if os.environ.get("ALIA_END_LOCK_OFF") == "1":
         return True
     return os.path.exists(os.path.join(_project_dir(), ".claude", "end-lock.off"))
-
-
-def _load_state_for_stop() -> dict | None:
-    """Le state.json so pra checar gate_verdict. Qualquer erro (arquivo
-    ausente, JSON quebrado) devolve None - quem chama trata None como "nao da
-    pra dizer" e a trava SEMPRE libera nesse caso (falha aberta)."""
-    try:
-        with open(paths.state_path(), "r", encoding="utf-8") as fh:
-            data = json.load(fh)
-    except (OSError, json.JSONDecodeError):
-        return None
-    return data if isinstance(data, dict) else None
 
 
 # ---------------------------------------------------------------------------
@@ -738,23 +1061,40 @@ def _aviso_entrega_sem_veredito(event: dict) -> str | None:
     task_id = entrega["task_id"]
     seq = entrega.get("seq")
 
-    state = _load_state_for_stop()
-    if state is None:
-        return None
-    tasks_by_id = {t.get("id"): t for t in state.get("tasks", []) if t.get("id")}
-    task = tasks_by_id.get(task_id)
-    if task is None or task.get("gate_verdict"):
+    # o estado nao e lido aqui - a espinha (`alia task pending`) diz se a Task segue sem veredito.
+    # Qualquer falha (sem state.json, erro interno) devolve None: a trava de fim libera (falha aberta).
+    codigo, res = _alia(["task", "pending", "--id", task_id, "--sem-divida"])
+    if codigo != 0 or task_id not in (res.get("pendentes") or []):
         return None
 
     if seq is not None and ledger.delivery_already_notified(_ledger_path(), session_id, seq):
         return None
     if seq is not None:
         ledger.mark_delivery_notified(_ledger_path(), session_id, seq)
+    # Operacao Deep (TASK-847): antes disso so existia o aviso de texto abaixo (additionalContext,
+    # efemero). Agora tambem vira evento proprio no ledger - insumo de "pressao" do PULSO
+    # (pulso.py, EVENTO_TASK_SEM_VEREDITO), tanto para "alia" quanto para o agent_type executor.
+    import pulso  # noqa: E402 (import tardio - ver comentario no topo do arquivo)
+    ledger.append_event(_ledger_path(), {
+        "event": pulso.EVENTO_TASK_SEM_VEREDITO,
+        "session_id": session_id,
+        "task_id": task_id,
+    })
     return (f"{task_id} voltou sem veredito do Gate - rode o Gate ou feche com veredito "
             "antes de encerrar.")
 
 
 def handle_stop(event: dict) -> dict:
+    # PULSO (Operacao Deep, TASK-847): recalcula e regrava a CADA Stop, sempre, independente de
+    # qualquer interruptor de trava - so grava, nunca decide nada aqui. Envolvido em try/except:
+    # um PULSO quebrado nunca prende o operador (mesmo espirito do resto deste dispatch).
+    try:
+        if _pulso_on():
+            import pulso  # noqa: E402 (import tardio - ver comentario no topo do arquivo)
+            pulso.recompute(_ledger_path(), paths.pulso_path())
+    except Exception:
+        pass
+
     # guarda de idioma (TASK-813) e independente do interruptor ALIA_END_LOCK_OFF/end-lock.off
     # - aquele interruptor e so da trava de fim (TASK-812, gate_verdict), um kill-switch
     # separado, nunca desliga a exigencia de portugues por engano.
@@ -795,22 +1135,31 @@ def _frescor_bloco() -> str:
     Client real ficou 45 dias com mapa velho sem aviso nenhum. Erro = sem aviso (fail-soft, nunca
     prende a sessao), mas grava no ledger como o resto deste despachante."""
     try:
-        import frescor  # noqa: E402 (import tardio - so quando o SessionStart precisa)
+        import frescor  # noqa: E402 (import tardio - mesmo padrao do pulso, ver topo do arquivo)
         root = paths.studio_root()
         velhos = []
         for cid in frescor.clientes_ativos(root):
             resultado = frescor.avaliar_client(root, cid)
             if resultado["veredito"] == "VELHO":
                 velhos.append(resultado)
-        if not velhos:
-            return ""
-        linhas = [frescor.linha_humana(r) for r in velhos[:8]]
-        aviso = ["[CONHECIMENTO VELHO]"] + linhas + [
-            "Antes de trabalhar nesse Client, leia a fonte (client.md, artifacts/, CHANGELOG do "
-            "codigo), nao o mapa. Refazer: /graphify clients/<id>/squad/knowledge e "
-            "scripts/kb-index.ps1."
-        ]
-        return chr(10).join(aviso)
+        blocos = []
+        if velhos:
+            linhas = [frescor.linha_humana(r) for r in velhos[:8]]
+            blocos.append("\n".join(["[CONHECIMENTO VELHO]"] + linhas + [
+                "Antes de trabalhar nesse Client, leia a fonte (client.md, artifacts/, CHANGELOG do "
+                "codigo), nao o mapa. Refazer: /graphify clients/<id>/squad/knowledge e "
+                "scripts/kb-index.ps1."
+            ]))
+        agentes = frescor.agentes_velhos(root)
+        if agentes:
+            por_client: dict[str, list[str]] = {}
+            for a in agentes:
+                por_client.setdefault(a["client"], []).append(a["agente"])
+            linhas_a = [f"{c}: {len(n)} agente(s) gerado(s) atras da persona ({', '.join(n[:4])})"
+                        for c, n in sorted(por_client.items())[:8]]
+            blocos.append("\n".join(["[AGENTE VELHO]"] + linhas_a + [
+                "A persona mudou depois de gerar o agente. Refazer: python v2/bin/client.py use <id>."]))
+        return "\n\n".join(blocos)
     except Exception as exc:
         try:
             ledger.append_event(_ledger_path(), {"event": "frescor_error", "error": str(exc)[:300]})
@@ -820,14 +1169,24 @@ def _frescor_bloco() -> str:
 
 
 def handle_session_start(event: dict) -> dict:
-    # TASK-856: startup/resume injeta o aviso de conhecimento velho (frescor.py). Compact
-    # continua tratado abaixo, sem mudanca.
+    # PULSO (Operacao Deep, TASK-847): startup/resume injeta o bloco "alia" (o unico source que
+    # o dispatch tratava ate aqui era "compact", branch abaixo - nunca mexido). Sem pulso.json
+    # ainda (Alia nova, ou PULSO nunca rodou) render() devolve "" e nada e injetado.
     if event.get("source") in ("startup", "resume"):
-        bloco_frescor = _frescor_bloco()
-        if not bloco_frescor:
+        try:
+            if not _pulso_on():
+                raise RuntimeError("PULSO desligado")
+            import pulso  # noqa: E402 (import tardio - ver comentario no topo do arquivo)
+            estado = pulso.load_state(paths.pulso_path())
+            bloco = pulso.render("alia", estado)
+        except Exception:
+            bloco = ""
+        bloco_frescor = _frescor_bloco()  # TASK-856: aviso de conhecimento velho, combinado com o PULSO
+        partes = [b for b in (bloco, bloco_frescor, _espinha_abre_sessao(event)) if b]
+        if not partes:
             return {}
         return {"hookSpecificOutput": {"hookEventName": "SessionStart",
-                                        "additionalContext": bloco_frescor}}
+                                        "additionalContext": "\n\n".join(partes)}}
 
     if event.get("source") != "compact":
         return {}
@@ -852,6 +1211,66 @@ def handle_session_start(event: dict) -> dict:
         "task_id": task_id,
     })
     return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": contexto}}
+
+
+# ---------------------------------------------------------------------------
+# ADAPTADOR da espinha Cliente>Projeto>Tarefa (Claude Code). Zero regra de dominio aqui: o
+# evento do host vira chamada `alia` (bin/alia.py, em processo) e o que ela recusa vira deny.
+# Declaracao (matriz em adapters/matriz.json): BLOQUEIA PreToolUse Agent|Task (task dispatch) e
+# PreToolUse Grep|Glob (graph check); SO AVISA SessionStart (open) e Stop (task pending).
+# Falha aberta so quando a espinha nao existe nesta instancia (sem state.json) ou quebrou por dentro.
+# ---------------------------------------------------------------------------
+
+_ESPINHA_SEM_VOTO = ("state_ausente", "erro_interno", "uso_invalido")
+
+
+def _alia(argv: list[str]) -> tuple[int, dict]:
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bin"))
+        import alia  # noqa: E402 (import tardio: so quem fala com a espinha paga o custo)
+        return alia.run(argv)
+    except Exception as exc:  # noqa: BLE001 - fronteira: adaptador nunca derruba o hook
+        return 1, {"ok": False, "regra": "erro_interno", "error": str(exc)}
+
+
+def _negacao_da_espinha(codigo: int, res: dict) -> dict | None:
+    if codigo == 0 or res.get("regra") in _ESPINHA_SEM_VOTO:
+        return None
+    return _deny(f"espinha: {res.get('error')} [{res.get('regra')}]")
+
+
+def _espinha_dispatch(event: dict) -> dict | None:
+    tool_input = event.get("tool_input") or {}
+    agente, sessao = tool_input.get("subagent_type"), event.get("session_id")
+    if not agente or not sessao:
+        return None
+    return _negacao_da_espinha(*_alia(["task", "dispatch", "--specialist", str(agente), "--session", str(sessao)]))
+
+
+def _espinha_grafo(event: dict) -> dict | None:
+    tool_input = event.get("tool_input") or {}
+    if not event.get("session_id"):
+        return None
+    codigo, res = _alia(["graph", "check", "--session", str(event["session_id"]), "--tool", str(event.get("tool_name")),
+                         "--path", str(tool_input.get("path") or ""), "--cwd", str(event.get("cwd") or ""),
+                         "--host", "claude", "--transcript", str(event.get("transcript_path") or "")])
+    negacao = _negacao_da_espinha(codigo, res)
+    if negacao:
+        return negacao
+    if res.get("aviso"):
+        return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": res["aviso"]}}
+    return None
+
+
+def _espinha_abre_sessao(event: dict) -> str:
+    """SessionStart startup|resume: `alia open` grava session_opened. So AVISA, e so quando ha o que fazer
+    (Tasks abertas com projeto fora do cadastro): tudo em dia = silencio (o contrato do SessionStart)."""
+    codigo, res = _alia(["open", "--session", str(event.get("session_id") or "")])
+    fora = (res.get("divida") or {}).get("abertas_com_projeto_fora_do_cadastro", 0)
+    if codigo != 0 or not fora:
+        return ""
+    return (f"[ESPINHA] {fora} Tasks abertas com projeto fora do cadastro: cadastre com "
+            "`python v2/bin/alia.py project add --client <id> --from-tasks` (ou --id <projeto>).")
 
 
 # ---------------------------------------------------------------------------
@@ -887,13 +1306,28 @@ def main() -> int:
 
         if hook == "PreToolUse":
             if tool_name in ("Agent", "Task"):
+                _negado_teto = _subagent_cap_check(event)
+                if _negado_teto:
+                    _write_stdout(_negado_teto)
+                    return 0
+                _negado_espinha = _espinha_dispatch(event)
+                if _negado_espinha:
+                    _write_stdout(_negado_espinha)
+                    return 0
                 handle_pre_agent(event)
-                _write_stdout(_no_decision())
+                _write_stdout(handle_pretooluse_pulso_inject(event))
                 return 0
-            if tool_name in ("Write", "Edit", "Bash", "PowerShell"):
+            if tool_name in ("Grep", "Glob"):
+                _write_stdout(_espinha_grafo(event) or _no_decision())
+                return 0
+            if tool_name in ("Write", "Edit", "NotebookEdit", "Bash", "PowerShell"):
                 _write_stdout(handle_pretooluse_guard(event))
                 return 0
             _write_stdout(_no_decision())
+            return 0
+
+        if hook == "UserPromptSubmit":
+            _write_stdout(handle_user_prompt_submit(event))
             return 0
 
         if hook == "PostToolUse":

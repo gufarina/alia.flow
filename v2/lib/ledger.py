@@ -134,6 +134,34 @@ def read_events(path: str) -> list[dict]:
     return events
 
 
+def read_events_from(path: str, offset: int) -> tuple[list[dict], int]:
+    """Le SO as linhas gravadas depois do byte `offset` - nunca reconstroi o ledger inteiro a
+    cada chamada. Usado por `pulso.py` (Operacao Deep, TASK-847) para recalcular o PULSO no Stop
+    sem repetir o gargalo de 50 mil linhas que o indice pre_agent/post_agent acima ja resolveu
+    para outro caso (TASK-812/2.0.1). Offset invalido (arquivo truncado/rotacionado, menor que o
+    offset pedido) cai para 0 e relê do inicio - nunca lança, sempre devolve algo consistente.
+    Devolve (eventos_novos, novo_offset) - `novo_offset` e o byte onde a proxima leitura comeca.
+    """
+    if not os.path.exists(path):
+        return [], 0
+    tamanho = os.path.getsize(path)
+    if offset > tamanho:
+        offset = 0
+    eventos: list[dict] = []
+    with open(path, "r", encoding="utf-8") as fh:
+        fh.seek(offset)
+        for raw in fh:
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                eventos.append(json.loads(raw))
+            except json.JSONDecodeError:
+                continue
+        novo_offset = fh.tell()
+    return eventos, novo_offset
+
+
 def cost_already_recorded(path: str, agent_id: str) -> bool:
     """True se ja existe post_agent com custo gravado para este agent_id.
 

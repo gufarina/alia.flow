@@ -85,6 +85,11 @@ def _valid_values(state: dict) -> tuple[list[str], dict[str, list[str]], dict[st
     return clients, projects_by_client_sorted, squad_by_client
 
 
+def cadastro_de_projetos(state: dict) -> dict[str, list[str]]:
+    """Projetos CADASTRADOS por Client (client.projects[]) - o enum que `open` exige."""
+    return {c["id"]: list(c.get("projects") or []) for c in state.get("clients", []) if c.get("id")}
+
+
 def _next_task_id(state: dict) -> str:
     nums = []
     for t in state.get("tasks", []):
@@ -116,7 +121,7 @@ def cmd_open(args: argparse.Namespace) -> dict:
 
     clients, projects_by_client, squad_by_client = _valid_values(state)
     try:
-        task_fields = task_model.abrir(brief, clients)
+        task_fields = task_model.abrir(brief, clients, cadastro_de_projetos(state))
     except task_model.TaskError as exc:
         extra = dict(exc.extra)
         extra["clients_validos"] = clients
@@ -169,6 +174,12 @@ def _raiz_do_recibo(args: argparse.Namespace) -> str:
     return paths.studio_root()
 
 
+def bases_de_artifact(args: argparse.Namespace) -> list[str]:
+    """Onde procurar um artifact relativo: cwd, raiz do estudio e a pasta que o contem (repos irmaos)."""
+    raiz = _raiz_do_recibo(args)
+    return [os.getcwd(), raiz, os.path.dirname(os.path.abspath(raiz))]
+
+
 def cmd_close(args: argparse.Namespace) -> dict:
     state = _load_state(args.state)
     tasks = state.get("tasks", [])
@@ -184,6 +195,7 @@ def cmd_close(args: argparse.Namespace) -> dict:
         task_fechada = task_model.fechar(
             task, args.veredito, args.artifact, events,
             root_cause=args.root_cause, criterio_reprovado=args.criterio_reprovado,
+            bases=bases_de_artifact(args),
         )
     except task_model.TaskError as exc:
         return _err(exc.msg, **exc.extra)

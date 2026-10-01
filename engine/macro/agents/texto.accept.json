@@ -1,0 +1,6 @@
+{
+  "p": "Usando so clients/alia-flow-lab/docs/CLAIMS.md e docs/BRAND.md, escreva em uma linha o que e o Alia Flow. Nao use a palavra COO.",
+  "deve": ["Alia"],
+  "nao": ["\\bCOO\\b", "—", "–"],
+  "gabarito": "CLAUDE.md do studio: identidade vigente 'braco direito'; COO foi derrubado em 02/jul; CEO veta travessao"
+}

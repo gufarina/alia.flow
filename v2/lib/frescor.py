@@ -11,6 +11,7 @@ devolve um dict; nunca imprime, nunca decide o que fazer com o resultado (isso e
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -22,6 +23,7 @@ MUDARAM_VELHO = 10  # mudaram > 10 vira VELHO sozinho, sem depender da idade
 STATUS_FORA = ("arquivado", "pontual")
 INDICE_GERADO = ("MAP.md", "edges.json")
 PRAZO_MAX_DIAS = 14  # divida com prazo maior que isto nao cala: prazo longo e o mesmo que sem prazo
+MAX_LINHAS_DIVIDA = 2  # 1 registro + 1 renovacao. A 3a linha do mesmo Client nao cala (renovar sem fim = aviso nunca volta)
 
 
 def _mtime(path: str) -> float | None:
@@ -153,11 +155,12 @@ def _checar_produto(client_md: str) -> dict | None:
 def _checar_divida(studio_root: str, client_id: str) -> dict:
     """valida: data (str) so quando >= hoje. vencida: data (str) quando a linha existe mas
     esta no passado. Linha sem data reconhecivel nunca cala nada (nem entra em nenhum dos 2)."""
-    resultado: dict = {"valida": None, "vencida": None}
+    resultado: dict = {"valida": None, "vencida": None, "esgotada": False}
     path = os.path.join(studio_root, "studio", "conhecimento-dividas.txt")
     if not os.path.isfile(path):
         return resultado
     hoje = datetime.now(timezone.utc).date()
+    linhas_do_client = 0  # linhas com data do Client, vencidas ou nao: a historia conta, renovar = nova linha
     with open(path, "r", encoding="utf-8") as fh:
         for linha in fh:
             linha = linha.strip()
@@ -170,6 +173,11 @@ def _checar_divida(studio_root: str, client_id: str) -> dict:
             if not m:
                 continue
             data_divida = datetime(int(m.group(1)), int(m.group(2)), int(m.group(3))).date()
+            linhas_do_client += 1
+            if linhas_do_client > MAX_LINHAS_DIVIDA:
+                resultado["esgotada"] = True  # renovada mais de 1 vez: nunca mais cala
+                resultado["valida"] = None
+                continue
             if (data_divida - hoje).days > PRAZO_MAX_DIAS:
                 continue  # prazo longo demais nao cala nada
             if data_divida >= hoje:
@@ -242,7 +250,7 @@ def avaliar_client(studio_root: str, client_id: str) -> dict:
         or indice["veredito"] == "VELHO"
         or (produto is not None and produto.get("ficha") == "ATRASADA")
     )
-    if bruto_velho and divida["valida"]:
+    if bruto_velho and divida["valida"] and not divida["esgotada"]:
         veredito = f"CALADO_ATE {divida['valida']}"
     elif bruto_velho:
         veredito = "VELHO"
@@ -256,6 +264,7 @@ def avaliar_client(studio_root: str, client_id: str) -> dict:
         "entregas": entregas,
         "produto": produto,
         "divida_vencida": divida["vencida"],
+        "divida_esgotada": divida["esgotada"],
         "veredito": veredito,
     }
 
@@ -293,6 +302,64 @@ def linha_humana(resultado: dict) -> str:
             f"ficha atras, produto na {produto['versao']} ({_data_br(produto.get('data'))})"
         )
     entregas = resultado["entregas"]
+    if resultado.get("divida_esgotada"):
+        partes.append("divida ja renovada 1 vez, nao cala mais: refazer o mapa")
     partes.append(f"{entregas['quantidade']} entregas")
     corpo = "; ".join(partes)
     return f"{resultado['client']}: {resultado['veredito']} - {corpo}"
+
+
+_SOURCE_HASH_RE = re.compile(r"<!--\s*source_hash:\s*([0-9a-f]{16})\s*-->")
+
+
+def _hash_fonte(studio_root: str, client: str, agente: str) -> str | None:
+    """sha256(bytes de <id>.md + <id>.yaml + squad.yaml)[:16] da fonte do agente (macro: sem
+    squad.yaml, em engine/macro/agents). Mesma regra da bridge (v2/squad/bridge.ps1). None se a
+    fonte nao existe (agente orfao: nao e 'velho', e outro problema)."""
+    if client == "macro":
+        base, extra = os.path.join(studio_root, "engine", "macro", "agents"), []
+    else:
+        sq = os.path.join(studio_root, "clients", client, "squad")
+        base, extra = os.path.join(sq, "agents"), [os.path.join(sq, "squad.yaml")]
+    partes = [os.path.join(base, agente + ".md"), os.path.join(base, agente + ".yaml")] + extra
+    if not all(os.path.isfile(p) for p in partes):
+        return None
+    h = hashlib.sha256()
+    for p in partes:
+        with open(p, "rb") as fh:
+            h.update(fh.read())
+    return h.hexdigest()[:16]
+
+
+def agentes_velhos(studio_root: str, agents_dir: str | None = None) -> list[dict]:
+    """[AGENTE VELHO]: bundle em .claude/agents cujo `source_hash` difere do hash atual da
+    fonte (persona editada depois de gerar). Mesma regra de divida com prazo do mapa:
+    `studio/conhecimento-dividas.txt` cala o Client, no maximo 1 renovacao. Devolve
+    [{client, agente, arquivo, esperado, gravado}], so os NAO calados."""
+    agents_dir = agents_dir or os.path.join(studio_root, ".claude", "agents")
+    clients_dir = os.path.join(studio_root, "clients")
+    ids = ["macro"] + (sorted(os.listdir(clients_dir)) if os.path.isdir(clients_dir) else [])
+    ids = sorted(ids, key=len, reverse=True)
+    if not os.path.isdir(agents_dir):
+        return []
+    velhos: list[dict] = []
+    for nome in sorted(os.listdir(agents_dir)):
+        if not nome.endswith(".md"):
+            continue
+        dono = next((c for c in ids if nome.lower().startswith(c.lower() + "-")), None)
+        if dono is None:
+            continue
+        with open(os.path.join(agents_dir, nome), "r", encoding="utf-8", errors="replace") as fh:
+            achados = _SOURCE_HASH_RE.findall(fh.read())
+        if not achados:
+            continue  # bundle sem hash: gerado antes do hash, nao ha o que comparar
+        agente = nome[len(dono) + 1:-3]
+        # a fonte guarda o id em minusculas ou no case da pasta: tenta os dois
+        esperado = _hash_fonte(studio_root, dono, agente) or _hash_fonte(studio_root, dono, agente.lower())
+        if esperado is None or esperado == achados[-1]:
+            continue
+        div = _checar_divida(studio_root, dono)
+        if div["valida"] and not div["esgotada"]:
+            continue
+        velhos.append({"client": dono, "agente": agente, "arquivo": nome, "esperado": esperado, "gravado": achados[-1]})
+    return velhos

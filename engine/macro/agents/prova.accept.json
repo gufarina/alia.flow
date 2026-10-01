@@ -1,0 +1,6 @@
+{
+  "p": "Segundo o AGENTS.md de clients/alia-flow-lab, qual e a prova oficial do motor e com que exit code ela aprova? Cite o arquivo.",
+  "deve": ["v2[\\\\/]proof[\\\\/]check\\.py", "exit 0|exit code 0|\\b0\\b"],
+  "nao": ["\\bnao sei\\b"],
+  "gabarito": "AGENTS.md, secao Provas deterministicas: python v2/proof/check.py; exit 0 so com todas as provas passando"
+}

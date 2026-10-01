@@ -1,0 +1,196 @@
+"""grafo_gate.py - trava de ADOCAO do grafo e do wiki.
+
+Reconstroi na 2.0 o gate do grafo que existia na 1.x: varrer codigo/docs de um Client com Grep/Glob
+sem ter lido, NA SESSAO, o `GRAPH_REPORT.md` do mapa (ou o `wiki/index.md` do vault) e recusado ou
+avisado, conforme a matriz do host (adapters/matriz.json: graph_gate). A regra mora aqui; o adaptador
+so traduz o evento do host em `alia graph check` / `alia graph read`.
+
+Escopo (igual ao ledger da 1.x): dentro do studio `clients/<id>`; fora, `external:<pasta que contem o
+graphify-out>`; vault, `wiki:<pasta wiki>`. Sem mapa achado = fallback, NUNCA bloqueia. Caminho de
+infra (memory/, _backups/, .claude/, node_modules, scratchpad, temp) nunca entra.
+
+Interruptor de emergencia (desliga so o BLOQUEIO; a medida continua): ALIA_GRAPH_GATE_OFF=1 ou o
+arquivo `.claude/graph-gate.off` na raiz do estudio. Evidencia de leitura: sidecar `<ledger>.grafo.json`
+(O(1), nunca reler o ledger) + eventos graph_read / graph_scan no ledger (insumo da medida de adocao).
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+
+import espinha
+import paths
+
+INFRA = ("/memory/", "/_backups/", "/.claude/", "/node_modules/", "/scratchpad", "/.git/")
+RELATORIOS = ("graph_report.md", "graph.json")
+_CONSULTA_BASH = re.compile(r"graph_report|graphify\s+(query|path|explain)", re.IGNORECASE)
+
+
+def _n(p: str) -> str:
+    return (p or "").replace("\\", "/")
+
+
+def _infra(ap: str) -> bool:
+    low = _n(ap).lower() + "/"
+    return any(m in low for m in INFRA)
+
+
+def achar_escopo(path: str, cwd: str = "") -> dict | None:
+    """{"escopo","mapa","tipo"} do mapa que cobre `path`, ou None (sem mapa = nunca bloqueia)."""
+    if not path:
+        path = cwd
+    if not path:
+        return None
+    ap = _n(os.path.abspath(path if os.path.isabs(path) else os.path.join(cwd or os.getcwd(), path)))
+    if _infra(ap):
+        return None
+    # wiki: ancestral chamada wiki com index.md, ou o vault raiz (pasta que tem wiki/index.md)
+    d = ap
+    for _ in range(25):
+        if os.path.basename(d) == "wiki" and os.path.isfile(d + "/index.md"):
+            return {"escopo": f"wiki:{d.lower()}", "mapa": d + "/index.md", "tipo": "wiki"}
+        if d == ap and os.path.isfile(d + "/wiki/index.md"):
+            return {"escopo": f"wiki:{d.lower()}/wiki", "mapa": d + "/wiki/index.md", "tipo": "wiki"}
+        pai = os.path.dirname(d)
+        if pai == d:
+            break
+        d = pai
+    m = re.search(r"^(.*?/clients/([a-z0-9._-]+))(/|$)", ap, re.IGNORECASE)
+    if m:
+        base = m.group(1)
+        for cand in (base + "/squad/knowledge/graphify-out/GRAPH_REPORT.md", base + "/graphify-out/GRAPH_REPORT.md"):
+            if os.path.isfile(cand):
+                return {"escopo": f"clients/{m.group(2).lower()}", "mapa": cand, "tipo": "grafo"}
+    d = ap
+    for _ in range(25):
+        cand = d + "/graphify-out/GRAPH_REPORT.md"
+        if os.path.isfile(cand):
+            return {"escopo": ("clients/" + m.group(2).lower()) if m else f"external:{d.lower()}", "mapa": cand,
+                    "tipo": "grafo"}
+        pai = os.path.dirname(d)
+        if pai == d:
+            break
+        d = pai
+    return None
+
+
+def _sidecar() -> str:
+    return paths.ledger_path() + ".grafo.json"
+
+
+def _ler() -> dict:
+    try:
+        with open(_sidecar(), "r", encoding="utf-8") as fh:
+            d = json.load(fh)
+        return d if isinstance(d, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _gravar(d: dict) -> None:
+    try:
+        os.makedirs(os.path.dirname(_sidecar()) or ".", exist_ok=True)
+        with open(_sidecar(), "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(d, fh)
+    except OSError:
+        pass
+
+
+def gate_desligado() -> bool:
+    if os.environ.get("ALIA_GRAPH_GATE_OFF") == "1":
+        return True
+    return os.path.exists(os.path.join(paths.studio_root(), ".claude", "graph-gate.off"))
+
+
+def modo_do_host(host: str) -> str:
+    try:
+        with open(os.path.join(espinha.V2, "adapters", "matriz.json"), "r", encoding="utf-8") as fh:
+            return str((json.load(fh).get(host) or {}).get("graph_gate") or "avisa")
+    except (OSError, json.JSONDecodeError):
+        return "avisa"
+
+
+def registrar_leitura(ledger_mod, session: str, path: str = "", command: str = "", cwd: str = "") -> dict:
+    """Marca que a sessao CONSULTOU o mapa/indice. So conta: GRAPH_REPORT.md, graph.json, wiki/index.md,
+    ou comando `graphify query|path|explain` (esse vale para qualquer escopo: escopo `*`)."""
+    if not session:
+        return {"ok": True, "registrado": False, "motivo": "sem session"}
+    escopo = None
+    if command and _CONSULTA_BASH.search(command):
+        escopo = "*"
+    elif path:
+        base = os.path.basename(_n(path)).lower()
+        if base in RELATORIOS or (base == "index.md" and os.path.basename(os.path.dirname(_n(path))).lower() == "wiki"):
+            achado = achar_escopo(path, cwd)
+            escopo = achado["escopo"] if achado else None
+    if not escopo:
+        return {"ok": True, "registrado": False}
+    d = _ler()
+    ent = d.setdefault(session, {}).setdefault(escopo, {})
+    if not ent.get("lido"):
+        ent["lido"] = True
+        _gravar(d)
+        ledger_mod.append_event(paths.ledger_path(), {"event": "graph_read", "session_id": session, "scope": escopo})
+    return {"ok": True, "registrado": True, "escopo": escopo}
+
+
+def _lido_no_transcript(transcript: str, mapa: str) -> bool:
+    """Host que nao hooka Read (Claude Code: matcher so Grep|Glob, de proposito - um spawn por Read
+    custaria mais que o gate vale): a leitura do mapa esta no transcript da propria sessao. Busca de
+    texto, sem parse; so roda quando a sessao ainda nao esta marcada como lida."""
+    if not transcript or not os.path.isfile(transcript):
+        return False
+    alvo = _n(mapa).lower()
+    try:
+        with open(transcript, "r", encoding="utf-8", errors="replace") as fh:
+            for linha in fh:
+                if "tool_use" not in linha:
+                    continue
+                baixo = linha.replace("\\\\", "/").replace("\\", "/").lower()
+                if alvo in baixo or _CONSULTA_BASH.search(baixo):
+                    return True
+    except OSError:
+        return False
+    return False
+
+
+def checar(ledger_mod, session: str, tool: str, path: str, cwd: str, host: str, transcript: str = "") -> dict:
+    """Varredura (Grep/Glob) de `path`. Levanta Recusa('grafo_nao_lido') quando o host bloqueia e a
+    sessao nao leu o mapa do escopo; senao devolve {"ok":True,"acao":"libera"|"avisa"}."""
+    if not session:
+        return {"ok": True, "acao": "libera", "motivo": "sem session"}
+    if path and os.path.isfile(path if os.path.isabs(path) else os.path.join(cwd or os.getcwd(), path)):
+        return {"ok": True, "acao": "libera", "motivo": "alvo e um arquivo, nao varredura"}
+    achado = achar_escopo(path, cwd)
+    if achado is None:
+        return {"ok": True, "acao": "libera", "motivo": "sem mapa neste escopo"}
+    escopo = achado["escopo"]
+    d = _ler()
+    sess = d.setdefault(session, {})
+    ent = sess.setdefault(escopo, {})
+    lido = bool(ent.get("lido") or (sess.get("*") or {}).get("lido"))
+    if not lido and _lido_no_transcript(transcript, achado["mapa"]):
+        lido = ent["lido"] = True
+        ledger_mod.append_event(paths.ledger_path(), {"event": "graph_read", "session_id": session, "scope": escopo,
+                                                      "fonte": "transcript"})
+    if lido and ent.get("varreu"):
+        return {"ok": True, "acao": "libera", "escopo": escopo}
+    desligado = gate_desligado()
+    modo = modo_do_host(host)
+    acao = "libera" if lido else ("bloqueia" if (modo == "bloqueia" and not desligado) else "avisa")
+    if not (ent.get("varreu") or ent.get("barrado")):  # a medida: 1 evento por (sessao, escopo), mesmo com o bloqueio desligado
+        ledger_mod.append_event(paths.ledger_path(), {"event": "graph_scan", "session_id": session, "scope": escopo,
+                                                      "tool": tool, "lido_antes": lido, "acao": acao,
+                                                      "bloqueio_desligado": desligado})
+    ent["varreduras"] = int(ent.get("varreduras", 0)) + 1
+    ent["barrado" if acao == "bloqueia" else "varreu"] = True
+    _gravar(d)
+    if lido:
+        return {"ok": True, "acao": "libera", "escopo": escopo}
+    msg = (f"Antes de varrer {escopo}, leia {achado['mapa']} (God Nodes / Community Hubs; "
+           f"{'indice do wiki' if achado['tipo'] == 'wiki' else 'mapa do grafo'}). "
+           "Interruptor de emergencia: ALIA_GRAPH_GATE_OFF=1 ou .claude/graph-gate.off.")
+    if acao == "bloqueia":
+        raise espinha.Recusa("grafo_nao_lido", msg, escopo=escopo, mapa=achado["mapa"], ferramenta=tool, host=host)
+    return {"ok": True, "acao": "avisa", "aviso": msg, "escopo": escopo, "mapa": achado["mapa"]}

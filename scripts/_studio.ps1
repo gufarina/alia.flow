@@ -1,3 +1,87 @@
+# Resolve-ArtifactItems (TASK-787, remediacao - achado da coordenadora): FONTE UNICA de resolucao
+# de prova de Artifact, usada por register-task.ps1 (o registro) E gate-check.ps1 (o portao).
+# Causa raiz do defeito medido (opportunities/bancada-portas/remedicao.py, 15 provas): cada script
+# tinha a PROPRIA logica de resolver caminho relativo, e quando uma regra mudava (relativo a pasta
+# que CONTEM o studio, onde moram os repositorios irmaos), so um dos dois aprendia. Daqui em
+# diante, nenhum dos dois pode ter logica propria de resolucao - so este ponto.
+# Formato canonico: itens separados por ";"; cada item e URL http(s) OU caminho de ARQUIVO OU
+# PASTA (absoluto, relativo a raiz do studio, ou relativo a pasta que CONTEM o studio). Prova por
+# TIPO (achado da coordenadora - "pasta" nao e "arquivo"): arquivo existe e tem tamanho > 0; pasta
+# existe e NAO esta vazia; url e "url" (nao verificavel por caminho, quem chama decide o que fazer
+# com isso - hoje vira SKIP/aceite, nunca FAIL). Barra final na pasta NUNCA muda o resultado.
+# Devolve array de objetos: @{ item; isUrl; tipo("arquivo"|"pasta"|"url"|""); resolvedPath; found; exists }.
+# "found" = achou ALGO no caminho (arquivo ou pasta, mesmo vazio). "exists" = found E valido pro
+# TIPO (arquivo com conteudo, pasta com conteudo) - e o booleano final que register-task.ps1 usa;
+# gate-check.ps1 usa found+exists pra distinguir "nao existe" de "existe mas vazio".
+function Resolve-ArtifactItems {
+  param([string]$ArtifactStr, [string]$StudioRootPath)
+  $out = New-Object System.Collections.Generic.List[object]
+  # CONSERTO (achado da coordenadora): a raiz chegava as vezes RELATIVA (".", ".\", etc, quando o
+  # chamador roda da propria raiz do studio) - Split-Path -Parent "." devolve vazio, entao o ramo
+  # do repositorio IRMAO nunca rodava (a derivacao do pai precisa de caminho ABSOLUTO). Absolutiza
+  # ANTES de qualquer derivacao - unica linha nova, resolve "." e "./" contra o cwd de quem chamou.
+  if (-not [string]::IsNullOrWhiteSpace($StudioRootPath)) {
+    # NUNCA [System.IO.Path]::GetFullPath aqui: ele resolve contra Environment.CurrentDirectory,
+    # que NAO acompanha Push-Location/Set-Location do PowerShell (o defeito medido pela
+    # coordenadora: "." e "./" ficavam FAIL rodando de dentro do studio via Push-Location, so o
+    # caminho ABSOLUTO passava). GetUnresolvedProviderPathFromPSPath resolve contra o cwd REAL do
+    # PowerShell (o provider path), a mesma nocao de "onde estou" que Get-Location usa.
+    try { $StudioRootPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($StudioRootPath) } catch { }
+  }
+  if ([string]::IsNullOrWhiteSpace($ArtifactStr)) { return $out.ToArray() }
+  $items = @($ArtifactStr -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+  foreach ($it in $items) {
+    if ($it -match '^(?i)https?://') {
+      $out.Add([PSCustomObject]@{ item = $it; isUrl = $true; tipo = "url"; resolvedPath = ""; found = $true; exists = $true })
+      continue
+    }
+    # barra final (pasta "com barra") nunca pode mudar o resultado - apara antes de testar.
+    $itTrim = $it.TrimEnd('\', '/')
+    if ([string]::IsNullOrWhiteSpace($itTrim)) { $itTrim = $it }
+    $resolved = ""
+    $found = $false
+    try {
+      if ([System.IO.Path]::IsPathRooted($itTrim) -and (Test-Path -LiteralPath $itTrim)) { $resolved = $itTrim; $found = $true }
+    } catch { }
+    if (-not $found -and -not [string]::IsNullOrWhiteSpace($StudioRootPath)) {
+      try {
+        $tryStudio = Join-Path $StudioRootPath $itTrim
+        if (Test-Path -LiteralPath $tryStudio) { $resolved = $tryStudio; $found = $true }
+      } catch { }
+    }
+    if (-not $found -and -not [string]::IsNullOrWhiteSpace($StudioRootPath)) {
+      try {
+        $siblingRoot = Split-Path -Parent $StudioRootPath
+        if (-not [string]::IsNullOrWhiteSpace($siblingRoot)) {
+          $trySibling = Join-Path $siblingRoot $itTrim
+          if (Test-Path -LiteralPath $trySibling) { $resolved = $trySibling; $found = $true }
+        }
+      } catch { }
+    }
+    $tipo = ""
+    $validExists = $false
+    if ($found) {
+      $isContainer = $false
+      try { $isContainer = (Get-Item -LiteralPath $resolved -Force).PSIsContainer } catch { }
+      if ($isContainer) {
+        $tipo = "pasta"
+        $childCount = 0
+        try { $childCount = @(Get-ChildItem -LiteralPath $resolved -Force -ErrorAction SilentlyContinue).Count } catch { }
+        $validExists = $childCount -gt 0
+      } else {
+        $tipo = "arquivo"
+        $sz = 0
+        try { $sz = (Get-Item -LiteralPath $resolved -Force).Length } catch { }
+        $validExists = $sz -gt 0
+      }
+    } else {
+      $resolved = if (-not [string]::IsNullOrWhiteSpace($StudioRootPath)) { Join-Path $StudioRootPath $itTrim } else { $itTrim }
+    }
+    $out.Add([PSCustomObject]@{ item = $it; isUrl = $false; tipo = $tipo; resolvedPath = $resolved; found = $found; exists = $validExists })
+  }
+  return $out.ToArray()
+}
+
 # _studio.ps1 - resolve a pasta de dados (o "studio") a partir do alia.config.json.
 # O engine nunca crava "studio/": le o caminho do campo studio_dir na config.
 #   studio_dir = "."       => os dados ficam na RAIZ da instalacao (ao lado do engine).

@@ -21,6 +21,7 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 V2 = os.path.dirname(HERE)
 TASK_PY = os.path.join(V2, "bin", "task.py")
+ARTIFACT_OK = os.path.abspath(__file__)  # close exige artifact que EXISTA em disco
 def _sandbox_tempdir(prefix: str) -> str:
     """Sandbox de teste SEMPRE fora de v2/ (pasta temporaria do sistema), nunca dentro do
     motor - a origem do vazamento medido pelo CEO (state.json real copiado para dentro de
@@ -128,6 +129,16 @@ PROJETO_CLIENTE = sorted({
     if t.get("client") == CLIENTE and t.get("project")
 })[0]
 
+# `open` so aceita projeto CADASTRADO (client.projects[]); a copia de teste cadastra os dois que
+# esta prova usa (a recusa de projeto fora do cadastro tem prova propria em test_espinha.py).
+with open(COPY, "r", encoding="utf-8") as fh:
+    _estado_teste = json.load(fh)
+for _c in _estado_teste["clients"]:
+    if _c.get("id") == CLIENTE:
+        _c["projects"] = ["teste-i2", "teste-gate"]
+with open(COPY, "w", encoding="utf-8", newline="\n") as fh:
+    json.dump(_estado_teste, fh, ensure_ascii=False, indent=2)
+
 print("=== I2 prova negativa: campo do checklist faltando ===")
 brief_incompleto = json.dumps({"client": CLIENTE, "project": "teste-i2"})
 out, rc = run_task("--state", COPY, "open", "--brief", brief_incompleto)
@@ -206,13 +217,13 @@ check("Task nova recebe risco (funcao pura de flow/risk.py)", (out.get("task") o
 check("Task nova recebe modo (direto, sem 2+ frentes no brief)", (out.get("task") or {}).get("modo") == "direto", str(out.get("task")))
 
 print("\n=== I2 prova negativa: close sem veredito ===")
-out, rc = run_task("--state", COPY, "close", "--id", new_id, "--artifact", "x.md")
+out, rc = run_task("--state", COPY, "close", "--id", new_id, "--artifact", ARTIFACT_OK)
 check("close sem --veredito nao fecha", out.get("ok") is False, str(out))
 
 print("\n=== I2 prova negativa (TASK-804): close sem evidencia de veredito no ledger nao fecha ===")
 with open(LEDGER, "w", encoding="utf-8") as fh:
     fh.write(json.dumps({"event": "post_agent", "task_id": new_id, "tokens_total": 12345, "agent_id": "a1"}) + "\n")
-out, rc = run_task("--state", COPY, "close", "--id", new_id, "--artifact", "v2/proof/test_task.py",
+out, rc = run_task("--state", COPY, "close", "--id", new_id, "--artifact", ARTIFACT_OK,
                     "--veredito", "PASS", "--ledger", LEDGER)
 check("close com veredito digitado mas sem review_verdict/gate_check no ledger nao fecha (autocertificacao morre aqui)",
       out.get("ok") is False, str(out))
@@ -223,7 +234,7 @@ with open(LEDGER, "w", encoding="utf-8") as fh:
     fh.write(json.dumps({"event": "post_agent", "task_id": new_id, "tokens_total": 678, "agent_id": "a2"}) + "\n")
     fh.write(json.dumps({"event": "post_agent", "task_id": "TASK-999-outra", "tokens_total": 99999, "agent_id": "a3"}) + "\n")
     fh.write(json.dumps({"event": "review_verdict", "task_id": new_id, "revisor": "WARDEN", "veredito": "PASS"}) + "\n")
-out, rc = run_task("--state", COPY, "close", "--id", new_id, "--artifact", "v2/proof/test_task.py",
+out, rc = run_task("--state", COPY, "close", "--id", new_id, "--artifact", ARTIFACT_OK,
                     "--veredito", "PASS", "--ledger", LEDGER)
 check("close valido fecha Task (ok=True)", out.get("ok") is True, str(out))
 check("custo somado so das linhas desta Task (12345+678=13023, nao 99999)", out.get("custo_somado_do_ledger") == 13023, str(out.get("custo_somado_do_ledger")))
@@ -263,12 +274,12 @@ def _estudio_recibo(divida: str = "") -> tuple[str, str, str]:
 
 
 _r1, _s1, _l1 = _estudio_recibo()
-out, rc = run_task("--state", _s1, "close", "--id", "TASK-001", "--artifact", "x.md", "--veredito", "PASS", "--ledger", _l1)
+out, rc = run_task("--state", _s1, "close", "--id", "TASK-001", "--artifact", ARTIFACT_OK, "--veredito", "PASS", "--ledger", _l1)
 check("close PASS com mapa do Client velho e recusado (sem recibo de conhecimento)",
       out.get("ok") is False and "recibo" in str(out.get("error", "")) and "acme" in str(out.get("falta")), str(out)[:300])
 
 _toca(os.path.join(_r1, "clients", "acme", "squad", "knowledge", "graphify-out", "graph.json"), dias_atras=0)
-out, rc = run_task("--state", _s1, "close", "--id", "TASK-001", "--artifact", "x.md", "--veredito", "PASS", "--ledger", _l1)
+out, rc = run_task("--state", _s1, "close", "--id", "TASK-001", "--artifact", ARTIFACT_OK, "--veredito", "PASS", "--ledger", _l1)
 check("close PASS com conhecimento em dia fecha e grava recibo_conhecimento na Task",
       out.get("ok") is True and (out.get("task") or {}).get("recibo_conhecimento", {}).get("veredito") == "OK", str(out)[:300])
 
@@ -286,7 +297,7 @@ _r4, _s4, _l4 = _estudio_recibo()
 _fora = _sandbox_tempdir("alia-v2-test-recibo-fora-")
 _s4_fora = os.path.join(_fora, "state.json")
 shutil.copyfile(_s4, _s4_fora)
-out, rc = run_task("--state", _s4_fora, "close", "--id", "TASK-001", "--artifact", "x.md", "--veredito", "PASS",
+out, rc = run_task("--state", _s4_fora, "close", "--id", "TASK-001", "--artifact", ARTIFACT_OK, "--veredito", "PASS",
                    "--ledger", _l4, "--studio-root", _r4)
 check("close com --state fora do estudio e --studio-root no estudio de mapa velho e recusado",
       out.get("ok") is False and "recibo" in str(out.get("error", "")), str(out)[:300])
@@ -295,7 +306,7 @@ check("close com --state fora do estudio e --studio-root no estudio de mapa velh
 _vazio = _sandbox_tempdir("alia-v2-test-recibo-vazio-")
 os.makedirs(os.path.join(_vazio, "clients"))
 _r5, _s5, _l5 = _estudio_recibo()
-out, rc = run_task("--state", _s5, "close", "--id", "TASK-001", "--artifact", "x.md", "--veredito", "PASS",
+out, rc = run_task("--state", _s5, "close", "--id", "TASK-001", "--artifact", ARTIFACT_OK, "--veredito", "PASS",
                    "--ledger", _l5, "--studio-root", _vazio)
 check("close de Client sem pasta na raiz fecha e grava recibo SEM_PASTA (auditavel)",
       out.get("ok") is True and (out.get("task") or {}).get("recibo_conhecimento", {}).get("veredito") == "SEM_PASTA", str(out)[:300])
@@ -310,7 +321,7 @@ check("recibo de Client com squad/knowledge sem indice e recusado (indice ausent
       _rec6.get("ok") is False and "indice" in str(_rec6.get("falta")), str(_rec6))
 
 print("\n=== I2 prova negativa (TASK-804): Task done nao reabre por cima ===")
-out, rc = run_task("--state", COPY, "close", "--id", new_id, "--artifact", "v2/proof/test_task.py",
+out, rc = run_task("--state", COPY, "close", "--id", new_id, "--artifact", ARTIFACT_OK,
                     "--veredito", "PASS", "--ledger", LEDGER)
 check("close de Task ja done nao reabre por cima", out.get("ok") is False, str(out))
 
@@ -326,10 +337,10 @@ check("Task de correcao abre normalmente", out.get("ok") is True, str(out))
 LEDGER_CORRECAO = os.path.join(SANDBOX, "activity-correcao.jsonl")
 with open(LEDGER_CORRECAO, "w", encoding="utf-8") as fh:
     fh.write(json.dumps({"event": "gate_check", "task_id": correcao_id, "resultado": "PASS"}) + "\n")
-out, rc = run_task("--state", COPY, "close", "--id", correcao_id, "--artifact", "x.md", "--veredito", "PASS",
+out, rc = run_task("--state", COPY, "close", "--id", correcao_id, "--artifact", ARTIFACT_OK, "--veredito", "PASS",
                     "--ledger", LEDGER_CORRECAO)
 check("close de Task de correcao sem --root-cause nao fecha", out.get("ok") is False, str(out))
-out, rc = run_task("--state", COPY, "close", "--id", correcao_id, "--artifact", "x.md", "--veredito", "PASS",
+out, rc = run_task("--state", COPY, "close", "--id", correcao_id, "--artifact", ARTIFACT_OK, "--veredito", "PASS",
                     "--root-cause", "a causa raiz medida pelos 5 porques", "--ledger", LEDGER_CORRECAO)
 check("close de Task de correcao com --root-cause fecha (evidencia = gate_check)", out.get("ok") is True, str(out))
 check("evidencia registrada veio do gate_check", (out.get("task") or {}).get("evidencia_veredito") == "gate_check", str(out.get("task")))
@@ -348,7 +359,7 @@ LEDGER_ORDEM = os.path.join(SANDBOX, "activity-ordem.jsonl")
 with open(LEDGER_ORDEM, "w", encoding="utf-8") as fh:
     fh.write(json.dumps({"event": "review_verdict", "task_id": ordem_id, "revisor": "WARDEN", "veredito": "PASS"}) + "\n")
     fh.write(json.dumps({"event": "gate_check", "task_id": ordem_id, "veredito": "FAIL"}) + "\n")
-out_ordem, rc_ordem = run_task("--state", COPY, "close", "--id", ordem_id, "--artifact", "x.md",
+out_ordem, rc_ordem = run_task("--state", COPY, "close", "--id", ordem_id, "--artifact", ARTIFACT_OK,
                                 "--veredito", "PASS", "--ledger", LEDGER_ORDEM)
 check("close PASS e recusado: gate_check MAIS RECENTE diverge, mesmo com review_verdict PASS mais antigo no ledger",
       out_ordem.get("ok") is False, str(out_ordem))
@@ -364,7 +375,7 @@ fail_id = (out.get("task") or {}).get("id")
 LEDGER_FAIL = os.path.join(SANDBOX, "activity-fail.jsonl")
 with open(LEDGER_FAIL, "w", encoding="utf-8") as fh:
     fh.write(json.dumps({"event": "review_verdict", "task_id": fail_id, "veredito": "FAIL"}) + "\n")
-out, rc = run_task("--state", COPY, "close", "--id", fail_id, "--artifact", "x.md", "--veredito", "FAIL",
+out, rc = run_task("--state", COPY, "close", "--id", fail_id, "--artifact", ARTIFACT_OK, "--veredito", "FAIL",
                     "--criterio-reprovado", "prova pelo negativo ausente", "--ledger", LEDGER_FAIL)
 check("close com FAIL fecha (status vira review, nao done)", out.get("ok") is True, str(out))
 check("Task fica em review, nao done, quando o veredito e FAIL", (out.get("task") or {}).get("status") == "review", str(out.get("task")))
@@ -383,7 +394,8 @@ check("context de id inexistente da erro", out.get("ok") is False, str(out))
 print("\n=== I2 prova: diff da copia so acrescenta campos/Tasks novas ===")
 with open(COPY, "r", encoding="utf-8") as fh:
     copy_after = json.load(fh)
-check("clients da copia identicos ao original (nunca reescritos)", copy_after["clients"] == original["clients"], "diff em clients")
+_sem_cadastro = lambda cs: [{k: v for k, v in c.items() if k != "projects"} for c in cs]  # o cadastro e o que o teste semeou
+check("clients da copia identicos ao original (nunca reescritos)", _sem_cadastro(copy_after["clients"]) == _sem_cadastro(original["clients"]), "diff em clients")
 old_tasks_by_id = {t["id"]: t for t in original["tasks"]}
 new_tasks_by_id = {t["id"]: t for t in copy_after["tasks"]}
 unchanged_ok = all(new_tasks_by_id.get(tid) == t for tid, t in old_tasks_by_id.items())
@@ -484,7 +496,7 @@ check("exatamente 1 evento gate_check gravado", len(eventos_gate) == 1 and event
 check("evento gate_check tem os 7 rotulos de criterio",
       len(eventos_gate[0].get("criterios", {})) == 7, str(eventos_gate[0].get("criterios")))
 
-out_close, rc_close = run_task("--state", COPY, "close", "--id", gate_task_id, "--artifact", "v2/bin/gate.py",
+out_close, rc_close = run_task("--state", COPY, "close", "--id", gate_task_id, "--artifact", os.path.join(V2, "bin", "gate.py"),
                                 "--veredito", "PASS", "--ledger", LEDGER_GATE)
 check("close com evidencia vinda do gate.py fecha a Task (ok=True)", out_close.get("ok") is True, str(out_close))
 check("Task fechada tem status done", (out_close.get("task") or {}).get("status") == "done", str(out_close.get("task")))
@@ -550,7 +562,7 @@ brief_gate2 = json.dumps({
 out, rc = run_task("--state", COPY, "open", "--brief", brief_gate2)
 gate_task_id2 = (out.get("task") or {}).get("id")
 LEDGER_GATE_VAZIO = os.path.join(SANDBOX, "activity-gate-vazio.jsonl")
-out_sem_evento, rc_sem_evento = run_task("--state", COPY, "close", "--id", gate_task_id2, "--artifact", "x.md",
+out_sem_evento, rc_sem_evento = run_task("--state", COPY, "close", "--id", gate_task_id2, "--artifact", ARTIFACT_OK,
                                           "--veredito", "PASS", "--ledger", LEDGER_GATE_VAZIO)
 check("close sem evento algum no ledger continua falhando", out_sem_evento.get("ok") is False, str(out_sem_evento))
 
@@ -563,12 +575,12 @@ out_gate_fail, rc_gate_fail = run_gate("--task", gate_task_id2, "--parecer", PAR
 check("gate.py grava gate_check com veredito FAIL",
       out_gate_fail.get("ok") is True and out_gate_fail.get("event", {}).get("veredito") == "FAIL", str(out_gate_fail))
 
-out_divergente, rc_divergente = run_task("--state", COPY, "close", "--id", gate_task_id2, "--artifact", "x.md",
+out_divergente, rc_divergente = run_task("--state", COPY, "close", "--id", gate_task_id2, "--artifact", ARTIFACT_OK,
                                           "--veredito", "PASS", "--ledger", LEDGER_GATE_FAIL)
 check("close com --veredito PASS divergente do gate_check FAIL e recusado", out_divergente.get("ok") is False,
       str(out_divergente))
 
-out_convergente, rc_convergente = run_task("--state", COPY, "close", "--id", gate_task_id2, "--artifact", "x.md",
+out_convergente, rc_convergente = run_task("--state", COPY, "close", "--id", gate_task_id2, "--artifact", ARTIFACT_OK,
                                             "--veredito", "FAIL", "--criterio-reprovado", "frugal",
                                             "--ledger", LEDGER_GATE_FAIL)
 check("close com --veredito FAIL igual ao gate_check fecha (Task vai para review)",

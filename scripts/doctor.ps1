@@ -74,22 +74,22 @@ if (Test-Path $configPath) {
 Check "alia.config.json existe e e JSON valido" $configOk
 
 # 6. Scripts essenciais presentes
-$essentialScripts = @("smoke-test.ps1", "package-release.ps1", "install.ps1")
+$essentialScripts = @("package-release.ps1", "install.ps1", "..\v2\proof\check.py")
 $scriptsOk = $true
 foreach ($s in $essentialScripts) {
   if (-not (Test-Path (Join-Path $PSScriptRoot $s))) { $scriptsOk = $false }
 }
 Check "Scripts essenciais presentes" $scriptsOk
 
-# 7. Roda o smoke (check mais pesado - por ultimo)
+# 7. Roda a prova oficial (check.py, a mais pesada - por ultimo)
 $smokeGreen = $false
 try {
-  & (Join-Path $PSScriptRoot "smoke-test.ps1") *> $null
+  & python (Join-Path $PSScriptRoot "..\v2\proof\check.py") *> $null
   $smokeGreen = ($LASTEXITCODE -eq 0)
 } catch {
   $smokeGreen = $false
 }
-Check "Smoke test verde" $smokeGreen
+Check "check.py verde" $smokeGreen
 
 $okCount = ($script:checks | Where-Object { $_.ok }).Count
 $failCount = ($script:checks | Where-Object { -not $_.ok }).Count

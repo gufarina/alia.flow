@@ -5,8 +5,8 @@
     iwr -useb https://raw.githubusercontent.com/gufarina/alia.flow/main/scripts/install.ps1 | iex
 
   Baixa o Alia Flow e descompacta aqui. Depois e so abrir esta pasta no Claude Code e dizer: pronto.
-  Nao precisa de git nem de Python - so o PowerShell (ja vem no Windows).
-  Precisa de um coding agent (Claude Code, Codex ou OpenCode) - links no fim.
+  Nao precisa de git. Precisa do PowerShell (ja vem no Windows) e do Python 3 (as protecoes rodam nele).
+  Precisa do Claude Code - links no fim.
 
   TRANSACIONAL (instalar sem medo):
     - Se ja existir conteudo na pasta destino que colidiria com a instalacao, faz backup
@@ -371,7 +371,6 @@ if (Test-Path $welcome) {
 Write-Host "Depois e so abrir esta pasta no Claude Code e dizer: pronto."
 Write-Host "Cadastre um cliente OU uma ideia - simples assim. A Alia cuida do resto."
 Write-Host ""
-Write-Host "Precisa de um coding agent? Escolha um e instale (a Alia mora dentro dele):"
+Write-Host "Precisa do Claude Code (a Alia mora dentro dele) e do Python 3 (as protecoes rodam nele):"
 Write-Host "  Claude Code : https://claude.com/claude-code"
-Write-Host "  Codex       : https://github.com/openai/codex"
-Write-Host "  OpenCode    : https://opencode.ai"
+Write-Host "  Python 3    : https://www.python.org/downloads/"

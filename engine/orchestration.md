@@ -35,11 +35,13 @@ protocolo ja falhou no passo DELEGA.
 2. **REGISTRA** - a Task no estado (`studio/state.json`) **antes** de delegar. *Sem registro = nao aconteceu.*
 3. **DELEGA** - ao Specialist **mais capaz** para a Task (roteamento por capacidade, abaixo). A Alia **nunca** executa dominio.
 4. **MONITORA** - cobra progresso e o **Artifact** (evidencia). Sem avanco em 3 abordagens -> escala.
-5. **FECHA** - status `done` + Artifact + Gate PASS + Memory + **registro no ledger** (`register-task.ps1`:
- Cliente/Projeto/Tarefa). Task delegada fecha com o CUSTO gravado: os tokens e chamadas que a
+5. **FECHA** - status `done` + Artifact + Gate PASS + Memory + **registro no ledger** (`alia task close`,
+ a CLI unica da espinha: Cliente/Projeto/Tarefa + veredito; contrato em
+ `v2/CONTRACTS.md` (secao "Contrato da espinha"); `register-task.ps1` vira so wrapper
+ dela). Task delegada fecha com o CUSTO gravado: os tokens e chamadas que a
  ferramenta de agente devolve entram na Task (`-Tokens`/`-ToolUses`) e sao comparados com o
  orcamento declarado (`-Budget`); estourou, fica marcado e vira KPI (law-ledger L49). Quando o
- custo nao e informado, o proprio `register-task.ps1` preenche a partir dos transcripts - nunca
+ custo nao e informado, o `alia task close` preenche a partir dos transcripts - nunca
  fica em branco. O registro NAO e opcional nem depende de lembrar - e parte do FECHA: sem
    ele a Task nao fecha e nao vira KPI. A Alia informa ao operador o custo por especialista em
    UMA linha no fechamento, sem ser perguntada. *Sem Artifact = nao fechou. Sem registro = nao aconteceu.*
@@ -301,8 +303,8 @@ citado - ver `engine/governance/law-ledger.md`, L40.
 > estado intermediario, sem grafo de dependencia entre etapas (a ordem e a ordem da tabela).
 >
 > COMECAR: Estado vira `EM ANDAMENTO` com data e responsavel na tabela ANTES de delegar. Cada
-> etapa e uma Task de `scripts/register-task.ps1` registrada antes de delegar, apontando a Task-mae
-> pelo campo `-Plan`. TERMINAR: REGISTRO DE EXECUCAO completo (artefato em disco, prova pelo
+> etapa e uma Task de `alia task open` (CLI da espinha; contrato em `v2/CONTRACTS.md`, hoje `scripts/register-task.ps1`) registrada
+> antes de delegar, apontando a Task-mae pelo campo `-Plan`. TERMINAR: REGISTRO DE EXECUCAO completo (artefato em disco, prova pelo
 > negativo, numeros ANTES/DEPOIS, proxima acao) e SO ENTAO Estado vira `FEITA` - proibido marcar
 > `FEITA` sem caminho de artefato e sem prova pelo negativo registrados. Travou em 3 abordagens:
 > Estado vira `BLOQUEADA`, causa escrita, proxima acao vira pergunta ao operador, e PARA. Sessao

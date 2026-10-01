@@ -24,7 +24,7 @@ Passos para reproduzir. Se possivel, o comando exato.
 Cole a saida de:
 
 ```sh
-powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1
+python v2/proof/check.py
 ```
 
 O trilho e a fonte de verdade - se ele fica vermelho, cole a(s) linha(s) `[FAIL]`.
