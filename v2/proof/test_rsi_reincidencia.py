@@ -61,7 +61,7 @@ rc, out = caso(5, None)
 check("sem rodada posterior e PENDENTE (exit 0)", rc == 0 and "[PENDENTE]" in out)
 
 estudio = os.path.abspath(os.path.join(V2, "..", "..", ".."))
-if os.path.isdir(os.path.join(estudio, "memory", "_proposals")):
+if os.path.isdir(os.path.join(estudio, "memory", "_proposals")) and "/release/alia-flow/" not in (V2.replace("\\", "/") + "/"):
     rc, out = roda(estudio)
     check("caso real do estudio: correcao-repetida reincide (FAIL)", "[FAIL] correcao-repetida" in out)
 
