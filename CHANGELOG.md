@@ -18,6 +18,16 @@ testado na instancia viva (a instancia aplicada) antes de fechar. Um update = um
 reversivel. Fluxo: alterar engine -> bump VERSION -> entrada no CHANGELOG -> smoke-test-studio
 ALL GREEN -> tag.
 
+## [2.1.3] - 2026-10-01
+
+A 2.1.3 saiu em 01/10 e fechou os furos achados na revisão dos ganchos, da espinha e do empacotamento:
+
+- Os guardas deixaram de ser contornados por comando em várias linhas, caminho com `..`, caminho relativo, nome curto do Windows e comando codificado; publicar só é reconhecido como comando, e ler ou editar o script de publicar não é mais barrado.
+- A liberação do CEO agora vale também para escrever dentro de uma pasta de cliente, e ninguém consegue forjar a liberação nem o marcador de check verde.
+- Segredo em minúscula e `Bearer` passam a ser barrados; `task-...` deixa de ser confundido com segredo; edição em lote tem o mesmo guarda; queixa do CEO não libera mais a sessão principal.
+- Dois ganchos ao mesmo tempo não se atropelam mais (contador de subagentes, liberação, mapa do grafo), e a prova de empacotamento passou a ser obrigatória antes de empacotar.
+- A prova nunca mais pula calada: identidade e reincidência rodam sempre, e prova pulada reprova na cópia de empacotamento.
+
 ## [2.1.2] - 2026-10-01
 
 A 2.1.2 saiu em 01/10 e trouxe quatro mudanças:

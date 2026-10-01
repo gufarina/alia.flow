@@ -105,6 +105,30 @@ def cenario(nome: str, v2root: str, work: str) -> dict:
             os.environ["ALIA_GRAPH_GATE_OFF"] = "1"
         return run("graph", "check", "--session", "s9", "--tool", "Grep", "--path",
                    os.path.join(work, "mapa", "clients", "acme", "src"), "--host", "claude")
+    if nome == "state_corrompido":
+        open(st, "w", encoding="utf-8").write('{"clients": [{"id": "acme", "squad"')  # truncado no meio
+        return run("task", "dispatch", "--id", "TASK-001", "--specialist", "acme-gw", "--session", "s1")
+    if nome == "nome_curto":
+        return run("task", "dispatch", "--id", abre(), "--specialist", "gw", "--session", "s1")
+    if nome in ("brief_lista", "coord_texto", "type_enum", "schema_open"):
+        b = {"client": "acme", "project": "p", "objetivo": "provar a espinha ate o criterio", "paths": art,
+             "consumidor": "WARDEN", "destino": "interno", "exemplo_falha": "regra so em prosa"}
+        if nome == "brief_lista":
+            b["paths"] = [art]
+        if nome == "coord_texto":
+            b["coordenacao"] = "true"
+        if nome == "type_enum":
+            b["type"] = "Correcao"
+        if nome == "schema_open":  # cadastro legado com projeto fora do formato: o schema da Task nova tem que pegar
+            d = json.load(open(st, encoding="utf-8"))
+            d["clients"][0]["projects"].append("Nome Velho")
+            json.dump(d, open(st, "w", encoding="utf-8"))
+            b["project"] = "Nome Velho"
+        return run("task", "open", "--brief", json.dumps(b), "--session", "s1")
+    if nome == "criterio":
+        tid = abre()
+        ledger.append_event(os.environ["ALIA_LEDGER_PATH"], {"event": "review_verdict", "task_id": tid, "veredito": "FAIL"})
+        return run("task", "close", "--id", tid, "--artifact", art, "--veredito", "FAIL")
     raise SystemExit(f"cenario desconhecido: {nome}")
 
 
@@ -126,6 +150,13 @@ CENARIOS = {
     # interruptor: com ALIA_GRAPH_GATE_OFF=1 NAO pode recusar (regra None); mutante que ignora o interruptor recusa
     "grafo_off": (None, "lib/grafo_gate.py", '"bloqueia" if (modo == "bloqueia" and not desligado) else "avisa"',
                   '"bloqueia" if (modo == "bloqueia" and True) else "avisa"'),
+    "state_corrompido": ("state_corrompido", "lib/espinha.py", "except (ValueError, UnicodeDecodeError) as exc:", "except OSError as exc:"),
+    "nome_curto": ("agente_nome_curto", "lib/espinha.py", "curtos = _nome_curto(state, specialist)", "curtos = []"),
+    "brief_lista": ("brief_tipo_invalido", "lib/task_model.py", 'if brief.get(campo) not in (None, "") and not isinstance(brief[campo], str):', "if False:"),
+    "coord_texto": ("brief_tipo_invalido", "lib/task_model.py", 'if "coordenacao" in brief and not isinstance(brief["coordenacao"], bool):', "if False:"),
+    "type_enum": ("type_invalido", "lib/task_model.py", 'if brief.get("type") not in (None, "") and brief["type"] not in TIPOS_VALIDOS:', "if False:"),
+    "schema_open": ("schema_invalido", "bin/task.py", "erros = espinha.validar_task_nova(new_task)", "erros = []"),
+    "criterio": ("criterio_reprovado_ausente", "lib/task_model.py", 'if veredito != "PASS" and not criterio_reprovado:', "if False:"),
 }
 
 
@@ -170,7 +201,7 @@ def principal() -> int:
     atexit.register(shutil.rmtree, sandbox, ignore_errors=True)
 
     print("=== cada recusa pelo negativo (copia real recusa com a regra; copia mutada nao) ===")
-    with ThreadPoolExecutor(max_workers=6) as ex:
+    with ThreadPoolExecutor(max_workers=12) as ex:
         reais = {n: ex.submit(_roda_cenario, n, False) for n in CENARIOS}
         mutados = {n: ex.submit(_roda_cenario, n, True) for n in CENARIOS}
     for nome, (regra, arq, velho, _novo) in CENARIOS.items():
@@ -431,6 +462,91 @@ console.log(JSON.stringify(out));
               and os.path.exists(os.path.join(V2, "..", arq)), arq)
     check("Pi: o aviso de --no-extensions (host que comanda o Pi) esta documentado no adaptador e na matriz",
           "no-extensions" in open(os.path.join(V2, "adapters", "pi", "alia-espinha.mjs"), encoding="utf-8").read() and "no-extensions" in matriz["pi"]["lacuna"])
+
+
+    print("\n=== C1/C3: 2 processos abrindo Task em paralelo (5 rodadas); state truncado nega ===")
+    FILHO = (
+        "import sys,os,json,time\nv2,tag,brief=sys.argv[1:4]\n"
+        "for s in ('flow','lib','bin'): sys.path.insert(0,os.path.join(v2,s))\n"
+        "import alia, task\norig=task._next_task_id\n"
+        "def lento(st):\n    r=orig(st); time.sleep(0.06); return r\n"
+        "task._next_task_id=lento\n"
+        "print(json.dumps(alia.run(['task','open','--brief',brief,'--session',tag])[1]))\n")
+
+    def paralelo(mutacao, rodadas):
+        tmp = tempfile.mkdtemp(prefix="alia-espinha-par-")
+        atexit.register(shutil.rmtree, tmp, ignore_errors=True)
+        raiz = _copia_do_motor(os.path.join(tmp, "motor"), mutacao)
+        w = os.path.join(tmp, "w")
+        montar(w, os.path.join(tmp, "mapa"))
+        env = dict(os.environ, ALIA_LEDGER_PATH=os.path.join(w, "led.jsonl"), ALIA_STATE_PATH=os.path.join(w, "state.json"),
+                   ALIA_CURRENT_TASK_PATH=os.path.join(w, "cur.json"), CLAUDE_PROJECT_DIR=w)
+        b = json.dumps({"client": "acme", "project": "p", "objetivo": "provar a trava ate o fim", "paths": os.path.join(w, "artefato.md"),
+                        "consumidor": "WARDEN", "destino": "interno", "exemplo_falha": "id repetido"})
+        for r in range(rodadas):
+            ps = [subprocess.Popen([sys.executable, "-c", FILHO, raiz, f"s{r}-{k}", b], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                  for k in range(2)]
+            for p in ps:
+                p.communicate()
+        d = json.load(open(os.path.join(w, "state.json"), encoding="utf-8"))
+        ids = [t["id"] for t in d["tasks"]]
+        cur = json.load(open(os.path.join(w, "cur.json"), encoding="utf-8")) if os.path.exists(os.path.join(w, "cur.json")) else {}
+        return ids, cur, os.listdir(w)
+
+    ids, cur, arqs = paralelo(None, 5)
+    check("2 processos x 5 rodadas: 11 ids, todos unicos (nenhuma Task some)", len(ids) == 11 and len(set(ids)) == 11, str(ids))
+    check("Task corrente por sessao: as 10 sessoes gravadas, sem perda (C3)", sum(1 for k in cur if k != "_last") == 10, str(cur)[:120])
+    check("sem tmp nem lock sobrando", not [a for a in arqs if a.endswith((".tmp", ".lock"))], str(arqs))
+    ids_m, _, _ = paralelo(("lib/trava.py", "os.O_CREAT | os.O_EXCL | os.O_WRONLY", "os.O_CREAT | os.O_WRONLY"), 1)
+    check("mutante sem trava (O_EXCL fora) REPETE id - a prova pega o defeito", len(ids_m) < 3 or len(set(ids_m)) < len(ids_m), str(ids_m))
+
+    trunc = os.path.join(sandbox, "trunc.json")
+    open(trunc, "w", encoding="utf-8").write('{"clients": [{"id": "acme"')
+    rc, res = alia.run(["--state", trunc, "task", "pending"])
+    check("state truncado: CLI sai 1 com state_corrompido", rc == 1 and res.get("regra") == "state_corrompido", str(res)[:140])
+    rc, res = alia.run(["--state", trunc, "task", "open", "--brief", "{}"])
+    check("state truncado: task open tambem nega (nao sobrescreve)", rc == 1 and res.get("regra") == "state_corrompido"
+          and open(trunc, encoding="utf-8").read() == '{"clients": [{"id": "acme"', str(res)[:140])
+    check("state_corrompido NAO e voto-livre nos adaptadores (o gate nega)",
+          "state_corrompido" not in codex_hook.SEM_VOTO)
+    rc, res = alia.run(["--state", st, "task", "open", "--brief", "[1]"])
+    check("brief que nao e objeto: recusa com regra", rc == 1 and res.get("regra") == "brief_invalido", str(res)[:120])
+
+    print("\n=== C8/C9: adaptador falha aberto registra; Codex barra encadeado; fatia relativa ===")
+    alvo_c = cli_arvore
+    for cmd in (f"cd x && rg foo {alvo_c}", f"Select-String -Pattern foo -Path {alvo_c}", f"git grep foo {alvo_c}",
+                f"findstr /s foo {alvo_c}", f"ls; grep -rn foo {alvo_c}"):
+        got = [c for c in codex_hook.traduzir(ev(cmd)) if c[:2] == ["graph", "check"]]
+        check(f"Codex barra: {cmd[:34]}", bool(got) and got[0][got[0].index("--path") + 1].strip("'\"") == alvo_c, str(got)[:100])
+    src = open(os.path.join(V2, "adapters", "codex", "codex_hook.py"), encoding="utf-8").read()
+    velho = "for alvo in _alvos_da_busca(comando):"
+    assert velho in src
+    import importlib.util as _iu
+    mut = os.path.join(sandbox, "codex_hook_mut.py")
+    open(mut, "w", encoding="utf-8").write(src.replace(velho, "for alvo in _alvos_da_busca(comando)[:0]:"))
+    spec = _iu.spec_from_file_location("codex_hook_mut", mut)
+    m = _iu.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    check("mutante do Codex (nao varre trechos) NAO barra - a prova pega o defeito",
+          not [c for c in m.traduzir(ev(f"cd x && rg foo {alvo_c}")) if c[:2] == ["graph", "check"]])
+    codex_hook.decidir(ev(f"rg foo {alvo_c}"), lambda a: (1, {"ok": False, "regra": "erro_interno", "error": "boom"}))
+    rc, res = run("task", "pending", "--session", "cx")
+    check("Codex falha aberto registra no ledger e task pending avisa o host sem trava",
+          rc == 0 and res.get("hosts_sem_trava") == ["codex"] and "aviso" in res, str(res)[:160])
+    if shutil.which("node"):
+        led_js = os.path.join(sandbox, "led-js.jsonl")
+        url = "file:///" + os.path.join(V2, "adapters", "traducao.mjs").replace("\\", "/")
+        prog = (f"import {{recusa}} from '{url}'; "
+                "console.log(String(recusa({code:1,json:{},argv:['task','dispatch','--session','js-sess']},'pi')));")
+        p = subprocess.run(["node", "--input-type=module", "-e", prog], env=dict(os.environ, ALIA_LEDGER_PATH=led_js),
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        linhas = open(led_js, encoding="utf-8").read() if os.path.exists(led_js) else ""
+        check("Pi/OpenCode (JS): sem JSON da CLI libera mas registra adapter_falha_aberta",
+              p.stdout.decode().strip() == "null" and "adapter_falha_aberta" in linhas and '"pi"' in linhas, linhas[:120] + p.stderr.decode()[-120:])
+    else:
+        SKIPS.append("node ausente: registro de falha aberta do adaptador JS nao provado")
+    check("fatia relativa resolve pela raiz do estudio (C9)", task_model.validar_fatias("artefato.md#L1", [work]) == [])
+    check("fatia `#L9` sem faixa alem do arquivo e problema (C9)", len(task_model.validar_fatias("artefato.md#L9", [work])) == 1)
 
     for s in SKIPS:
         print(f"[SKIP] {s}")

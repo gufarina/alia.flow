@@ -31,7 +31,9 @@ from __future__ import annotations
 
 import json
 import os
+import posixpath
 import re
+import shlex
 import sys
 import time
 
@@ -39,6 +41,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
 import identity_guard  # noqa: E402
 import ledger  # noqa: E402
 import paths  # noqa: E402
+import trava  # noqa: E402
 # pulso (Operacao Deep, TASK-847) importado SO dentro de quem usa (handle_pretooluse_pulso_inject,
 # handle_stop, handle_session_start) - import tardio, nunca no topo: a maioria dos eventos
 # despachados (Write/Edit/Bash negados ou nao, PostToolUse, SubagentStop) nunca precisa de PULSO,
@@ -51,11 +54,48 @@ def _ledger_path() -> str:
 
 
 def _project_dir() -> str:
-    return os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
+    return paths.studio_root()  # 2.1.3: mesma regra do resto (antes divergia sem CLAUDE_PROJECT_DIR)
+
+
+def _nome_longo(p: str) -> str:
+    """Caminho 8.3 (`ALIA-F~1`) vira o nome longo (so Windows, so quando ha `~`): o guard casa pelo
+    NOME das pastas, e o nome curto escapava de clients/<id>/ e da fonte do motor."""
+    if os.name != "nt" or "~" not in p:
+        return p
+    try:
+        import ctypes
+        buf = ctypes.create_unicode_buffer(1024)
+        cand, sufixo = p, ""
+        for _ in range(12):
+            n = ctypes.windll.kernel32.GetLongPathNameW(cand.replace("/", "\\"), buf, 1024)  # type: ignore[attr-defined]
+            if 0 < n < 1024:
+                return buf.value.replace("\\", "/") + sufixo
+            cand, resto = posixpath.split(cand)
+            if not cand or not resto:
+                break
+            sufixo = "/" + resto + sufixo
+    except Exception:
+        pass
+    return p
 
 
 def _norm(p: str) -> str:
-    return (p or "").replace("\\", "/")
+    """Barra normal + `..`/`.` resolvidos (2.1.3: `clients/x/../../engine/a.md` escapava do kernel, da
+    muralha e da isencao de artifacts) + nome longo no Windows."""
+    p = (p or "").replace("\\", "/")
+    if not p:
+        return p
+    return posixpath.normpath(_nome_longo(p))
+
+
+def _com_cwd(p: str, cwd: str | None) -> str:
+    """Caminho relativo de Bash/PowerShell vira absoluto contra o cwd do evento (quando ha): a fonte do
+    motor so e reconhecida pelo caminho inteiro. Sem cwd, o relativo segue relativo (e o guard o trata)."""
+    q = (p or "").strip().strip("'\"")
+    n = q.replace("\\", "/")
+    if not q or not cwd or n.startswith(("/", "~", "$")) or re.match(r"^[A-Za-z]:", n):
+        return p
+    return cwd.replace("\\", "/").rstrip("/") + "/" + n
 
 
 # ---------------------------------------------------------------------------
@@ -86,24 +126,25 @@ def _subagent_cap_check(event: dict) -> dict | None:
     if not sid:
         return None
     path = _ledger_path() + ".subagentes.json"
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            cont = json.load(fh)
-        if not isinstance(cont, dict):
+    # 2.1.3: ler-contar-gravar sob lock + escrita atomica. Antes, dois Agent em paralelo perdiam uma
+    # contagem e um JSON lido pela metade zerava o teto da sessao (falha aberta).
+    with trava.trava(path):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                cont = json.load(fh)
+            if not isinstance(cont, dict):
+                cont = {}
+        except (OSError, json.JSONDecodeError):
             cont = {}
-    except (OSError, json.JSONDecodeError):
-        cont = {}
-    n = int(cont.get(sid, 0))
-    if n >= SUBAGENT_CAP:
-        return _deny(f"guard: teto de {SUBAGENT_CAP} subagentes por sessao atingido ({n} ja acionados). "
-                     "Feche esta sessao e abra outra, ou trabalhe sem delegar mais.")
-    cont[sid] = n + 1
-    try:
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        with open(path, "w", encoding="utf-8", newline="\n") as fh:
-            json.dump(cont, fh)
-    except OSError:
-        pass
+        n = int(cont.get(sid, 0))
+        if n >= SUBAGENT_CAP:
+            return _deny(f"guard: teto de {SUBAGENT_CAP} subagentes por sessao atingido ({n} ja acionados). "
+                         "Feche esta sessao e abra outra, ou trabalhe sem delegar mais.")
+        cont[sid] = n + 1
+        try:
+            trava.gravar_atomico(path, json.dumps(cont))
+        except OSError:
+            pass
     return None
 
 
@@ -303,30 +344,123 @@ def _deny(reason: str) -> dict:
 
 
 SECRET_PATTERNS = [
-    re.compile(r"sk-[A-Za-z0-9]{20,}"),
+    # 2.1.3: `sk-` so conta no comeco de palavra (antes casava `task-<20 letras>`, `disk-...`).
+    re.compile(r"(?<![A-Za-z0-9_\-])sk-[A-Za-z0-9]{20,}"),
     # TASK-845 (E03): formatos que passavam pela trava (medido 27/09 com valor falso).
-    re.compile(r"sk-(?:ant|proj)-[A-Za-z0-9_\-]{20,}"),
+    re.compile(r"(?<![A-Za-z0-9_\-])sk-(?:ant|proj)-[A-Za-z0-9_\-]{20,}"),
     re.compile(r"gh[pousr]_[A-Za-z0-9]{30,}"),
     re.compile(r"github_pat_[A-Za-z0-9_]{40,}"),
     re.compile(r"nvapi-[A-Za-z0-9_\-]{30,}"),
     re.compile(r"pplx-[A-Za-z0-9]{30,}"),
     re.compile(r"eyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}"),
     re.compile(r"\b[A-Z0-9_]*(?:KEY|TOKEN|SECRET)\s*[:=]\s*['\"]?[A-Za-z0-9_\-]{20,}"),
+    # 2.1.3: minuscula/mista (`token = "..."`, `"client_secret": "..."`) so com o valor ENTRE ASPAS (sem
+    # aspas, `cache_key = nome_de_variavel_comprido` e codigo, nao segredo); e cabecalho `Bearer <valor>`.
+    re.compile(r"(?i)\b\w*(?:key|token|secret|passw(?:or)?d)\w*['\"]?\s*[:=]\s*['\"][A-Za-z0-9_\-/+=.]{20,}['\"]"),
+    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9_\-.=]{20,}"),
     re.compile(r"AKIA[0-9A-Z]{16}"),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
     re.compile(r"(?i)api[_-]?key\s*[:=]\s*['\"][A-Za-z0-9_\-]{16,}['\"]"),
 ]
 
-PUBLISH_PATTERNS = re.compile(r"(?i)\b(git push|npm publish|package-release|publish-release)\b")
+_SPLIT_CLAUSULAS_RE = re.compile(r"[;&|\n\r]+")
+_PREFIXOS_COMANDO = {"sudo", "env", "command", "time", "nohup", "exec", "call", "start", "&", ".", "builtin"}
+_SHELLS = {"bash", "sh", "zsh", "pwsh", "powershell", "cmd"}
+_INTERPRETES = {"python", "python3", "py", "node", "pwsh", "powershell", "bash", "sh", "zsh"}
+_PUBLICADORES = {"package-release", "publish-release"}
+
+
+def _tokens(clausula: str) -> list[str]:
+    try:
+        toks = shlex.split(clausula, posix=False)
+    except ValueError:
+        toks = clausula.split()
+    return [t.strip("'\"") for t in toks]
+
+
+def _base_cmd(tok: str) -> str:
+    b = _norm(tok).rsplit("/", 1)[-1].lower()
+    return b[:-4] if b.endswith(".exe") else b
+
+
+def _stem(tok: str) -> str:
+    return os.path.splitext(_base_cmd(tok))[0]
+
+
+def _cmd_tokens(clausula: str) -> list[str]:
+    """Tokens da clausula a partir da POSICAO DE COMANDO (pula `VAR=x`, sudo/env/call/& ...)."""
+    toks = _tokens(clausula)
+    while toks and (re.match(r"^\w+=", toks[0]) or _base_cmd(toks[0]) in _PREFIXOS_COMANDO):
+        toks = toks[1:]
+    return toks
+
+
+def _clausula_publica(clausula: str, nivel: int = 0) -> bool:
+    """True quando a clausula, NA POSICAO DE COMANDO, publica: `git [-C x ...] push`, `gh release`,
+    `npm|pnpm|yarn|bun publish`, ou o script package-release/publish-release (direto ou via
+    interpretador). Nome citado/editado/lido (cat, Edit, echo) nunca conta (2.1.3, P1-8 e P2-10)."""
+    toks = _cmd_tokens(clausula)
+    if not toks:
+        return False
+    cmd, args = _base_cmd(toks[0]), toks[1:]
+    if _stem(toks[0]) in _PUBLICADORES:
+        return True
+    if cmd == "git":
+        k = 0
+        while k < len(args):
+            a = args[k]
+            if a in ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path") and k + 1 < len(args):
+                k += 2
+            elif a.startswith("-"):
+                k += 1
+            else:
+                return a.lower() == "push"
+        return False
+    sub = [a for a in args if not a.startswith("-")]
+    if cmd == "gh":
+        return bool(sub) and sub[0].lower() == "release"
+    if cmd in ("npm", "pnpm", "yarn", "bun", "cargo"):
+        return bool(sub) and sub[0].lower() == "publish"
+    if cmd == "twine":
+        return bool(sub) and sub[0].lower() == "upload"
+    if cmd in _INTERPRETES:
+        for k, a in enumerate(args):  # `-c`/`-Command`: a string e um comando (recursao curta)
+            if a.lower() in ("-c", "-command", "/c"):
+                return nivel < 2 and _comando_publica(" ".join(args[k + 1:]), nivel + 1)
+        for k, a in enumerate(args):  # o script que o interpretador roda: o de -File, ou o 1o com extensao de script
+            if a.lower() in ("-file", "-f") and k + 1 < len(args):
+                return _stem(args[k + 1]) in _PUBLICADORES
+            if a.lower().endswith(_SCRIPT_EXT):
+                return _stem(a) in _PUBLICADORES
+    return False
+
+
+def _comando_publica(command: str, nivel: int = 0) -> bool:
+    return any(_clausula_publica(c, nivel) for c in _SPLIT_CLAUSULAS_RE.split(_sem_corpo_heredoc(command)))
+
+
+def _repo_do_push(command: str, cwd: str) -> str | None:
+    """Pasta onde o `git push` do comando roda: `git -C <dir>`, `cd <dir> &&`, senao o cwd do evento."""
+    destino = cwd or ""
+    for c in _SPLIT_CLAUSULAS_RE.split(_sem_corpo_heredoc(command)):
+        toks = _cmd_tokens(c)
+        if toks and _base_cmd(toks[0]) in ("cd", "set-location", "pushd") and len(toks) > 1:
+            destino = _com_cwd(toks[-1], destino)
+        elif toks and _base_cmd(toks[0]) == "git" and "-C" in toks and toks.index("-C") + 1 < len(toks):
+            destino = _com_cwd(toks[toks.index("-C") + 1], destino)
+            break
+    return destino or None
 # 2.1.2 (TASK-862): comandos regidos SO por L70 + marcador de check valido, fora da muralha L80
 # (a sessao principal e a unica que publica/propaga; barrar a escrita dela ai deixava zero ator).
 # update-engine nao exige marcador: so sai da muralha. A passagem vale SO para o comando INTEIRO
 # `powershell|pwsh [-NoProfile] [-ExecutionPolicy X] -File <...>publish-release|update-engine.ps1
 # [args]`: sem -Command/-c, sem encadeamento nem redirecionamento, so esses dois scripts.
+# 2.1.3 (P1-5): `[ \t]` no lugar de `\s` (a linha nova e separador de comando, nao espaco), fullmatch,
+# e o script so vale dentro de uma pasta `scripts/` (antes: qualquer pasta, ate /tmp/x/update-engine.ps1).
 _WALL_PASS_RE = re.compile(
-    r"""(?ix)^\s*(?:powershell|pwsh)(?:\.exe)?(?:\s+-NoProfile)?(?:\s+-ExecutionPolicy\s+\w+)?
-    \s+-File\s+(?P<q>["']?)(?:[^"'\s;&|<>`$()]*[\\/])?(?:publish-release|update-engine)\.ps1(?P=q)
-    (?:\s+[\w.:\\/\-"']+)*\s*$""")
+    r"""(?ix)[ \t]*(?:powershell|pwsh)(?:\.exe)?(?:[ \t]+-NoProfile)?(?:[ \t]+-ExecutionPolicy[ \t]+\w+)?
+    [ \t]+-File[ \t]+(?P<q>["']?)(?:[^"'\s;&|<>`$()]*[\\/])?scripts[\\/](?:publish-release|update-engine)\.ps1(?P=q)
+    (?:[ \t]+[\w.:\\/\-"']+)*[ \t]*""")
 _WALL_PASS_BAD_ARG_RE = re.compile(r"(?i)\s-(?:c|command|e|ec|encodedcommand)(?:\s|$)")
 
 # lista EXPLICITA do kernel (revisao independente: a checagem antiga procurava "/kernel/",
@@ -339,8 +473,6 @@ KERNEL_FILES = ("agents.md", "claude.md", "contracts.md")
 # nunca escreve arquivo) casava com o `>` generico e qualquer mencao de LEITURA ao kernel em
 # outro trecho do mesmo comando (`cat AGENTS.md`, `grep ... AGENTS.md`) virava negacao. So o
 # ALVO real de escrita conta agora - ver _extract_write_targets.
-_FD_DUP_RE = re.compile(r"\d>&\d|>&\d")
-_WRITE_OP_RE = re.compile(r"(?<![0-9])(>>|>)(?!&)")
 # TASK-824 (conserto, regressao apontada pelo Gate do NEXUS): cp/mv/rm nao podem compartilhar a
 # mesma extracao de alvo - cada familia tem semantica diferente de qual argumento e ESCRITA. cp
 # so escreve no DESTINO (-Destination ou ultimo posicional); -Path/-LiteralPath ali e a ORIGEM
@@ -377,6 +509,50 @@ def _first_token(text: str) -> str:
     return text.split(None, 1)[0]
 
 
+def _sem_corpo_heredoc(command: str) -> str:
+    """Tira o corpo de heredoc (so a 1a linha, com o redirecionamento, fica)."""
+    return _HEREDOC_BODY_RE.sub(lambda m: m.group(0).split(chr(10), 1)[0], command)
+
+
+def _redirect_targets(texto: str) -> list[str]:
+    """Alvos de `>`, `>>`, `N>`, `&>`, `>|`, `>&arq` FORA de aspas. Nao contam: `2>&1`/`>&N` (duplicacao
+    de descritor), setas `->`/`=>`, `>(...)` e `>` dentro de aspas (HTML em echo, `a -> b`). Aspa que
+    nunca fecha (apostrofo solto: `echo don't > f`) e tratada como literal e o resto e varrido de novo."""
+    alvos: list[str] = []
+    aspa, pos_aspa, i, n = "", -1, 0, len(texto)
+    while i < n:
+        ch = texto[i]
+        if aspa:
+            if ch == aspa:
+                aspa = ""
+        elif ch in "'\"":
+            aspa, pos_aspa = ch, i
+        elif ch == ">" and not (i and texto[i - 1] in "-="):
+            j = i + 1
+            if j < n and texto[j] == ">":
+                j += 1
+            if j < n and texto[j] == "|":
+                j += 1
+            if j < n and texto[j] == "(":
+                i = j
+                continue
+            if j < n and texto[j] == "&":
+                k = j + 1
+                if k < n and (texto[k].isdigit() or texto[k] == "-"):
+                    i = k + 1
+                    continue
+                j = k
+            alvo = _first_token(texto[j:])
+            if alvo:
+                alvos.append(alvo.strip("'\""))
+            i = j
+            continue
+        i += 1
+    if aspa:
+        alvos.extend(_redirect_targets(texto[pos_aspa + 1:]))
+    return alvos
+
+
 def _extract_write_targets(command: str) -> list[str]:
     """So os tokens que sao de fato ALVO de escrita: destino de `>`/`>>` (nunca `2>&1`/`>&N`,
     duplicacao de descritor), `tee <alvo>`, ultimo argumento (ou `-Destination`/`-Path`) de
@@ -385,15 +561,11 @@ def _extract_write_targets(command: str) -> list[str]:
     ARQUIVO: tem -Value ou nao e -ItemType Directory), 1o argumento de [IO.File]::Write* /
     [System.IO.File]::Write*, e o ultimo argumento nao-flag de `sed -i`. Leitura (cat, grep, python
     lendo o arquivo) nunca aparece aqui - so o ALVO real de escrita (TASK-824)."""
-    alvos: list[str] = []
-    sem_fd = _FD_DUP_RE.sub(" ", command)
-    for m in _WRITE_OP_RE.finditer(sem_fd):
-        alvo_redir = _first_token(sem_fd[m.end():])
-        if alvo_redir:
-            alvos.append(alvo_redir.strip("'\""))
+    command = _sem_corpo_heredoc(command)  # o corpo do heredoc e TEXTO, nao comando (P2-9)
+    alvos: list[str] = _redirect_targets(command)
     for m_iofile in _IOFILE_WRITE_RE.finditer(command):
         alvos.append(m_iofile.group(1).strip("'\""))
-    for clausula in re.split(r"[;&|]+", command):
+    for clausula in _SPLIT_CLAUSULAS_RE.split(command):  # inclui linha nova (P1-1)
         c = clausula.strip()
         if not c:
             continue
@@ -480,7 +652,7 @@ SOURCE_PATH_MARKER = "/clients/alia-flow-lab/"
 
 
 def _is_source_path(path: str) -> bool:
-    p = "/" + _norm(path).lower().lstrip("/")
+    p = "/" + _norm(path.strip().strip("'\"")).lower().lstrip("/")
     return SOURCE_PATH_MARKER in p
 
 
@@ -496,15 +668,15 @@ def _is_pulso_write_target(path: str) -> bool:
 def _is_kernel_path(path: str) -> bool:
     if _is_source_path(path):
         return False
-    p = _norm(path).lower()
-    if "/engine/" in p or p.endswith("/engine") or p == "engine":
+    p = _norm(path.strip().strip("'\"")).lower()
+    pn = "/" + p.lstrip("/")  # 2.1.3 (P1-2): `engine/x.md` relativo tambem e kernel
+    if "/engine/" in pn or pn.endswith("/engine"):
         return True
     basename = p.rsplit("/", 1)[-1]
     if basename in KERNEL_FILES:
         return True
     # config do host e scripts de skill sao gravaveis pelo
     # agente e rodam como hook - mexer neles e mexer na propria trava.
-    pn = "/" + p.lstrip("/")
     if basename.startswith("settings") and basename.endswith(".json") and pn.rsplit("/", 2)[-2] == ".claude":
         return True
     if "/.claude/skills/" in pn and "/scripts/" in pn.split("/.claude/skills/", 1)[1]:
@@ -512,12 +684,12 @@ def _is_kernel_path(path: str) -> bool:
     return False
 
 
-def _bash_targets_kernel(command: str) -> bool:
+def _bash_targets_kernel(command: str, cwd: str | None = None) -> bool:
     """Bash grava em engine/ ou num arquivo do kernel sem passar por Write/Edit (achado da
     revisao independente): confere so os ALVOS DE ESCRITA extraidos por
     _extract_write_targets - nunca menciona de leitura (cat, grep, python lendo o kernel)
     em outro trecho do mesmo comando."""
-    return any(_is_kernel_path(alvo) for alvo in _extract_write_targets(command))
+    return any(_is_kernel_path(_com_cwd(alvo, cwd)) for alvo in _extract_write_targets(command))
 
 
 _HEREDOC_RE = re.compile(r"<<-?\s*['\"]?\w+")
@@ -532,7 +704,7 @@ def _bash_carries_inline_content(command: str) -> bool:
     existente no disco fica fora - a prova periodica de proof/check.py cobre a superficie depois."""
     if _HEREDOC_RE.search(command):
         return True
-    for clausula in re.split(r"[;&|]+", command):
+    for clausula in _SPLIT_CLAUSULAS_RE.split(command):
         if _INLINE_WRITE_CMD_RE.match(clausula.strip()):
             return True
     return False
@@ -613,7 +785,7 @@ def _has_secret(text: str) -> bool:
 
 
 def _is_client_write_without_delegation(event: dict, path: str) -> bool:
-    p = _norm(path).lower()
+    p = "/" + _norm(path.strip().strip("'\"")).lower().lstrip("/")
     m = re.search(r"/clients/([a-z0-9\-]+)/", p)
     if not m:
         return False
@@ -621,21 +793,28 @@ def _is_client_write_without_delegation(event: dict, path: str) -> bool:
     if NEGATION4_COORDINATION_EXEMPT in p:
         return False
     m_artifact = ARTIFACT_TASK_RE.search(p)
-    if m_artifact and _artifact_marked_by_subagent(m_artifact.group(1).upper()):
+    if m_artifact and _artifact_marked_by_subagent(m_artifact.group(1).upper(), client_id):
         return False
     if event.get("_is_subagent"):
         # a propria sessao delegada (Agent/Task <id>-*) escrevendo no proprio
         # Client nunca e negada; a negacao e so sobre a SESSAO PRINCIPAL.
         return False
     session_id = event.get("session_id")
+    # 2.1.3 (P0-6): a liberacao expressa do CEO (direto.json) tambem destrava ESTA guarda; sem isso o
+    # CEO liberava a sessao principal na muralha e a guarda 4 seguia negando: acao sem ator.
+    if _direct_grant_valid(session_id):
+        return False
     return not ledger.session_has_agent_prefix(_ledger_path(), session_id, client_id + "-")
 
 
-def _artifact_marked_by_subagent(task_id: str) -> bool:
+def _artifact_marked_by_subagent(task_id: str, client_id: str | None = None) -> bool:
     """True se ja existe um marcador `artifact_write` no ledger (gravado pelo proprio
-    PostToolUse quando um sub-agente escreveu em artifacts/<task_id>/) para este task_id."""
+    PostToolUse quando um sub-agente escreveu em artifacts/<task_id>/) para este task_id. Marcador com
+    Client gravado so vale para esse Client (2.1.3); o antigo, sem Client, segue valendo."""
     for ev in ledger.read_events(_ledger_path()):
         if ev.get("event") == "artifact_write" and ev.get("task_id") == task_id:
+            if client_id and ev.get("client") and ev.get("client") != client_id:
+                continue
             return True
     return False
 
@@ -644,17 +823,21 @@ def handle_post_write_artifact_marker(event: dict) -> None:
     """PostToolUse de Write/Edit em artifacts/<task_id>/: grava o marcador que a 4a negacao
     consulta depois. So marca quando o PreToolUse ja deixou passar (PostToolUse so roda se o
     Write/Edit foi de fato executado)."""
+    if not event.get("agent_id"):
+        return  # 2.1.3: so a escrita de SUB-AGENTE marca; a da sessao principal nunca se auto-isenta
     tool_input = event.get("tool_input") or {}
     path = _norm(tool_input.get("file_path", ""))
     m = ARTIFACT_TASK_RE.search(path.lower())
     if not m:
         return
     task_id = m.group(1).upper()
+    m_cli = re.search(r"/clients/([a-z0-9\-]+)/", "/" + path.lower().lstrip("/"))
     ledger.append_event(_ledger_path(), {
         "event": "artifact_write",
         "session_id": event.get("session_id"),
         "agent_id": event.get("agent_id"),
         "task_id": task_id,
+        "client": m_cli.group(1) if m_cli else None,
         "path": path,
     })
 
@@ -674,7 +857,29 @@ def _current_git_head(repo_dir: str) -> str | None:
     return proc.stdout.decode("utf-8", "replace").strip()
 
 
-def _check_marker_valido() -> bool:
+def _git_toplevel(pasta: str) -> str | None:
+    import subprocess  # tardio (ver _current_git_head)
+    try:
+        proc = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=pasta,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except (OSError, NotADirectoryError):
+        return None
+    return proc.stdout.decode("utf-8", "replace").strip() or None if proc.returncode == 0 else None
+
+
+def _mesmo_caminho(a: str, b: str) -> bool:
+    return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+
+
+def _usa_git(command: str) -> bool:
+    for c in _SPLIT_CLAUSULAS_RE.split(_sem_corpo_heredoc(command)):
+        t = _cmd_tokens(c)
+        if t and _base_cmd(t[0]) == "git":
+            return True
+    return False
+
+
+def _check_marker_valido(command: str = "", cwd: str | None = None) -> bool:
     """[MEDIDO, achado do CEO 24/09/2026] A negacao antiga exigia ALIA_CHECK_MARKER_PATH -
     ninguem setava essa variavel de ambiente fora dos proprios testes, entao TODO `git push` a
     partir do studio vivo nascia negado para sempre. Agora o marcador vive num caminho FIXO
@@ -702,7 +907,27 @@ def _check_marker_valido() -> bool:
     if not head_gravado:
         return False
     repo_dir = dados.get("repo") or os.path.dirname(os.path.dirname(marker))
-    return _current_git_head(repo_dir) == head_gravado
+    if _current_git_head(repo_dir) != head_gravado:
+        return False
+    # 2.1.3: o repo nunca pode estar numa VERSION POSTERIOR a que o check verde mediu (anterior e o caso normal:
+    # ele so recebe a nova pelo proprio publicar, que confere o VERSION commitado depois).
+    ver_marc = dados.get("version")
+    if ver_marc:
+        try:
+            with open(os.path.join(repo_dir, "VERSION"), "r", encoding="utf-8") as fv:
+                ver_repo = fv.read().strip()
+            if tuple(int(x) for x in ver_repo.split(".")) > tuple(int(x) for x in str(ver_marc).split(".")):
+                return False
+        except (OSError, ValueError):
+            return False
+    # 2.1.3 (P1-7): o check verde vale para o repo que ELE mediu. `git push` de OUTRO repo (cd/-C/cwd)
+    # nunca passa por um marcador que foi gravado para o produto.
+    if command and _usa_git(command):
+        alvo = _repo_do_push(command, cwd or _project_dir())
+        topo = _git_toplevel(alvo) if alvo and os.path.isdir(alvo) else None
+        if topo and not _mesmo_caminho(topo, repo_dir):
+            return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -722,6 +947,37 @@ WALL_DIRECT_MAX_S = 60 * 60
 _WALL_NULL_SINKS = ("/dev/null", "nul", "$null")
 _WALL_INTERP_RE = re.compile(r"(?i)\b(python3?|py|node|pwsh|powershell)(\.exe)?\b[^\n]*"
                              r"(\s-c\b|\s-e\b|\s-command\b|<<|\s-\s*<)")
+# 2.1.3 (P1-4): powershell -EncodedCommand/-enc/-ec esconde o script em base64 (nada de token de escrita
+# visivel): vale como script inline que escreve. `-ExecutionPolicy` NAO casa (o `x` quebra o -e\w*).
+_WALL_ENCODED_RE = re.compile(r"(?i)\b(?:pwsh|powershell)(?:\.exe)?\b[^\n]*?\s-e(?:c|n\w*)?(?=\s|$)")
+_SCRIPT_EXT = (".py", ".js", ".mjs", ".cjs", ".ps1", ".sh")
+_SCRIPT_ALLOW_RE = re.compile(r"(?:^|/)(?:v2/(?:bin|proof|flow)|scripts|\.claude/skills/[^/]+/scripts)/")
+
+
+def _wall_script_fora_da_allowlist(command: str, cwd: str | None) -> bool:
+    """`python x.py`/`node x.js`/`pwsh -File x.ps1`/`bash x.sh` rodando script FORA da allowlist (v2/bin,
+    v2/proof, v2/flow, scripts/, skills/*/scripts/, e a infra liberada): o arquivo pode escrever o que
+    quiser e o texto do comando nao mostra (P1-4). `python -m`/`-c` ficam com a regra inline."""
+    for c in _SPLIT_CLAUSULAS_RE.split(_sem_corpo_heredoc(command)):
+        toks = _cmd_tokens(c)
+        if not toks or _base_cmd(toks[0]) not in _INTERPRETES:
+            continue
+        script = None
+        for a in toks[1:]:
+            low = a.lower()
+            if low in ("-c", "-command", "-m", "-e"):
+                break
+            if a.startswith("-"):
+                continue
+            if low.endswith(_SCRIPT_EXT):
+                script = a
+                break
+        if script is None:
+            continue
+        alvo = "/" + _norm(_com_cwd(script, cwd)).lower().lstrip("/")
+        if not (_SCRIPT_ALLOW_RE.search(alvo) or _wall_path_allowed(_com_cwd(script, cwd))):
+            return True
+    return False
 _WALL_WRITE_TOKENS_RE = re.compile(r"(?i)(open\s*\([^)]*['\"][wa]|write_text|write_bytes|writefile|"
                                    r"fs\.\w*write|set-content|add-content|out-file|\.write\()")
 
@@ -740,6 +996,9 @@ def _direct_grant_valid(session_id: str | None) -> bool:
     try:
         with open(_direct_grant_path(), "r", encoding="utf-8") as fh:
             g = json.load(fh)
+        # 2.1.3: o arquivo guarda UMA liberacao por sessao em "grants" (duas sessoes nao se sobrescrevem);
+        # o formato antigo (liberacao solta no topo) segue valendo.
+        g = ((g.get("grants") or {}).get(session_id) if session_id else None) or g
         now = time.time()
         return (bool(session_id) and g.get("session_id") == session_id
                 and len(str(g.get("ceo_quote") or "").strip()) >= 5
@@ -750,7 +1009,7 @@ def _direct_grant_valid(session_id: str | None) -> bool:
 
 
 def _wall_path_allowed(path: str) -> bool:
-    p = "/" + _norm(path).strip().strip("'\"").lower().lstrip("/")
+    p = "/" + _norm(path.strip().strip("'\"")).lower().lstrip("/")
     if p.lstrip("/") in _WALL_NULL_SINKS:
         return True
     if any(a in p for a in WALL_ALLOW_FRAGMENTS):
@@ -777,16 +1036,19 @@ def _wall_check(event: dict) -> dict | None:
     if tool in ("Bash", "PowerShell") and re.search(r"(?i)direto\.json|direto\.py", str(ti.get("command") or "")):
         return _deny("muralha de delegacao: a sessao principal nao cria a propria liberacao - so o "
                      "pedido expresso do CEO na mensagem dele (hook de prompt) libera.")
-    if tool in ("Write", "Edit", "NotebookEdit"):
+    cwd = event.get("cwd")
+    if tool in ("Write", "Edit", "NotebookEdit", "MultiEdit"):
         alvos = [ti.get("file_path") or ti.get("notebook_path") or ""]
         inline = False
     else:
         cmd = str(ti.get("command") or "")
-        alvos = _extract_write_targets(cmd)
+        alvos = [_com_cwd(a, cwd) for a in _extract_write_targets(cmd)]
         # passagem: o proprio comando de publicar/propagar, sem encadear nada, nao e "script inline
         # que escreve arquivo" (invocado via -Command). Alvo de escrita explicito segue valendo.
-        passa = bool(_WALL_PASS_RE.match(cmd) and not _WALL_PASS_BAD_ARG_RE.search(cmd))
-        inline = bool(_WALL_INTERP_RE.search(cmd) and _WALL_WRITE_TOKENS_RE.search(cmd)) and not passa
+        passa = bool(_WALL_PASS_RE.fullmatch(cmd.strip()) and not _WALL_PASS_BAD_ARG_RE.search(cmd))
+        inline = not passa and bool(
+            (_WALL_INTERP_RE.search(cmd) and _WALL_WRITE_TOKENS_RE.search(cmd))
+            or _WALL_ENCODED_RE.search(cmd) or _wall_script_fora_da_allowlist(cmd, cwd))
     fora = [a for a in alvos if not _wall_path_allowed(a)]
     if not fora and not inline:
         return None
@@ -803,7 +1065,10 @@ def _wall_check(event: dict) -> dict | None:
 _DIRECT_ASK_RE = re.compile(
     r"(?i)(fa[cz]a|faz|executa|execute|resolve|resolva|mexe|mexa)\s+(voce|vc)\s+mesm[ao]"
     r"|(pode|quero que)\s+(voce|vc)\s+(mesm[ao]\s+)?(faz|fazer|execute|executar|mexer)"
-    r"|sem\s+delegar|nao\s+delegue|libera(r)?\s+(a\s+)?alia\s+(pra|para)\s+(fazer|executar)")
+    r"|(?:^|[.!?\n]\s*)sem\s+delegar"  # 2.1.3: "ela fez sem delegar" e queixa, nao pedido
+    r"|(?<!ela )(?<!ele )(?<!alia )(?<!voce )(?<!vc )\b(?:faz|faca|execute|executa|resolve|resolva|mexe|mexa|rode|roda|edite|edita|escreva|escreve)\b[^.!?\n]{0,40}\bsem\s+delegar"
+    r"|\b(?:quero|pode|precisa|preciso)\b[^.!?\n]{0,30}\bsem\s+delegar"
+    r"|nao\s+delegue|libera(r)?\s+(a\s+)?alia\s+(pra|para)\s+(fazer|executar)")
 
 
 _HARNESS_PROMPT_MARKERS = ("<task-notification>", "[system notification", "<system-reminder>")
@@ -827,9 +1092,16 @@ def handle_user_prompt_submit(event: dict) -> dict:
     grant = {"session_id": sid, "granted_at": agora, "expires_at": agora + WALL_DIRECT_MAX_S,
              "ceo_quote": prompt.strip()[:300]}
     gp = _direct_grant_path()
-    os.makedirs(os.path.dirname(gp), exist_ok=True)
-    with open(gp, "w", encoding="utf-8") as fh:
-        json.dump(grant, fh, ensure_ascii=False)
+    with trava.trava(gp):
+        try:
+            with open(gp, "r", encoding="utf-8") as fh:
+                atual = json.load(fh)
+            grants = dict((atual.get("grants") or {}) if isinstance(atual, dict) else {})
+        except (OSError, json.JSONDecodeError):
+            grants = {}
+        grants = {k: v for k, v in grants.items() if isinstance(v, dict) and float(v.get("expires_at") or 0) > agora}
+        grants[sid] = grant
+        trava.gravar_atomico(gp, json.dumps({**grant, "grants": grants}, ensure_ascii=False))
     ledger.append_event(_ledger_path(), {"event": "direct_grant", "session_id": sid,
                                          "ceo_quote": grant["ceo_quote"], "expires_at": grant["expires_at"]})
     return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext":
@@ -837,24 +1109,51 @@ def handle_user_prompt_submit(event: dict) -> dict:
             "executar sozinha; a liberacao vale esta sessao por ate 60 min."}}
 
 
+_MARCADORES_PROPRIOS = ("direto.json", "check-ok.json")
+
+
+def _e_marcador_proprio(path: str) -> bool:
+    return _norm((path or "").strip().strip("'\"")).lower().rsplit("/", 1)[-1] in _MARCADORES_PROPRIOS
+
+
+def _comando_forja_marcador(command: str, cwd: str | None) -> bool:
+    """2.1.3 (P1-7): .alia/check-ok.json e .alia/direto.json (a liberacao do CEO e o check verde) so nascem
+    do proprio check.py e do hook de prompt. NINGUEM os forja por Bash/PowerShell, sub-agente inclusive:
+    alvo de escrita com esse nome, ou o nome junto de gravacao inline. So LER nao e barrado."""
+    if not re.search(r"(?i)(?:direto|check-ok)\.json", command):
+        return False
+    if any(_e_marcador_proprio(a) for a in _extract_write_targets(command)):
+        return True
+    return bool(_WALL_WRITE_TOKENS_RE.search(command) or re.search(r"(?i)\bsed\b[^\n]*\s-i", command))
+
+
 def handle_pretooluse_guard(event: dict) -> dict:
     tool_name = event.get("tool_name")
     tool_input = event.get("tool_input") or {}
+    cwd = event.get("cwd")
     # sessao principal x sub-agente: PreToolUse/PostToolUse carregam agent_id
     # quando a chamada nasce dentro de um sub-agente (campo comum documentado
     # na doc oficial de hooks). Sem agent_id = sessao principal.
     event["_is_subagent"] = bool(event.get("agent_id"))
-    if tool_name in ("Write", "Edit", "NotebookEdit", "Bash", "PowerShell"):
+    if tool_name in ("Write", "Edit", "NotebookEdit", "MultiEdit"):
+        _fp = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
+        if _e_marcador_proprio(_fp):
+            return _deny("guard: .alia/check-ok.json e .alia/direto.json nao se escrevem por ferramenta - "
+                         "so o check.py (marcador) e o pedido expresso do CEO (liberacao) os criam")
+    elif tool_name in ("Bash", "PowerShell"):
+        if _comando_forja_marcador(str(tool_input.get("command") or ""), cwd):
+            return _deny("guard: .alia/check-ok.json e .alia/direto.json nao se forjam por comando - "
+                         "so o check.py (marcador) e o pedido expresso do CEO (liberacao) os criam")
+    if tool_name in ("Write", "Edit", "NotebookEdit", "MultiEdit", "Bash", "PowerShell"):
         _negado_muralha = _wall_check(event)
         if _negado_muralha:
             return _negado_muralha
 
-    if tool_name in ("Write", "Edit", "NotebookEdit"):
+    if tool_name in ("Write", "Edit", "NotebookEdit", "MultiEdit"):
         path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
         content = str(tool_input.get("content") or tool_input.get("new_string")
                       or tool_input.get("new_source") or "")
-        # MultiEdit nao existe hoje neste dispatch (grep sem ocorrencia) - quando existir, some
-        # o texto de "edits" aqui antes de checar identidade (mesma trava, sem tool novo).
+        # MultiEdit (2.1.3): o texto novo de CADA edicao entra na varredura de segredo e identidade.
         for edit_extra in (tool_input.get("edits") or []):
             if isinstance(edit_extra, dict):
                 content += "\n" + str(edit_extra.get("new_string") or "")
@@ -874,7 +1173,7 @@ def handle_pretooluse_guard(event: dict) -> dict:
         # mora em disco), entao escanear o path derrubava QUALQUER escrita legitima com conteudo
         # limpo. O caminho so decide SE o alvo e publicavel (classify_target); a identidade so e
         # julgada pelo CONTEUDO que vai DENTRO do arquivo.
-        alvo_publicavel = identity_guard.classify_target(path)
+        alvo_publicavel = identity_guard.classify_target(_nome_longo(path.replace("\\", "/")) if path else path)
         if alvo_publicavel:
             vazamento = identity_guard.find_identity_leak(content)
             if vazamento:
@@ -901,7 +1200,7 @@ def handle_pretooluse_guard(event: dict) -> dict:
         if _faltam_artifact:
             return _deny("guard: fechar Task exige artifact que EXISTA em disco - nao resolve: "
                          + "; ".join(_faltam_artifact) + " (repo externo: prefixo ext:)")
-        if _bash_targets_kernel(command):
+        if _bash_targets_kernel(command, cwd):
             return _deny("guard: Bash redireciona/copia para o kernel (AGENTS.md, "
                          "CLAUDE.md, CONTRACTS.md ou engine/) - negado")
         if any(_is_pulso_write_target(alvo) for alvo in _extract_write_targets(command)):
@@ -917,8 +1216,8 @@ def handle_pretooluse_guard(event: dict) -> dict:
         # CONSERTO (Gate do NEXUS, medido): o texto do ALVO (caminho) e removido do comando ANTES
         # de varrer - mesmo motivo do bloco Write/Edit acima, o caminho publicavel sempre contem
         # pasta do usuario/estudio por construcao; so o texto INLINE (heredoc/echo) e julgado.
-        _alvos_escrita = _extract_write_targets(command)
-        _alvos_publicaveis = [a for a in _alvos_escrita if identity_guard.classify_target(a)]
+        _alvos_escrita = [_com_cwd(a, cwd) for a in _extract_write_targets(command)]
+        _alvos_publicaveis = [a for a in _alvos_escrita if identity_guard.classify_target(_nome_longo(a.replace("\\", "/")))]
         if _alvos_publicaveis and _bash_carries_inline_content(command):
             _texto_sem_alvo = _inline_content_text(command)
             for _alvo_pub in _alvos_publicaveis:
@@ -932,11 +1231,11 @@ def handle_pretooluse_guard(event: dict) -> dict:
                     f"motor ({_kind_bash}) - {_vazamento_bash}. Use um nome generico; a evidencia "
                     "real fica na pasta privada (opportunities/)."
                 )
-        if PUBLISH_PATTERNS.search(command):
+        if _comando_publica(command):
             if event["_is_subagent"]:
                 return _deny("guard: especialista nunca publica (L70) - publicacao so pela "
                              "sessao principal, depois do check verde")
-            if not _check_marker_valido():
+            if not _check_marker_valido(command, cwd):
                 return _deny("guard: publicacao sem check (marcador de check ausente, "
                              "vencido ha mais de 30 min, ou HEAD divergente). Rode da raiz do "
                              "studio: python v2/proof/check.py --repo <caminho do repo a publicar> "
@@ -1233,8 +1532,15 @@ def _alia(argv: list[str]) -> tuple[int, dict]:
         return 1, {"ok": False, "regra": "erro_interno", "error": str(exc)}
 
 
-def _negacao_da_espinha(codigo: int, res: dict) -> dict | None:
-    if codigo == 0 or res.get("regra") in _ESPINHA_SEM_VOTO:
+def _negacao_da_espinha(codigo: int, res: dict, sessao: str = "") -> dict | None:
+    if codigo == 0:
+        return None
+    if res.get("regra") in _ESPINHA_SEM_VOTO:
+        try:  # falha aberta deixa rastro no ledger (C8): o `task pending` avisa o host sem trava
+            import espinha  # noqa: E402
+            espinha.registrar_falha_aberta("claude", str(res.get("regra")), sessao)
+        except Exception:
+            pass
         return None
     return _deny(f"espinha: {res.get('error')} [{res.get('regra')}]")
 
@@ -1244,7 +1550,7 @@ def _espinha_dispatch(event: dict) -> dict | None:
     agente, sessao = tool_input.get("subagent_type"), event.get("session_id")
     if not agente or not sessao:
         return None
-    return _negacao_da_espinha(*_alia(["task", "dispatch", "--specialist", str(agente), "--session", str(sessao)]))
+    return _negacao_da_espinha(*_alia(["task", "dispatch", "--specialist", str(agente), "--session", str(sessao)]), str(sessao))
 
 
 def _espinha_grafo(event: dict) -> dict | None:
@@ -1254,7 +1560,7 @@ def _espinha_grafo(event: dict) -> dict | None:
     codigo, res = _alia(["graph", "check", "--session", str(event["session_id"]), "--tool", str(event.get("tool_name")),
                          "--path", str(tool_input.get("path") or ""), "--cwd", str(event.get("cwd") or ""),
                          "--host", "claude", "--transcript", str(event.get("transcript_path") or "")])
-    negacao = _negacao_da_espinha(codigo, res)
+    negacao = _negacao_da_espinha(codigo, res, str(event["session_id"]))
     if negacao:
         return negacao
     if res.get("aviso"):
@@ -1320,7 +1626,7 @@ def main() -> int:
             if tool_name in ("Grep", "Glob"):
                 _write_stdout(_espinha_grafo(event) or _no_decision())
                 return 0
-            if tool_name in ("Write", "Edit", "NotebookEdit", "Bash", "PowerShell"):
+            if tool_name in ("Write", "Edit", "NotebookEdit", "MultiEdit", "Bash", "PowerShell"):
                 _write_stdout(handle_pretooluse_guard(event))
                 return 0
             _write_stdout(_no_decision())
@@ -1333,7 +1639,7 @@ def main() -> int:
         if hook == "PostToolUse":
             if tool_name in ("Agent", "Task"):
                 handle_post_agent(event)
-            if tool_name in ("Write", "Edit"):
+            if tool_name in ("Write", "Edit", "MultiEdit"):
                 handle_post_write_artifact_marker(event)
             _write_stdout({})
             return 0

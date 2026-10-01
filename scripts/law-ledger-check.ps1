@@ -224,7 +224,7 @@ if (-not $temStudioExample) {
 # nao presumido.
 $temSmokeStudio = Test-Path -LiteralPath (Join-Path $root "scripts/smoke-test-studio.ps1")
 if (-not $temSmokeStudio) {
-    $semMaquinaAqui["scripts/smoke-test-studio.ps1"] = "smoke DA INSTANCIA aplicada do operador - por desenho nao viaja no pacote publico (package-release.ps1, allowlist scripts/, comentario 'Fora de proposito'); AUSENTE aqui e esperado (medido no ato: Test-Path " + (Join-Path $root "scripts/smoke-test-studio.ps1") + " = False), nao ponteiro podre"
+    $semMaquinaAqui["scripts/smoke-test-studio.ps1"] = "smoke DA INSTANCIA aplicada do operador - por desenho nao viaja no pacote publico (package-release.ps1, allowlist scripts/, comentario 'Fora de proposito'); AUSENTE aqui e esperado (medido no ato: Test-Path " + (Join-Path $root "scripts/smoke-test-studio.ps1") + " = False), nao ponteiro podre"   # opcional-no-pacote (mensagem, nao chamada)
 }
 
 # CONSERTO TASK-157: aceita as 2 formas de chamada do helper Check(...) usadas no motor -

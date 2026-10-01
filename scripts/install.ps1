@@ -29,6 +29,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# PS 5.1 antigo nao negocia TLS 1.2 sozinho: o download do GitHub falha sem isto
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
 
 # Repo publico do Alia Flow (open source). Branch main.
 $repo   = "gufarina/alia.flow"
@@ -36,18 +38,9 @@ $branch = "main"
 $zip    = "https://github.com/$repo/archive/refs/heads/$branch.zip"
 $dest   = $Dest
 
-# Fases do protocolo de progresso (contrato secao 3) - enum fixo, os 8 valores validos de "phase".
-$eventPhases = @("download","extract","guard","backup","copy","smoke","rollback","done")
-
 # Camada do operador, intocada por qualquer coisa que venha do pacote (mesma lista do
 # update-online.ps1 - reuse-first, nao inventa nome novo).
 $protected = @("studio","clients","state.json","studio.yaml","alia.config.json","memory",".git")
-
-if ($repo -eq "ORG/alia-flow") {
-  Write-Host "[AVISO] Este instalador ainda nao foi publicado (repo placeholder)."
-  Write-Host "        O DevOps troca ORG/alia-flow pelo repo real antes de divulgar a linha."
-  exit 1
-}
 
 # ---------------------------------------------------------------------------
 # Funcoes do miolo transacional - testaveis isoladamente, sem baixar nada.
@@ -147,14 +140,27 @@ function Assert-SafeInstallSet {
 }
 
 function Test-UnsafeDestPath {
-  # Guarda de destino: recusa raiz de drive (C:\, D:\...) ou pasta de sistema conhecida
-  # (Windows, Program Files, Program Files (x86), System32) - furo do contrato secao 4/5.
+  # Guarda de destino: recusa raiz de drive, pasta de sistema e a pasta PESSOAL do usuario (perfil,
+  # AppData, Desktop, Documentos, Downloads): instalar ali grava .claude/ no perfil global.
+  # Subpasta dessas e permitida; so a pasta em si e barrada.
   param([Parameter(Mandatory)][string]$Path)
   $norm = $Path.TrimEnd('\', '/')
-  if ($norm -match '^[A-Za-z]:$') { return $true }
+  if ($norm -eq "" -or $norm -match '^[A-Za-z]:$') { return $true }
+  try { $full = [System.IO.Path]::GetFullPath($Path).TrimEnd('\', '/') } catch { return $true }
+  if ($full -match '^[A-Za-z]:$' -or $full -match '^\\\\[^\\]+$') { return $true }
   $unsafeLeaves = @("windows", "program files", "program files (x86)", "system32")
-  $leaf = Split-Path -Path $norm -Leaf
+  $leaf = Split-Path -Path $full -Leaf
   if ($unsafeLeaves -contains $leaf.ToLower()) { return $true }
+  $personal = @($env:USERPROFILE, $env:HOME, $env:APPDATA, $env:LOCALAPPDATA, $env:ProgramData,
+    [Environment]::GetFolderPath("UserProfile"), [Environment]::GetFolderPath("Desktop"),
+    [Environment]::GetFolderPath("MyDocuments"), [Environment]::GetFolderPath("ApplicationData"),
+    [Environment]::GetFolderPath("LocalApplicationData"))
+  if ($env:USERPROFILE) { $personal += (Join-Path $env:USERPROFILE "Downloads") }
+  foreach ($p in $personal) {
+    if ([string]::IsNullOrWhiteSpace($p)) { continue }
+    try { $pf = [System.IO.Path]::GetFullPath($p).TrimEnd('\', '/') } catch { continue }
+    if ($full -ieq $pf) { return $true }
+  }
   return $false
 }
 
@@ -189,6 +195,15 @@ function Write-InstallEvent {
   }
 }
 
+# Via "iwr | iex" nao existe arquivo de script ($PSCommandPath vazio): "exit" fecharia a janela do
+# usuario antes de ele ler o erro. Nesse caso so sinaliza o codigo e deixa o chamador dar "return".
+$viaIex = [string]::IsNullOrWhiteSpace($PSCommandPath)
+function Quit-Install([int]$Code) {
+  $global:LASTEXITCODE = $Code
+  if ($viaIex) { Write-Host "(instalacao interrompida - leia a mensagem acima; esta janela continua aberta)" }
+  else { exit $Code }
+}
+
 # Se o script foi apenas "dot-sourced" para testar as funcoes acima, para aqui.
 if ($env:ALIA_INSTALL_TEST_ONLY -eq "1") {
   return
@@ -203,7 +218,7 @@ if ($env:ALIA_INSTALL_TEST_ONLY -eq "1") {
 if (Test-UnsafeDestPath -Path $dest) {
   Write-Host ("[ERRO] destino nao permitido (raiz de drive ou pasta de sistema): " + $dest)
   Write-InstallEvent -EventLogPath $EventLog -Phase "guard" -Pct 0 -Message "destino invalido" -Result "error" -Detail ([ordered]@{ dest = $dest })
-  exit 1
+  Quit-Install 1; return
 }
 
 Write-Host "Alia - baixando e instalando nesta pasta..."
@@ -219,7 +234,7 @@ try {
   } catch {
     Write-Host ("[ERRO] download falhou (rede/URL): " + $_.Exception.Message)
     Write-InstallEvent -EventLogPath $EventLog -Phase "done" -Pct 100 -Message "download falhou" -Result "error" -Detail ([ordered]@{ dest = $dest })
-    exit 1
+    Quit-Install 1; return
   }
 
   Write-InstallEvent -EventLogPath $EventLog -Phase "extract" -Pct 30 -Message "extraindo o pacote"
@@ -228,7 +243,7 @@ try {
   } catch {
     Write-Host ("[ERRO] extracao falhou (zip corrompido?): " + $_.Exception.Message)
     Write-InstallEvent -EventLogPath $EventLog -Phase "done" -Pct 100 -Message "extracao falhou" -Result "error" -Detail ([ordered]@{ dest = $dest })
-    exit 1
+    Quit-Install 1; return
   }
 
   # O zip do GitHub tem uma pasta raiz (ex: alia-flow-main/). O conteudo dela vai pra $dest.
@@ -236,7 +251,7 @@ try {
   if ($null -eq $inner) {
     Write-Host "[ERRO] o pacote baixado nao tem a pasta raiz esperada (zip vazio ou formato inesperado) - nada tocado."
     Write-InstallEvent -EventLogPath $EventLog -Phase "done" -Pct 100 -Message "pacote sem pasta raiz" -Result "error" -Detail ([ordered]@{ dest = $dest })
-    exit 1
+    Quit-Install 1; return
   }
 
   Write-InstallEvent -EventLogPath $EventLog -Phase "guard" -Pct 40 -Message "conferindo integridade e colisoes"
@@ -275,7 +290,7 @@ try {
       if ($LASTEXITCODE -ne 0) {
         Write-Host "[ERRO] integridade do pacote falhou (MANIFEST.sha256 nao bate) - nada tocado."
         Write-InstallEvent -EventLogPath $EventLog -Phase "done" -Pct 100 -Message "integridade falhou" -Result "error" -Detail ([ordered]@{ dest = $dest })
-        exit 1
+        Quit-Install 1; return
       }
     }
   }
@@ -287,7 +302,7 @@ try {
   } catch {
     Write-Host ("[ABORTADO] " + $_.Exception.Message.Substring(12))
     Write-InstallEvent -EventLogPath $EventLog -Phase "done" -Pct 100 -Message "guarda de seguranca abortou" -Result "error" -Detail ([ordered]@{ dest = $dest })
-    exit 1
+    Quit-Install 1; return
   }
 
   # Deteccao de estado previo: o que ja existe em $dest e colidiria com a copia.
@@ -299,18 +314,21 @@ try {
     Write-InstallEvent -EventLogPath $EventLog -Phase "backup" -Pct 55 -Message "salvando conteudo anterior"
     $backupDir = Backup-Dest -DestDir $dest -Items $collidingItems
     Write-Host ("[OK] backup do conteudo anterior salvo em: " + $backupDir)
+    foreach ($ci in $collidingItems) { Write-Host ("[AVISO] '" + $ci + "' ja existia aqui e sera substituido/mesclado (a sua versao esta no backup acima).") }
   }
 
   Write-InstallEvent -EventLogPath $EventLog -Phase "copy" -Pct 75 -Message "copiando o motor"
+  $packageItems = @(Get-ChildItem -Path $inner.FullName -Force | Select-Object -ExpandProperty Name)
   try {
+    New-Item -ItemType Directory -Force -Path $dest | Out-Null
     Copy-AliaContent -SourceDir $inner.FullName -DestDir $dest
   } catch {
     Write-Host ("[ERRO] copia falhou no meio: " + $_.Exception.Message)
-    Restore-Dest -DestDir $dest -BackupDir $backupDir -Items $collidingItems
+    Restore-Dest -DestDir $dest -BackupDir $backupDir -Items $packageItems   # TODOS os itens do pacote: cobre copia parcial em pasta vazia
     Write-Host "[ROLLBACK] estado anterior restaurado."
     Write-InstallEvent -EventLogPath $EventLog -Phase "rollback" -Pct 90 -Message "restaurando estado anterior"
     Write-InstallEvent -EventLogPath $EventLog -Phase "done" -Pct 100 -Message "instalacao revertida" -Result "rolledback" -Detail ([ordered]@{ dest = $dest; backupDir = $backupDir })
-    exit 1
+    Quit-Install 1; return
   }
 } finally {
   # TASK-569: $env:TEMP as vezes chega em nome curto 8.3 (ex.: C:/Users/NOME~1/...). O
@@ -341,7 +359,7 @@ if ($backupDir) {
 # mais token. Cadeia fail-soft (scripts/ensure-graphify.ps1): nunca trava esta instalacao, nunca
 # imprime Python/pip/uv/nome de pacote - so a frase abaixo, e se tudo falhar, uma frase honesta.
 Write-Host ""
-Write-Host "Preparando o mapa de conhecimento do seu projeto (deixa meu trabalho mais rapido e mais barato pra voce)..."
+Write-Host "Instalando o motor do mapa de conhecimento (o pacote Python graphifyy, no seu Python/uv, fixo numa versao; deixa meu trabalho mais rapido e mais barato). Se falhar, a instalacao segue sem ele."
 $ensureGraphify = Join-Path $dest "scripts\ensure-graphify.ps1"
 if (Test-Path -LiteralPath $ensureGraphify) {
   try { & powershell -ExecutionPolicy Bypass -File $ensureGraphify } catch { }

@@ -18,7 +18,7 @@ export default function (pi) {
   pi.on("tool_call", async (event, ctx) => {
     const argv = traduzir("pi", event.toolName, event.input, sessao(ctx), ctx?.cwd ?? process.cwd());
     if (!argv) return undefined;
-    const motivo = recusa(chamarAlia(argv));
+    const motivo = recusa(chamarAlia(argv), "pi");
     return motivo ? { block: true, reason: motivo } : undefined;
   });
   pi.on("before_agent_start", async (_event, ctx) => {

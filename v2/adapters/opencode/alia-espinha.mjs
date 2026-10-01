@@ -15,7 +15,7 @@ export const AliaEspinha = async ({ directory }) => ({
   "tool.execute.before": async (input, output) => {
     const argv = traduzir("opencode", input.tool, output.args, input.sessionID, directory);
     if (!argv) return;
-    const motivo = recusa(chamarAlia(argv));
+    const motivo = recusa(chamarAlia(argv), "opencode");
     if (motivo) throw new Error(motivo);
   },
   event: async ({ event }) => {

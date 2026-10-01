@@ -77,12 +77,57 @@ def _clean_env(extra: dict | None = None) -> dict:
     return env
 
 
+_MODS: dict = {}
+
+
+def _load_dispatch(dispatch: str):
+    """Carrega o dispatch (real ou mutante) UMA vez, no mesmo processo (2.1.3: ~100 spawns de python eram
+    os ~20 s do check.py; o teto e 30 s). O que MEDE latencia segue em subprocesso (`spawn=True`)."""
+    import importlib.util
+    mod = _MODS.get(dispatch)
+    if mod is None:
+        spec = importlib.util.spec_from_file_location("rp_dispatch%d" % len(_MODS), dispatch)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _MODS[dispatch] = mod
+    return mod
+
+
+def _dispatch_inproc(payload: str, env: dict, dispatch: str) -> tuple[dict, int]:
+    """Mesmo `main()` do hook real, com stdin/stdout/ambiente trocados so durante a chamada."""
+    import io
+    import types
+    mod = _load_dispatch(dispatch)
+    env_antes, in_antes, out_antes = dict(os.environ), sys.stdin, sys.stdout
+    os.environ.clear()
+    os.environ.update(env)
+    sys.stdin = types.SimpleNamespace(buffer=io.BytesIO(payload.encode("utf-8")))
+    sys.stdout = io.StringIO()
+    try:
+        try:
+            rc = mod.main()
+        except SystemExit as exc:
+            rc = exc.code or 0
+        texto = sys.stdout.getvalue()
+    finally:
+        sys.stdin, sys.stdout = in_antes, out_antes
+        os.environ.clear()
+        os.environ.update(env_antes)
+    try:
+        return (json.loads(texto) if texto else {}), rc
+    except json.JSONDecodeError:
+        return {"_raw_stdout": texto}, rc
+
+
 def run_dispatch(event: dict | str, env_extra: dict | None = None,
-                 dispatch: str | None = None) -> tuple[dict, float, int]:
+                 dispatch: str | None = None, spawn: bool = False) -> tuple[dict, float, int]:
     assert os.path.abspath(LEDGER) != REAL_STUDIO_LEDGER, "NUNCA gravar no ledger real do studio"
     env = _clean_env({"ALIA_LEDGER_PATH": LEDGER, **(env_extra or {})})
     payload = event if isinstance(event, str) else json.dumps(event, ensure_ascii=False)
     t0 = time.perf_counter()
+    if not spawn:
+        out, rc = _dispatch_inproc(payload, env, dispatch or DISPATCH)
+        return out, (time.perf_counter() - t0) * 1000, rc
     proc = subprocess.run(
         [sys.executable, dispatch or DISPATCH],
         input=payload.encode("utf-8"),
@@ -207,12 +252,12 @@ for i in range(3):
     for d in pyc_dirs:
         if os.path.exists(d):
             shutil.rmtree(d)
-    _, dt, rc = run_dispatch(sample_event)
+    _, dt, rc = run_dispatch(sample_event, spawn=True)
     cold_times.append(dt)
 
 warm_times = []
 for i in range(20):
-    _, dt, rc = run_dispatch(sample_event)
+    _, dt, rc = run_dispatch(sample_event, spawn=True)
     warm_times.append(dt)
 
 print(f"[MEDIDO] frio (pycache limpo a cada rodada, n=3): {[round(t,1) for t in cold_times]} ms, mediana={statistics.median(cold_times):.1f} ms")
@@ -222,7 +267,7 @@ med_warm = statistics.median(warm_times)
 for _ in range(2):
     if med_warm < 150:
         break
-    med_warm = min(med_warm, statistics.median([run_dispatch(sample_event)[1] for _ in range(20)]))
+    med_warm = min(med_warm, statistics.median([run_dispatch(sample_event, spawn=True)[1] for _ in range(20)]))
 print(f"[MEDIDO] mediana quente = {med_warm:.1f} ms")
 check("mediana quente abaixo de 150 ms (meta da secao 1)", med_warm < 150, f"{med_warm:.1f} ms")
 
@@ -428,56 +473,84 @@ check("nega escrita no engine/ da INSTANCIA - a protecao continua viva",
 # DESPACHANTE INTEIRO via subprocess (run_dispatch), no formato exato do hook real.
 sys.path.insert(0, os.path.join(V2, "lib"))
 import identity_guard as _idg_r2  # noqa: E402
-# 2.1.2: rodado DENTRO de release/alia-flow aninhado na oficina, os ancestrais mostram identidade real que o
-# sandbox do despachante filho nao ve (o empacotador roda numa COPIA fora de qualquer instancia).
-_NESTED_PKG = "/release/alia-flow/" in (V2.replace("\\", "/") + "/")
-_idg_ids_r2, _idg_studios_r2 = ([], []) if _NESTED_PKG else _idg_r2.find_operator_client_ids()
-_r2_target = os.path.join(V2, "lib", "___r2-fixture.md")  # caminho REAL: contem usuario + estudio
 
-out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s2",
-                           "tool_input": {"file_path": _r2_target, "content": "x = 1"}})
-check("R2 positivo: Write com CONTEUDO LIMPO em caminho REAL publicavel passa (o caminho, cheio "
-      "de usuario/estudio de verdade, NUNCA e o motivo de negar)", out == {}, str(out))
 
-if _idg_ids_r2:
-    out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s2",
-                               "tool_input": {"file_path": _r2_target, "content": "o Client " + _idg_ids_r2[0] + " pediu isso"}})
-    check("R2 positivo: Write com id de Client real no CONTEUDO nega",
-          out.get("hookSpecificOutput", {}).get("permissionDecision") == "deny", str(out))
+# 2.1.3 (WARDEN): a prova de identidade NAO depende mais de onde a copia mora nem de quem opera (antes:
+# dentro de release/alia-flow o bloco nao rodava e nao dizia nada - prova que passa pela propria sujeira).
+# Sandbox PROPRIO: arvore de produto falsa (VERSION + MANIFEST.sha256 + v2/) com alia.config.json e
+# state.json FALSOS na raiz, e a copia de hooks/+lib/ DENTRO dela - o identity_guard dessa copia sobe a
+# arvore e acha o Client e o estudio falsos. O dispatch roda em subprocesso (spawn): e o identity_guard
+# DESSA arvore que tem que decidir. A prova roda sempre; nenhum caminho a pula.
+IDG_ID, IDG_ESTUDIO = "cliente-ficticio", "Estudio Ficticio"
 
-out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Edit", "session_id": "s2",
-                           "tool_input": {"file_path": _r2_target, "new_string": "y = 2"}})
-check("R2 positivo: Edit com CONTEUDO LIMPO em caminho REAL publicavel passa", out == {}, str(out))
 
-if _idg_studios_r2:
-    out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Edit", "session_id": "s2",
-                               "tool_input": {"file_path": _r2_target, "new_string": "a marca " + _idg_studios_r2[0] + " aparece aqui"}})
-    check("R2 positivo: Edit com nome do estudio real no CONTEUDO nega",
-          out.get("hookSpecificOutput", {}).get("permissionDecision") == "deny", str(out))
+def _ident_sandbox(trocas: list[tuple[str, str]] | None = None) -> tuple[str, str, str]:
+    raiz = _sandbox_tempdir("alia-v2-run-proofs-ident-")
+    for nome, txt in (("VERSION", "0.0.0\n"), ("MANIFEST.sha256", ""),
+                      ("alia.config.json", json.dumps({"studio": IDG_ESTUDIO, "studio_dir": "."})),
+                      ("state.json", json.dumps({"clients": [{"id": IDG_ID}], "tasks": []}))):
+        with open(os.path.join(raiz, nome), "w", encoding="utf-8", newline="") as fh:
+            fh.write(txt)
+    for sub in ("hooks", "lib"):
+        shutil.copytree(os.path.join(V2, sub), os.path.join(raiz, "v2", sub), ignore=shutil.ignore_patterns("__pycache__"))
+    alvo = os.path.join(raiz, "v2", "hooks", "dispatch.py")
+    src = open(alvo, encoding="utf-8", newline="").read()
+    for velho, novo in (trocas or []):
+        assert velho in src, "ponto de mutacao sumiu: " + velho
+        src = src.replace(velho, novo, 1)
+    open(alvo, "w", encoding="utf-8", newline="").write(src)
+    return alvo, os.path.join(raiz, "v2", "lib", "___r2-fixture.md"), os.path.join(raiz, "v2", "lib")
+
+
+_IDG_D, _r2_target, _IDG_LIB = _ident_sandbox()  # caminho do alvo contem o nome da pasta do "estudio" falso
+_idg_ids_r2, _idg_studios_r2 = _idg_r2.find_operator_client_ids(_IDG_LIB)
+check("identidade: o sandbox falso e lido pelo identity_guard (Client e estudio falsos achados)",
+      _idg_ids_r2 == [IDG_ID] and IDG_ESTUDIO in _idg_studios_r2, str((_idg_ids_r2, _idg_studios_r2)))
+
+
+def _run_idg(ev: dict, dispatch: str = _IDG_D) -> dict:
+    return run_dispatch(ev, dispatch=dispatch, spawn=True)[0]
+
+
+out = _run_idg({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s2",
+                "tool_input": {"file_path": _r2_target, "content": "x = 1"}})
+check("R2 positivo: Write com CONTEUDO LIMPO em caminho publicavel passa (o caminho, que contem o nome do "
+      "estudio e o usuario, NUNCA e o motivo de negar)", out == {}, str(out))
+
+out = _run_idg({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s2",
+                "tool_input": {"file_path": _r2_target, "content": "o Client " + IDG_ID + " pediu isso"}})
+check("R2 positivo: Write com id de Client real no CONTEUDO nega",
+      out.get("hookSpecificOutput", {}).get("permissionDecision") == "deny", str(out))
+
+out = _run_idg({"hook_event_name": "PreToolUse", "tool_name": "Edit", "session_id": "s2",
+                "tool_input": {"file_path": _r2_target, "new_string": "y = 2"}})
+check("R2 positivo: Edit com CONTEUDO LIMPO em caminho publicavel passa", out == {}, str(out))
+
+out = _run_idg({"hook_event_name": "PreToolUse", "tool_name": "Edit", "session_id": "s2",
+                "tool_input": {"file_path": _r2_target, "new_string": "a marca " + IDG_ESTUDIO + " aparece aqui"}})
+check("R2 positivo: Edit com nome do estudio real no CONTEUDO nega",
+      out.get("hookSpecificOutput", {}).get("permissionDecision") == "deny", str(out))
 
 # Bash: alvo com ESPACO entre aspas (a extracao de alvo cortava no espaco e a cobertura nunca se
-# confirmava - achado do revisor LATTICE). Heredoc para o MESMO caminho real, conteudo limpo x
+# confirmava - achado do revisor LATTICE). Heredoc para o MESMO caminho, conteudo limpo x
 # conteudo com identidade.
 _r2_cmd_limpo = 'cat <<EOF > "' + _r2_target + '"\nconteudo limpo, nada sensivel\nEOF'
-out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
-                           "tool_input": {"command": _r2_cmd_limpo}})
-check("R2 positivo: Bash heredoc para alvo com ESPACO entre aspas, conteudo limpo, passa", out == {}, str(out))
+out = _run_idg({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
+                "tool_input": {"command": _r2_cmd_limpo}})
+check("R2 positivo: Bash heredoc para alvo entre aspas, conteudo limpo, passa", out == {}, str(out))
 
-if _idg_ids_r2:
-    _r2_cmd_id = 'cat <<EOF > "' + _r2_target + '"\no Client ' + _idg_ids_r2[0] + ' pediu isso\nEOF'
-    out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
-                               "tool_input": {"command": _r2_cmd_id}})
-    check("R2 positivo: Bash heredoc com id de Client real no CORPO nega",
-          out.get("hookSpecificOutput", {}).get("permissionDecision") == "deny", str(out))
+_r2_cmd_id = 'cat <<EOF > "' + _r2_target + '"\no Client ' + IDG_ID + ' pediu isso\nEOF'
+out = _run_idg({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
+                "tool_input": {"command": _r2_cmd_id}})
+check("R2 positivo: Bash heredoc com id de Client real no CORPO nega",
+      out.get("hookSpecificOutput", {}).get("permissionDecision") == "deny", str(out))
 
 # prova negativa DE VERDADE (LEI da casa): volta o Write/Edit a escanear content OR path (linha
 # antiga, medida real do defeito) e confere que o mesmo caso "positivo" acima vira FAIL.
-_r2_leak_com_path_velho = _idg_r2.find_identity_leak("x = 1") or _idg_r2.find_identity_leak(_r2_target)
-# sem identidade de operador (checkout limpo do produto) nao ha o que vazar pelo caminho: so prova onde ha
-if _idg_ids_r2 or _idg_studios_r2:
-    check("prova negativa: reintroduzindo 'or find_identity_leak(path)' (linha antiga), o MESMO "
-          "conteudo limpo no MESMO caminho real volta a acusar vazamento (reproduz o defeito medido "
-          "pelo Gate do NEXUS)", _r2_leak_com_path_velho is not None, str(_r2_leak_com_path_velho))
+_r2_leak_com_path_velho = _idg_r2.find_identity_leak("x = 1", _IDG_LIB) or _idg_r2.find_identity_leak(_r2_target, _IDG_LIB)
+check("prova negativa: reintroduzindo 'or find_identity_leak(path)' (linha antiga), o MESMO "
+      "conteudo limpo no MESMO caminho volta a acusar vazamento (reproduz o defeito medido "
+      "pelo Gate do NEXUS)", _r2_leak_com_path_velho is not None, str(_r2_leak_com_path_velho))
 
 # A trava de identidade varre SO o conteudo escrito, nunca o comando inteiro.
 # Mutantes: copia de hooks/+lib/ num tempdir com UMA linha trocada; a prova tem que CAIR nele.
@@ -499,19 +572,19 @@ def _negou(out: dict) -> bool:
 
 
 _w1_home = os.path.expanduser("~")  # contem o usuario real em qualquer maquina
-_w1_root = _w1_home  # caminho do cd: nao depende de onde a oficina/instancia/produto mora (pasta fora do home nao tem identidade)
+_w1_root = _w1_home  # caminho do cd: contem identidade, mas e caminho de cd, nunca conteudo escrito
 _w1_cd = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "w1",
           "tool_input": {"command": f'cd "{_w1_root}" && echo ok > "{_r2_target}"'}}
 _w1_eco = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "w1",
            "tool_input": {"command": f'echo {_w1_home} > "{_r2_target}"'}}
-out, _, _ = run_dispatch(_w1_cd)
+out = _run_idg(_w1_cd)
 check("identidade: `cd <estudio> && echo ok > alvo` PASSA (o caminho do cd nao e conteudo)", out == {}, str(out))
-out, _, _ = run_dispatch(_w1_eco)
-check("identidade: `echo <caminho real do usuario> > alvo` NEGA (o conteudo escrito vaza)", _negou(out) or _NESTED_PKG, str(out))
-_w1_mut = _mutante_dispatch("ident", [("_texto_sem_alvo = _inline_content_text(command)", "_texto_sem_alvo = command")])
-out, _, _ = run_dispatch(_w1_cd, dispatch=_w1_mut)
+out = _run_idg(_w1_eco)
+check("identidade: `echo <caminho real do usuario> > alvo` NEGA (o conteudo escrito vaza)", _negou(out), str(out))
+_w1_mut, _, _ = _ident_sandbox([("_texto_sem_alvo = _inline_content_text(command)", "_texto_sem_alvo = command")])
+out = _run_idg(_w1_cd, dispatch=_w1_mut)
 check("identidade: NEGATIVO - mutante que varre o comando inteiro nega o `cd <estudio>` (a prova acima o pega)",
-      _negou(out) or _NESTED_PKG, str(out))
+      _negou(out), str(out))
 
 # .claude/settings*.json e .claude/skills/**/scripts viram kernel (nao se escreve pela sessao).
 _w1_cl = os.path.join(SANDBOX, "inst", ".claude")
@@ -710,13 +783,13 @@ with open(STATE_STOP, "w", encoding="utf-8") as fh:
     ]}, fh)
 
 
-def run_stop(event_extra: dict, env_extra: dict | None = None) -> tuple[dict, float, int]:
+def run_stop(event_extra: dict, env_extra: dict | None = None, spawn: bool = False) -> tuple[dict, float, int]:
     env = {"ALIA_STATE_PATH": STATE_STOP}
     if env_extra:
         env.update(env_extra)
     ev = {"hook_event_name": "Stop", "transcript_path": "/x.jsonl"}
     ev.update(event_extra)
-    return run_dispatch(ev, env_extra=env)
+    return run_dispatch(ev, env_extra=env, spawn=spawn)
 
 
 def entrega_concluida(session_id: str, tu_id: str, agent_id: str, prompt: str) -> None:
@@ -734,9 +807,9 @@ def entrega_concluida(session_id: str, tu_id: str, agent_id: str, prompt: str) -
 
 
 # 1) positivo: sessao sem entrega nenhuma -> passa, sem saida, dentro do alvo de tempo
-out, dt, rc = run_stop({"session_id": "s-end-none"})
+out, dt, rc = run_stop({"session_id": "s-end-none"}, spawn=True)
 check("Stop passa (sem saida) quando a sessao nao teve entrega nenhuma", out == {}, str(out))
-dt = _melhor_de(dt, lambda: run_stop({"session_id": "s-end-none"})[1])
+dt = _melhor_de(dt, lambda: run_stop({"session_id": "s-end-none"}, spawn=True)[1])
 check("Stop responde abaixo de 300 ms", dt < 300, f"{dt:.1f} ms")
 
 # 2) negativo: entrega de Specialist voltou citando TASK-812, que segue sem gate_verdict ->
@@ -839,10 +912,10 @@ run_dispatch({"hook_event_name": "PostToolUse", "tool_name": "Agent", "session_i
              env_extra={"ALIA_LEDGER_PATH": _perf_ledger})
 out_perf, dt_perf, _ = run_dispatch({"hook_event_name": "Stop", "session_id": "s-perf",
                                       "transcript_path": "/x.jsonl"},
-                                     env_extra={"ALIA_LEDGER_PATH": _perf_ledger, "ALIA_STATE_PATH": _perf_state})
+                                     env_extra={"ALIA_LEDGER_PATH": _perf_ledger, "ALIA_STATE_PATH": _perf_state}, spawn=True)
 _ev_perf = {"hook_event_name": "Stop", "session_id": "s-perf", "transcript_path": "/x.jsonl"}
 _env_perf = {"ALIA_LEDGER_PATH": _perf_ledger, "ALIA_STATE_PATH": _perf_state}
-dt_perf = _melhor_de(dt_perf, lambda: run_dispatch(_ev_perf, env_extra=_env_perf)[1])
+dt_perf = _melhor_de(dt_perf, lambda: run_dispatch(_ev_perf, env_extra=_env_perf, spawn=True)[1])
 check("Stop com ledger de 50 mil linhas (indice ja construido) responde abaixo de 300 ms",
       dt_perf < 300, f"{dt_perf:.1f} ms (indice construido em {_dt_build_ms:.1f} ms)")
 check("Stop com 50 mil linhas ainda acha a entrega certa (TASK-PERF-1)",
@@ -874,7 +947,7 @@ TEXTO_PORTUGUES_COM_TERMOS_TECNICOS = (
 
 _transcript_en = _transcript_com_resposta(TEXTO_INGLES)
 out_en, dt_en, rc_en = run_stop({"session_id": "s-lang-en", "transcript_path": _transcript_en},
-                                 env_extra={"ALIA_END_LOCK_OFF": "1"})
+                                 env_extra={"ALIA_END_LOCK_OFF": "1"}, spawn=True)
 check("bloqueia resposta predominantemente em ingles",
       out_en.get("decision") == "block" and "ingles" in out_en.get("reason", "").lower(), str(out_en))
 # "custo alvo abaixo de 100 ms" e do ALGORITMO da guarda (ler transcript + contar stopword),
@@ -890,7 +963,7 @@ _dt_algo_ms = (time.perf_counter() - _t0_algo) * 1000
 check("algoritmo da guarda de idioma (sem spawn de processo) abaixo de 100 ms (alvo do contrato)",
       _dt_algo_ms < 100, f"{_dt_algo_ms:.2f} ms")
 dt_en = _melhor_de(dt_en, lambda: run_stop({"session_id": "s-lang-en", "transcript_path": _transcript_en},
-                                            env_extra={"ALIA_END_LOCK_OFF": "1"})[1])
+                                            env_extra={"ALIA_END_LOCK_OFF": "1"}, spawn=True)[1])
 check("round-trip completo (spawn + guarda) abaixo de 300 ms (mesmo teto do resto do Stop)",
       dt_en < 300, f"{dt_en:.1f} ms")
 

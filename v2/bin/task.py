@@ -39,6 +39,7 @@ sys.path.insert(0, os.path.join(V2, "flow"))
 sys.path.insert(0, os.path.join(V2, "lib"))
 import ledger  # noqa: E402  (v2/lib/ledger.py)
 import frescor  # noqa: E402  (v2/lib/frescor.py, recibo de conhecimento)
+import espinha  # noqa: E402  (v2/lib/espinha.py - trava, gravar atomico, Recusa)
 import paths  # noqa: E402  (v2/lib/paths.py - resolvedor unico de ledger/Task corrente)
 import task_model  # noqa: E402  (v2/lib/task_model.py - a entidade Task)
 import slice as slice_mod  # noqa: E402  (v2/flow/slice.py - fatiar tarefa grande, TASK-812 B)
@@ -49,14 +50,11 @@ def _now() -> str:
 
 
 def _load_state(state_path: str) -> dict:
-    with open(state_path, "r", encoding="utf-8") as fh:
-        return json.load(fh)
+    return espinha.carregar(state_path)  # ilegivel = Recusa state_corrompido (nega)
 
 
 def _save_state(state_path: str, state: dict) -> None:
-    with open(state_path, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump(state, fh, ensure_ascii=False, indent=2)
-        fh.write("\n")
+    espinha.gravar(state_path, state)  # atomico; o chamador segura espinha.com_trava
 
 
 def _valid_values(state: dict) -> tuple[list[str], dict[str, list[str]], dict[str, list[str]]]:
@@ -102,8 +100,8 @@ def _next_task_id(state: dict) -> str:
     return f"TASK-{(max(nums) + 1) if nums else 1:03d}"
 
 
-def _err(msg: str, **extra) -> dict:
-    return {"ok": False, "error": msg, **extra}
+def _err(msg: str, regra: str = "task_invalida", **extra) -> dict:
+    return {"ok": False, "regra": regra, "error": msg, **extra}
 
 
 def _ok(**extra) -> dict:
@@ -111,19 +109,25 @@ def _ok(**extra) -> dict:
 
 
 def cmd_open(args: argparse.Namespace) -> dict:
+    with espinha.com_trava(args.state):  # C1: carregar + proximo id + gravar + Task corrente, tudo sob a trava
+        return _open(args)
+
+
+def _open(args: argparse.Namespace) -> dict:
     state = _load_state(args.state)
     try:
         brief = json.loads(args.brief)
     except json.JSONDecodeError as exc:
-        return _err(f"brief nao e JSON valido: {exc}")
+        return _err(f"brief nao e JSON valido: {exc}", regra="brief_invalido")
     if not isinstance(brief, dict):
-        return _err("brief precisa ser um objeto JSON")
+        return _err("brief precisa ser um objeto JSON", regra="brief_invalido")
 
     clients, projects_by_client, squad_by_client = _valid_values(state)
     try:
-        task_fields = task_model.abrir(brief, clients, cadastro_de_projetos(state))
+        task_fields = task_model.abrir(brief, clients, cadastro_de_projetos(state), [_raiz_do_recibo(args)])
     except task_model.TaskError as exc:
         extra = dict(exc.extra)
+        extra.setdefault("regra", "brief_invalido")
         extra["clients_validos"] = clients
         if "client_recebido" in extra:
             extra["projects_validos"] = projects_by_client
@@ -148,6 +152,10 @@ def cmd_open(args: argparse.Namespace) -> dict:
             campos_fatia["fatia_de"] = grupo_id
             nova = {"id": f"TASK-{primeiro_num + i:03d}", "created": _now(), **campos_fatia}
             novas_tasks.append(nova)
+        for nova in novas_tasks:
+            erros = espinha.validar_task_nova(nova)
+            if erros:
+                return _err("task nova fora do schema", regra="schema_invalido", erros=erros)
         state.setdefault("tasks", []).extend(novas_tasks)
         _save_state(args.state, state)
         paths.write_current_task(novas_tasks[0]["id"], session_id=args.session or None)
@@ -155,6 +163,9 @@ def cmd_open(args: argparse.Namespace) -> dict:
 
     task_id = _next_task_id(state)
     new_task = {"id": task_id, "created": _now(), **task_fields}
+    erros = espinha.validar_task_nova(new_task)  # C4: o schema da Task nova roda em producao, nao so no teste
+    if erros:
+        return _err("task nova fora do schema", regra="schema_invalido", erros=erros)
     state.setdefault("tasks", []).append(new_task)
     _save_state(args.state, state)
     # Task corrente da sessao (lib/paths.py): o que hooks/dispatch.py le no lugar do
@@ -166,7 +177,7 @@ def cmd_open(args: argparse.Namespace) -> dict:
 def _raiz_do_recibo(args: argparse.Namespace) -> str:
     """Onde procurar o conhecimento do Client: --studio-root explicito; senao a pasta do --state,
     se ela for um estudio (tem clients/); senao a raiz do estudio da sessao (lib/paths.py)."""
-    if args.studio_root:
+    if getattr(args, "studio_root", ""):
         return args.studio_root
     pasta_state = os.path.dirname(os.path.abspath(args.state))
     if os.path.isdir(os.path.join(pasta_state, "clients")):
@@ -181,11 +192,16 @@ def bases_de_artifact(args: argparse.Namespace) -> list[str]:
 
 
 def cmd_close(args: argparse.Namespace) -> dict:
+    with espinha.com_trava(args.state):
+        return _close(args)
+
+
+def _close(args: argparse.Namespace) -> dict:
     state = _load_state(args.state)
     tasks = state.get("tasks", [])
     task = next((t for t in tasks if t.get("id") == args.id), None)
     if task is None:
-        return _err("Task nao encontrada", id_recebido=args.id,
+        return _err("Task nao encontrada", regra="task_inexistente", id_recebido=args.id,
                      ids_abertos=[t.get("id") for t in tasks if t.get("status") == "open"])
 
     ledger_path = args.ledger or paths.ledger_path()
@@ -198,7 +214,7 @@ def cmd_close(args: argparse.Namespace) -> dict:
             bases=bases_de_artifact(args),
         )
     except task_model.TaskError as exc:
-        return _err(exc.msg, **exc.extra)
+        return _err(exc.msg, **{"regra": "task_invalida", **exc.extra})
 
     cost = 0
     for ev in events:
@@ -213,7 +229,7 @@ def cmd_close(args: argparse.Namespace) -> dict:
         raiz_estudio = _raiz_do_recibo(args)
         rec = frescor.recibo_de_fechamento(raiz_estudio, task["client"])
         if not rec["ok"]:
-            return _err("close recusado: entrega sem recibo de conhecimento em dia",
+            return _err("close recusado: entrega sem recibo de conhecimento em dia", regra="recibo_conhecimento",
                         client=task["client"], falta=rec["falta"],
                         como_resolver="refazer o indice (scripts/kb-index.ps1, custo zero), o mapa "
                                       "(/graphify clients/<id>/squad/knowledge) ou a ficha (client.md citando "
@@ -229,6 +245,9 @@ def cmd_close(args: argparse.Namespace) -> dict:
     task_fechada["tokens"] = cost
     task_fechada["tokens_source"] = "ledger"
 
+    erros = espinha.validar_task_nova(task_fechada, so_status=True)  # C4: done exige artifact + PASS, no schema
+    if erros:
+        return _err("Task fechada fora do schema do status", regra="schema_invalido", erros=erros)
     idx = tasks.index(task)
     tasks[idx] = task_fechada
     _save_state(args.state, state)
@@ -239,7 +258,7 @@ def cmd_context(args: argparse.Namespace) -> dict:
     state = _load_state(args.state)
     task = next((t for t in state.get("tasks", []) if t.get("id") == args.id), None)
     if task is None:
-        return _err("Task nao encontrada", id_recebido=args.id)
+        return _err("Task nao encontrada", regra="task_inexistente", id_recebido=args.id)
     return _ok(task=task)
 
 
@@ -277,8 +296,10 @@ def main() -> int:
     args = parser.parse_args()
     try:
         result = args.func(args)
+    except espinha.Recusa as exc:
+        result = exc.como_json()
     except Exception as exc:  # noqa: BLE001 - fronteira: nunca deixa crua
-        result = _err(f"erro interno: {exc}")
+        result = _err(f"erro interno: {exc}", regra="erro_interno")
     sys.stdout.write(json.dumps(result, ensure_ascii=False))
     sys.stdout.write("\n")
     return 0 if result.get("ok") else 1

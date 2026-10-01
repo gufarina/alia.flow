@@ -137,11 +137,11 @@ def read_current_task(session_id: str | None = None) -> str | None:
 
 
 def write_current_task(task_id: str, session_id: str | None = None) -> None:
+    import trava  # tardio: copias minimas de paths.py (provas) nao carregam trava.py
     path = current_task_path()
-    data = _load_current_task_file()
-    if session_id:
-        data[session_id] = task_id
-    data["_last"] = task_id
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump(data, fh, ensure_ascii=False)
+    with trava.trava(path):  # ler-modificar-gravar sob lock + escrita atomica (C3)
+        data = _load_current_task_file()
+        if session_id:
+            data[session_id] = task_id
+        data["_last"] = task_id
+        trava.gravar_atomico(path, json.dumps(data, ensure_ascii=False))

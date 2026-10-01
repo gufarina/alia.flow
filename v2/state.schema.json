@@ -42,10 +42,14 @@
     },
     "task_nova": {
       "allOf": [{"$ref": "#/$defs/task"}],
-      "required": ["project", "title", "destino", "type"],
+      "required": ["project", "title", "destino", "type", "paths", "consumidor", "exemplo_falha"],
       "properties": {
         "project": {"$ref": "#/$defs/id_canonico"},
         "destino": {"enum": ["publico", "interno"]},
+        "type": {"enum": ["pesquisa", "construcao", "revisao", "correcao"]},
+        "paths": {"type": "string"},
+        "consumidor": {"type": "string"},
+        "exemplo_falha": {"type": "string"},
         "gate_verdict": {"$ref": "#/$defs/veredito"}
       },
       "x-por-status": {
@@ -81,6 +85,13 @@
     "alia_sem_coordenacao": "alia task dispatch: specialist alia sem coordenacao:true na Task",
     "specialist_de_outro_client": "alia task dispatch: Specialist do squad de outro Client",
     "dispatch_sem_task": "alia task dispatch: sessao sem Task aberta",
+    "state_corrompido": "state.json ilegivel/truncado: nega (nunca falha aberto)",
+    "state_ocupado": "state.json preso por outra escrita alem do teto de espera",
+    "agente_nome_curto": "alia task dispatch: nome curto de Specialist; use o id canonico {client}-{papel}",
+    "brief_tipo_invalido": "alia task open: campo do brief com tipo errado (lista, numero, coordenacao como texto)",
+    "type_invalido": "alia task open: type fora de pesquisa|construcao|revisao|correcao",
+    "schema_invalido": "escrita nova fora do schema (task_nova / status)",
+    "criterio_reprovado_ausente": "alia task close: veredito FAIL/CONCERN sem --criterio-reprovado",
     "grafo_nao_lido": "alia graph check: varredura de codigo/wiki sem ter lido GRAPH_REPORT/index.md na sessao"
   }
 }

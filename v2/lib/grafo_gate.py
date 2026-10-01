@@ -21,10 +21,13 @@ import re
 
 import espinha
 import paths
+import trava
 
 INFRA = ("/memory/", "/_backups/", "/.claude/", "/node_modules/", "/scratchpad", "/.git/")
 RELATORIOS = ("graph_report.md", "graph.json")
 _CONSULTA_BASH = re.compile(r"graph_report|graphify\s+(query|path|explain)", re.IGNORECASE)
+_CONSULTA_GRAPHIFY = re.compile(r"graphify\s+(query|path|explain)", re.IGNORECASE)
+_TOOL_USE_LINHA = re.compile(r'"type"\s*:\s*"tool_use"')
 
 
 def _n(p: str) -> str:
@@ -90,9 +93,7 @@ def _ler() -> dict:
 
 def _gravar(d: dict) -> None:
     try:
-        os.makedirs(os.path.dirname(_sidecar()) or ".", exist_ok=True)
-        with open(_sidecar(), "w", encoding="utf-8", newline="\n") as fh:
-            json.dump(d, fh)
+        trava.gravar_atomico(_sidecar(), json.dumps(d))  # 2.1.3: atomica (leitor nunca ve JSON pela metade)
     except OSError:
         pass
 
@@ -126,11 +127,14 @@ def registrar_leitura(ledger_mod, session: str, path: str = "", command: str = "
             escopo = achado["escopo"] if achado else None
     if not escopo:
         return {"ok": True, "registrado": False}
-    d = _ler()
-    ent = d.setdefault(session, {}).setdefault(escopo, {})
-    if not ent.get("lido"):
-        ent["lido"] = True
-        _gravar(d)
+    with trava.trava(_sidecar()):  # 2.1.3: ler-alterar-gravar sob lock (duas sessoes nao se apagam)
+        d = _ler()
+        ent = d.setdefault(session, {}).setdefault(escopo, {})
+        primeira = not ent.get("lido")
+        if primeira:
+            ent["lido"] = True
+            _gravar(d)
+    if primeira:
         ledger_mod.append_event(paths.ledger_path(), {"event": "graph_read", "session_id": session, "scope": escopo})
     return {"ok": True, "registrado": True, "escopo": escopo}
 
@@ -145,10 +149,10 @@ def _lido_no_transcript(transcript: str, mapa: str) -> bool:
     try:
         with open(transcript, "r", encoding="utf-8", errors="replace") as fh:
             for linha in fh:
-                if "tool_use" not in linha:
+                if not _TOOL_USE_LINHA.search(linha):  # 2.1.3: `tool_use_id` de um resultado nao e uma leitura
                     continue
                 baixo = linha.replace("\\\\", "/").replace("\\", "/").lower()
-                if alvo in baixo or _CONSULTA_BASH.search(baixo):
+                if alvo in baixo or _CONSULTA_GRAPHIFY.search(baixo):
                     return True
     except OSError:
         return False
@@ -166,26 +170,27 @@ def checar(ledger_mod, session: str, tool: str, path: str, cwd: str, host: str, 
     if achado is None:
         return {"ok": True, "acao": "libera", "motivo": "sem mapa neste escopo"}
     escopo = achado["escopo"]
-    d = _ler()
-    sess = d.setdefault(session, {})
-    ent = sess.setdefault(escopo, {})
-    lido = bool(ent.get("lido") or (sess.get("*") or {}).get("lido"))
-    if not lido and _lido_no_transcript(transcript, achado["mapa"]):
-        lido = ent["lido"] = True
-        ledger_mod.append_event(paths.ledger_path(), {"event": "graph_read", "session_id": session, "scope": escopo,
-                                                      "fonte": "transcript"})
-    if lido and ent.get("varreu"):
-        return {"ok": True, "acao": "libera", "escopo": escopo}
-    desligado = gate_desligado()
-    modo = modo_do_host(host)
-    acao = "libera" if lido else ("bloqueia" if (modo == "bloqueia" and not desligado) else "avisa")
-    if not (ent.get("varreu") or ent.get("barrado")):  # a medida: 1 evento por (sessao, escopo), mesmo com o bloqueio desligado
-        ledger_mod.append_event(paths.ledger_path(), {"event": "graph_scan", "session_id": session, "scope": escopo,
-                                                      "tool": tool, "lido_antes": lido, "acao": acao,
-                                                      "bloqueio_desligado": desligado})
-    ent["varreduras"] = int(ent.get("varreduras", 0)) + 1
-    ent["barrado" if acao == "bloqueia" else "varreu"] = True
-    _gravar(d)
+    with trava.trava(_sidecar()):  # 2.1.3: ler-alterar-gravar sob lock
+        d = _ler()
+        sess = d.setdefault(session, {})
+        ent = sess.setdefault(escopo, {})
+        lido = bool(ent.get("lido") or (sess.get("*") or {}).get("lido"))
+        if not lido and _lido_no_transcript(transcript, achado["mapa"]):
+            lido = ent["lido"] = True
+            ledger_mod.append_event(paths.ledger_path(), {"event": "graph_read", "session_id": session, "scope": escopo,
+                                                          "fonte": "transcript"})
+        if lido and ent.get("varreu"):
+            return {"ok": True, "acao": "libera", "escopo": escopo}
+        desligado = gate_desligado()
+        modo = modo_do_host(host)
+        acao = "libera" if lido else ("bloqueia" if (modo == "bloqueia" and not desligado) else "avisa")
+        if not (ent.get("varreu") or ent.get("barrado")):  # a medida: 1 evento por (sessao, escopo), mesmo com o bloqueio desligado
+            ledger_mod.append_event(paths.ledger_path(), {"event": "graph_scan", "session_id": session, "scope": escopo,
+                                                          "tool": tool, "lido_antes": lido, "acao": acao,
+                                                          "bloqueio_desligado": desligado})
+        ent["varreduras"] = int(ent.get("varreduras", 0)) + 1
+        ent["barrado" if acao == "bloqueia" else "varreu"] = True
+        _gravar(d)
     if lido:
         return {"ok": True, "acao": "libera", "escopo": escopo}
     msg = (f"Antes de varrer {escopo}, leia {achado['mapa']} (God Nodes / Community Hubs; "

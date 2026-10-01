@@ -11,20 +11,20 @@
     "graph_gate": "bloqueia",
     "bloqueia": ["tool.execute.before task -> alia task dispatch", "tool.execute.before grep|glob -> alia graph check"],
     "avisa": ["session.created -> alia open", "tool.execute.before read -> alia graph read (so registra)"],
-    "lacuna": "a doc nao diz se tool.execute.before vale para chamada de subagente"
+    "lacuna": "a doc nao diz se tool.execute.before vale para chamada de subagente. Sem python/sessao a trava falha aberta, mas registra adapter_falha_aberta no ledger (task pending avisa)"
   },
   "codex": {
     "adaptador": "v2/adapters/codex/codex_hook.py + hooks.toml",
     "graph_gate": "bloqueia",
-    "bloqueia": ["PreToolUse Bash (rg|grep|find em Client) -> alia graph check"],
+    "bloqueia": ["PreToolUse Bash (rg|grep|find|Select-String|git grep|findstr em Client, tambem encadeado) -> alia graph check"],
     "avisa": ["SessionStart -> alia open", "PreToolUse Bash (cat/type de GRAPH_REPORT) -> alia graph read (so registra)"],
-    "lacuna": "sem Grep/Glob nativo e sem ferramenta de subagente no hook: task dispatch nao alcanca; ferramentas hospedadas (WebSearch) ficam fora do PreToolUse. Sem Codex CLI nesta maquina: so teste de unidade da traducao."
+    "lacuna": "sem Grep/Glob nativo e sem ferramenta de subagente no hook: task dispatch nao alcanca; ferramentas hospedadas (WebSearch) ficam fora do PreToolUse. Falha aberta (sem voto) fica registrada no ledger (adapter_falha_aberta) e o alia task pending avisa. Sem Codex CLI nesta maquina: so teste de unidade da traducao."
   },
   "pi": {
     "adaptador": "v2/adapters/pi/alia-espinha.mjs",
     "graph_gate": "bloqueia",
     "bloqueia": ["tool_call grep|find -> alia graph check"],
     "avisa": ["before_agent_start -> alia open", "tool_call read -> alia graph read (so registra)"],
-    "lacuna": "Pi nao tem subagente nativo (task dispatch nao se aplica). O host que comanda o Pi DEVE proibir --no-extensions: com ele a descoberta de extensoes some e a trava junto."
+    "lacuna": "Sem python/sessao a trava falha aberta, mas registra adapter_falha_aberta (task pending avisa). Pi nao tem subagente nativo (task dispatch nao se aplica). O host que comanda o Pi DEVE proibir --no-extensions: com ele a descoberta de extensoes some e a trava junto."
   }
 }

@@ -33,6 +33,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# PS 5.1 antigo nao negocia TLS 1.2 sozinho: o download do GitHub falha sem isto
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
 $root = Split-Path -Parent $PSScriptRoot
 
 # Repo publico do Alia Flow (open source). Branch main.
@@ -52,9 +54,6 @@ $mergeDirs    = @(".claude","docs",".opencode",".agents")
 $productFiles = @("README.md","CHANGELOG.md","VERSION","LICENSE","CREDITS.md","AGENTS.md","PRIMEIROS-PASSOS.md","CONTRIBUTING.md")
 # Camada do operador, intocada: studio/  clients/  state.json  studio.yaml  alia.config.json  memory/
 $protected = @("studio","clients","state.json","studio.yaml","alia.config.json","memory",".git")
-
-# Fases do protocolo de progresso (contrato secao 3) - enum fixo, os 8 valores validos de "phase".
-$eventPhases = @("download","extract","guard","backup","copy","smoke","rollback","done")
 
 # ---------------------------------------------------------------------------
 # Funcoes do miolo - testaveis isoladamente, sem baixar nada.
@@ -490,6 +489,17 @@ try {
     exit 0
   }
 
+  # Python 3 e a prova do motor: sem ele nao da pra validar a copia. Descobrir ANTES de tocar em
+  # qualquer coisa (antes, a falta de Python virava rollback com a mensagem falsa "check.py vermelho").
+  $pyOk = $false
+  try { $pyv = & python --version 2>&1; $pyOk = (($LASTEXITCODE -eq 0) -and ("$pyv" -match 'Python 3')) } catch { $pyOk = $false }
+  if (-not $pyOk) {
+    Write-Host "[ABORTADO] Python 3 nao encontrado: a prova do motor roda nele e sem ela nao da pra validar a atualizacao. Nada foi alterado."
+    Write-Host "           Instale em https://www.python.org/downloads/ e rode de novo."
+    Emit-Result -fromVersion $verInst -toVersion $verPkg -eventMessage "Python 3 ausente, nada alterado" -result "error"
+    exit 1
+  }
+
   Write-UpdateEvent -EventLogPath $EventLog -Phase "backup" -Pct 55 -Message "salvando o motor atual"
   $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
   $backupDir = Backup-Engine -DestDir $root -CopySet $copySet -Stamp $stamp
@@ -519,6 +529,8 @@ try {
   Write-UpdateEvent -EventLogPath $EventLog -Phase "smoke" -Pct 85 -Message "rodando a prova (check.py)"
   $checkPy = Join-Path $root "v2\proof\check.py"
   $smokeGreen = $false
+  $smokeWhy = "a prova (check.py) ficou vermelha"
+  if (-not (Test-Path -LiteralPath $checkPy)) { $smokeWhy = "v2\proof\check.py nao veio no pacote" }
   if (Test-Path -LiteralPath $checkPy) {
     Push-Location $root
     try { & python $checkPy *> $null; $smokeGreen = ($LASTEXITCODE -eq 0) } catch { $smokeGreen = $false }
@@ -526,12 +538,12 @@ try {
   }
 
   if (-not $smokeGreen) {
-    Write-UpdateEvent -EventLogPath $EventLog -Phase "rollback" -Pct 90 -Message "check.py vermelho, restaurando o motor anterior"
+    Write-UpdateEvent -EventLogPath $EventLog -Phase "rollback" -Pct 90 -Message ($smokeWhy + ", restaurando o motor anterior")
     Restore-Engine -DestDir $root -BackupDir $backupDir -CopySet $copySet
     $rolledBack = $true
     $applied = $false
-    Write-Host "[ROLLBACK] motor anterior restaurado."
-    Emit-Result -fromVersion $verInst -toVersion $verPkg -eventMessage "check.py vermelho, revertido" -result "rolledback"
+    Write-Host ("[ROLLBACK] " + $smokeWhy + " - motor anterior restaurado.")
+    Emit-Result -fromVersion $verInst -toVersion $verPkg -eventMessage ($smokeWhy + ", revertido") -result "rolledback"
     exit 1
   }
 

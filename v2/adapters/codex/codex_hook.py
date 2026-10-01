@@ -19,9 +19,10 @@ import sys
 
 BIN = os.environ.get("ALIA_BIN") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "bin")
 SEM_VOTO = ("state_ausente", "erro_interno", "uso_invalido")
-BUSCA = {"rg", "grep", "egrep", "fgrep", "find"}
+BUSCA = {"rg", "grep", "egrep", "fgrep", "find", "select-string", "findstr", "ag", "ack"}
+_SEPARADORES = re.compile(r"&&|\|\||[;|&\n]")  # comando encadeado: cada trecho e checado (C8)
 _CONSULTA = re.compile(r"graph_report|graphify\s+(query|path|explain)", re.IGNORECASE)
-DECLARA = {"host": "codex", "bloqueia": ["PreToolUse Bash (rg|grep|find)"],
+DECLARA = {"host": "codex", "bloqueia": ["PreToolUse Bash (rg|grep|find|Select-String|git grep|findstr, tambem encadeado)"],
            "avisa": ["SessionStart", "PreToolUse Bash (leitura do mapa)"]}
 
 
@@ -30,18 +31,36 @@ def _nome(token: str) -> str:
     return base[:-4] if base.endswith(".exe") else base
 
 
-def _alvo_da_busca(command: str) -> str | None:
-    """Primeiro argumento de caminho de um rg/grep/find (ou None se o comando nao e busca)."""
+def _alvo_do_trecho(trecho: str) -> str | None:
+    """Argumento de caminho de UM comando de busca (ou None se o trecho nao e busca)."""
     try:
-        toks = shlex.split(command, posix=False)
+        toks = shlex.split(trecho, posix=False)
     except ValueError:
-        toks = command.split()
+        toks = trecho.split()
+    if toks and _nome(toks[0]) == "git":  # `git grep`, `git -C x grep`
+        i = next((k for k, t in enumerate(toks) if t == "grep"), None)
+        toks = ["grep"] + toks[i + 1:] if i is not None else []
     if not toks or _nome(toks[0]) not in BUSCA:
         return None
-    resto = [t.strip("'\"") for t in toks[1:] if not t.startswith("-")]
-    if _nome(toks[0]) != "find":  # grep/rg: o 1o argumento solto e o padrao; find: o 1o ja e o caminho
+    nome = _nome(toks[0])
+    baixo = [t.lower() for t in toks]
+    for flag in ("-path", "-literalpath"):  # Select-String -Path X
+        if flag in baixo and baixo.index(flag) + 1 < len(toks):
+            return toks[baixo.index(flag) + 1].strip("'\"")
+    resto = [t.strip("'\"") for t in toks[1:] if not t.startswith("-") and not (nome == "findstr" and t.startswith("/"))]
+    if nome != "find":  # grep/rg/findstr/Select-String: o 1o argumento solto e o padrao; find: o 1o ja e o caminho
         resto = resto[1:]
     return resto[0] if resto else ""
+
+
+def _alvos_da_busca(command: str) -> list[str]:
+    """Um alvo por trecho de busca do comando (encadeado com && || ; | &)."""
+    return [a for a in (_alvo_do_trecho(t) for t in _SEPARADORES.split(command)) if a is not None]
+
+
+def _alvo_da_busca(command: str) -> str | None:
+    alvos = _alvos_da_busca(command)
+    return alvos[0] if alvos else None
 
 
 def traduzir(evento: dict) -> list[list[str]]:
@@ -59,11 +78,20 @@ def traduzir(evento: dict) -> list[list[str]]:
     chamadas: list[list[str]] = []
     if _CONSULTA.search(comando):
         chamadas.append(["graph", "read", "--session", sid, "--command", comando, "--cwd", cwd])
-    alvo = _alvo_da_busca(comando)
-    if alvo is not None:
+    for alvo in _alvos_da_busca(comando):
         chamadas.append(["graph", "check", "--session", sid, "--tool", "Bash", "--path", alvo, "--cwd", cwd,
                          "--host", "codex"])
     return chamadas
+
+
+def _rastro(evento: dict, motivo) -> None:
+    try:
+        sys.path.insert(0, BIN)
+        sys.path.insert(0, os.path.join(BIN, "..", "lib"))
+        import espinha  # noqa: E402
+        espinha.registrar_falha_aberta("codex", str(motivo), str((evento or {}).get("session_id") or ""))
+    except Exception:  # noqa: BLE001 - o rastro nunca derruba o host
+        pass
 
 
 def decidir(evento: dict, alia_run=None) -> dict:
@@ -77,6 +105,8 @@ def decidir(evento: dict, alia_run=None) -> dict:
         if codigo != 0 and res.get("regra") not in SEM_VOTO:
             return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                            "permissionDecisionReason": f"espinha: {res.get('error')} [{res.get('regra')}]"}}
+        if codigo != 0:  # sem voto: libera, MAS deixa rastro no ledger (C8)
+            _rastro(evento, res.get("regra"))
         fora = (res.get("divida") or {}).get("abertas_com_projeto_fora_do_cadastro", 0)
         if evento.get("hook_event_name") == "SessionStart" and fora:  # so avisa quando ha o que fazer
             return {"hookSpecificOutput": {"hookEventName": "SessionStart",
@@ -85,10 +115,12 @@ def decidir(evento: dict, alia_run=None) -> dict:
 
 
 def main() -> int:
+    evento = {}
     try:
         evento = json.loads(sys.stdin.buffer.read().decode("utf-8", errors="replace"))
         saida = decidir(evento)
-    except Exception:  # noqa: BLE001 - adaptador nunca derruba o host (falha aberta)
+    except Exception as exc:  # noqa: BLE001 - adaptador nunca derruba o host (falha aberta, mas registrada)
+        _rastro(evento, f"excecao: {exc}")
         saida = {}
     sys.stdout.write(json.dumps(saida, ensure_ascii=False))
     return 0

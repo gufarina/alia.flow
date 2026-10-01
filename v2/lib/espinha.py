@@ -17,6 +17,9 @@ import os
 import re
 import sys
 import time
+from contextlib import contextmanager
+
+import trava
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 V2 = os.path.dirname(HERE)
@@ -43,17 +46,30 @@ def agora() -> str:
 def carregar(state_path: str) -> dict:
     if not os.path.isfile(state_path):
         raise Recusa("state_ausente", "state.json nao encontrado", state=state_path)
-    with open(state_path, "r", encoding="utf-8") as fh:
-        return json.load(fh)
+    try:
+        with open(state_path, "r", encoding="utf-8") as fh:
+            dado = json.load(fh)
+    except (ValueError, UnicodeDecodeError) as exc:  # truncado/ilegivel: NEGA, nunca finge que nao ha espinha
+        raise Recusa("state_corrompido", f"state.json ilegivel ({exc}): restaure do backup antes de seguir",
+                     state=state_path)
+    if not isinstance(dado, dict):
+        raise Recusa("state_corrompido", "state.json nao e um objeto JSON", state=state_path)
+    return dado
+
+
+@contextmanager
+def com_trava(state_path: str):
+    """Ler-modificar-gravar do state.json e SEMPRE dentro desta trava (C1: ids de Task unicos)."""
+    try:
+        with trava.trava(state_path):
+            yield
+    except TimeoutError as exc:
+        raise Recusa("state_ocupado", str(exc), state=state_path)
 
 
 def gravar(state_path: str, state: dict) -> None:
-    """Escrita atomica: arquivo temporario ao lado + os.replace (queda no meio nunca deixa meio JSON)."""
-    tmp = state_path + ".alia-tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump(state, fh, ensure_ascii=False, indent=2)
-        fh.write("\n")
-    os.replace(tmp, state_path)
+    """Escrita atomica unica (lib/trava.py: tmp por pid + os.replace). O chamador segura com_trava()."""
+    trava.gravar_atomico(state_path, json.dumps(state, ensure_ascii=False, indent=2) + "\n")
 
 
 # --- schema (subconjunto) --------------------------------------------------
@@ -145,6 +161,11 @@ def _dono_do_specialist(state: dict, specialist: str) -> str | None:
 def project_add(state_path: str, client: str, pid: str | None = None, das_tasks: bool = False) -> dict:
     """Unico jeito de criar projeto. `das_tasks` semeia o cadastro com os ids que as Tasks do Client
     ja usam, quando ja canonicos (migracao das tasks antigas: projetos-mapa.md virou o campo project)."""
+    with com_trava(state_path):
+        return _project_add(state_path, client, pid, das_tasks)
+
+
+def _project_add(state_path: str, client: str, pid, das_tasks: bool) -> dict:
     state = carregar(state_path)
     cliente = _cliente(state, client)
     projetos = cliente.setdefault("projects", [])
@@ -172,6 +193,20 @@ def task_dispatch(state_path: str, ledger_mod, ledger_path: str, task_id: str, s
     """Aciona um agente na Task. Dispatch do Gateway do squad GRAVA o gateway_ack; o de Specialist
     exige o ack antes. `alia` so com coordenacao:true. Agente que nao e de squad nenhum (Explore,
     general-purpose...) nao e assunto da espinha: passa sem registrar."""
+    with com_trava(state_path):
+        return _task_dispatch(state_path, ledger_mod, ledger_path, task_id, specialist, session)
+
+
+def _nome_curto(state: dict, specialist: str) -> list[str]:
+    """Ids canonicos `{client}-{papel}` cujo papel e o nome curto dado (B2: `gauge` no lugar de `alia-flow-lab-gauge`)."""
+    achados = []
+    for c in state.get("clients", []):
+        gw, specs = squad_ids(c)
+        achados += [i for i in [gw, *specs] if i and i == f"{c['id']}-{specialist}"]
+    return achados
+
+
+def _task_dispatch(state_path, ledger_mod, ledger_path, task_id, specialist, session) -> dict:
     state = carregar(state_path)
     task = next((t for t in state.get("tasks", []) if t.get("id") == task_id), None)
     if task is None:
@@ -186,6 +221,10 @@ def task_dispatch(state_path: str, ledger_mod, ledger_path: str, task_id: str, s
             raise Recusa("alia_sem_coordenacao", "specialist alia so em Task com coordenacao:true "
                          "(a Alia delega, nao executa dominio)", id=task_id)
     elif dono is None:
+        curtos = _nome_curto(state, specialist)
+        if curtos:
+            raise Recusa("agente_nome_curto", "nome curto de Specialist nao vale: use o id canonico {client}-{papel}",
+                         recebido=specialist, ids_canonicos=curtos)
         return {"ok": True, "registrado": False, "motivo": "agente fora de qualquer squad"}
     elif dono != task["client"]:
         raise Recusa("specialist_de_outro_client", "Specialist e do squad de outro Client", id=task_id,
@@ -197,7 +236,9 @@ def task_dispatch(state_path: str, ledger_mod, ledger_path: str, task_id: str, s
                      "primeiro (ele grava o gateway_ack da Task)", id=task_id, gateway=gateway, specialist=specialist)
     task.setdefault("dispatches", []).append({"specialist": specialist, "at": agora(), "session": session})
     raiz = schema()
-    erros = validar(task, raiz["$defs"]["task"], raiz, "task")
+    props = raiz["$defs"]["task"]["properties"]  # C11: so os campos que o dispatch escreve, nao o legado inteiro
+    campos = ("gateway_ack", "dispatches", "coordenacao")
+    erros = validar({k: task[k] for k in campos if k in task}, {"properties": {k: props[k] for k in campos}}, raiz, "task")
     if erros:
         raise Recusa("schema_invalido", "task fora do schema", erros=erros)
     gravar(state_path, state)
@@ -234,7 +275,22 @@ def task_pending(state_path: str, ledger_mod, ledger_path: str, session: str = "
                     if ev.get("session_id") == session and ev.get("task_id"))
     pendentes = [i for i in sorted(alvo) if i in por_id and not por_id[i].get("gate_verdict")
                  and por_id[i].get("status") in ("open", "review")]
-    return {"ok": True, "pendentes": pendentes, **({"divida": divida(state)} if com_divida else {})}
+    res = {"ok": True, "pendentes": pendentes, **({"divida": divida(state)} if com_divida else {})}
+    if session:
+        sem_trava = sorted({str(ev.get("host") or "?") for ev in ledger_mod.read_events(ledger_path)
+                            if ev.get("event") == "adapter_falha_aberta" and ev.get("session_id") == session})
+        if sem_trava:
+            res["hosts_sem_trava"] = sem_trava
+            res["aviso"] = f"[ESPINHA] host sem trava nesta sessao ({', '.join(sem_trava)}): a espinha falhou aberta, confira dispatch e Task"
+    return res
+
+
+def registrar_falha_aberta(host: str, motivo: str, session: str = "") -> None:
+    """Adaptador que libera por falha (sem voto) deixa rastro no ledger: o `task pending` avisa o host sem trava."""
+    import ledger
+    import paths
+    ledger.append_event(paths.ledger_path(), {"event": "adapter_falha_aberta", "host": host, "motivo": str(motivo)[:200],
+                                              "session_id": session or None})
 
 
 def open_session(state_path: str, ledger_mod, ledger_path: str, session: str, client: str = "") -> dict:

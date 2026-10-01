@@ -23,6 +23,8 @@ import risk as _risk  # noqa: E402 (v2/flow/risk.py, I6 - funcao pura, so chamad
 DESTINOS_VALIDOS = ("publico", "interno")
 VEREDITOS_VALIDOS = ("PASS", "FAIL", "CONCERN")
 MAX_LINHAS_FATIA = 120
+TIPOS_VALIDOS = ("pesquisa", "construcao", "revisao", "correcao")
+CAMPOS_TEXTO = ("client", "project", "objetivo", "paths", "consumidor", "destino", "exemplo_falha", "type")
 
 # Transicoes validas por status atual. None = Task ainda nao existe (abertura).
 TRANSICOES_VALIDAS = {
@@ -73,10 +75,10 @@ def gate_verdict_normalizado(task: dict) -> Optional[str]:
     return v2 if v2 in VEREDITOS_VALIDOS else None
 
 
-_FATIA_RE = re.compile(r"^(.*?)#L(\d+)-(\d+)$")
+_FATIA_RE = re.compile(r"^(.*?)#L(\d+)(?:-(\d+))?$")
 
 
-def validar_fatias(paths_field: str) -> list[str]:
+def validar_fatias(paths_field: str, bases: Optional[list[str]] = None) -> list[str]:
     """Recusa fatia de contexto que nao resolve no disco. Cada trecho no formato
     `caminho#L10-40` precisa: arquivo existir, faixa nao invertida, ate MAX_LINHAS_FATIA
     linhas, e o fim da faixa nao passar do total de linhas do arquivo. Trecho sem `#Lx-y`
@@ -88,7 +90,13 @@ def validar_fatias(paths_field: str) -> list[str]:
         m = _FATIA_RE.match(parte)
         if not m:
             continue
-        caminho, ini, fim = m.group(1), int(m.group(2)), int(m.group(3))
+        caminho, ini = m.group(1), int(m.group(2))
+        fim = int(m.group(3)) if m.group(3) else ini  # `#L10` sem faixa = a linha 10 (C9)
+        if not os.path.isabs(caminho):  # C9: relativo ao cwd OU a raiz do estudio, nao so ao cwd
+            for b in [os.getcwd(), *(bases or [])]:
+                if os.path.isfile(os.path.join(b, caminho)):
+                    caminho = os.path.join(b, caminho)
+                    break
         if fim < ini:
             problemas.append(f"{parte}: faixa invertida (fim antes do inicio)")
             continue
@@ -114,11 +122,20 @@ def classificar_risco(brief: dict) -> dict:
     return _risk.classificar(brief_normalizado)
 
 
-def abrir(brief: dict, clients_validos: list[str], projetos_cadastrados: dict) -> dict:
+def abrir(brief: dict, clients_validos: list[str], projetos_cadastrados: dict, bases: Optional[list[str]] = None) -> dict:
     """Constroi o registro de uma Task nova (status "open") a partir do brief. Levanta
     TaskError se: checklist incompleto, Client invalido, projeto fora do cadastro do Client
     (client.projects[]), destino fora do enum, ou fatia de contexto (paths) que nao resolve
     no disco."""
+    for campo in CAMPOS_TEXTO:  # B1/C6: tipo errado recusa com regra, nunca vira erro_interno nem passa calado
+        if brief.get(campo) not in (None, "") and not isinstance(brief[campo], str):
+            raise TaskError(f"campo {campo} precisa ser texto", regra="brief_tipo_invalido", campo=campo,
+                            recebido=type(brief[campo]).__name__)
+    if "coordenacao" in brief and not isinstance(brief["coordenacao"], bool):
+        raise TaskError("coordenacao precisa ser booleano (true/false), nao texto", regra="brief_tipo_invalido",
+                        campo="coordenacao", recebido=type(brief["coordenacao"]).__name__)
+    if brief.get("type") not in (None, "") and brief["type"] not in TIPOS_VALIDOS:
+        raise TaskError("type fora do enum", regra="type_invalido", type_recebido=brief["type"], tipos_validos=list(TIPOS_VALIDOS))
     resultado = classificar_risco(brief)
     if resultado["faltando"]:
         raise TaskError("checklist de brief incompleto", faltando=resultado["faltando"])
@@ -143,7 +160,7 @@ def abrir(brief: dict, clients_validos: list[str], projetos_cadastrados: dict) -
             destinos_validos=list(DESTINOS_VALIDOS),
         )
 
-    problemas_fatia = validar_fatias(brief.get("paths", ""))
+    problemas_fatia = validar_fatias(brief.get("paths", ""), bases)
     if problemas_fatia:
         raise TaskError("fatia de contexto declarada em paths nao resolve no disco",
                          problemas=problemas_fatia)
@@ -228,6 +245,9 @@ def fechar(task: dict, veredito: str, artifact: str, events: list[dict],
     if faltam_disco:
         raise TaskError("close recusado: artifact nao existe em disco", regra="artifact_inexistente",
                         itens=faltam_disco)
+    if veredito != "PASS" and not criterio_reprovado:  # C10: o texto dizia obrigatorio e nao exigia
+        raise TaskError("close com veredito FAIL/CONCERN exige --criterio-reprovado (qual criterio do gate reprovou)",
+                        regra="criterio_reprovado_ausente", veredito=veredito)
     if task.get("type") == "correcao" and not root_cause:
         raise TaskError("Task de correcao exige --root-cause (5 porques)", id=task.get("id"))
 
@@ -264,6 +284,6 @@ def fechar(task: dict, veredito: str, artifact: str, events: list[dict],
     nova["evidencia_veredito"] = fonte_evidencia
     if root_cause:
         nova["root_cause"] = root_cause
-    if veredito != "PASS" and criterio_reprovado:
+    if veredito != "PASS":
         nova["gate_criteria_failed"] = [criterio_reprovado]
     return nova

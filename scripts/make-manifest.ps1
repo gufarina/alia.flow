@@ -19,6 +19,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)   # git devolve UTF-8 (nome com acento)
 
 if (-not (Test-Path -LiteralPath $Dir -PathType Container)) {
   Write-Host ("[ERRO] pasta nao encontrada: " + $Dir)
@@ -45,7 +46,7 @@ $ErrorActionPreference = $prevEap
 $entries = @()
 
 if ($isGitRepo) {
-  $relPaths = & git -C $dirFull ls-files |
+  $relPaths = & git -c core.quotepath=off -C $dirFull ls-files |
     Where-Object { -not (Test-ManifestExcluded $_) }
   foreach ($rel in $relPaths) {
     $full = Join-Path $dirFull ($rel -replace '/', [System.IO.Path]::DirectorySeparatorChar)

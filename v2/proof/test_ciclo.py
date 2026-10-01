@@ -29,18 +29,17 @@ def check(name: str, cond: bool, detail: str = "") -> None:
         FAILS.append(name)
 
 
-def _env(root: str) -> dict:
+def _env(root: str, extra: dict | None = None) -> dict:
     env = {k: v for k, v in os.environ.items() if not (k.startswith("ALIA_") and k.endswith("_OFF"))}
     env.update({"CLAUDE_PROJECT_DIR": root, "ALIA_LEDGER_PATH": os.path.join(root, "activity.jsonl")})
+    env.update(extra or {})
     return env
 
 
 _MODS: dict = {}
 
 
-def _run_inproc(dispatch: str, root: str, event: dict) -> dict:
-    """Mesmo handler que o main() chama, sem subir um processo por evento (o check.py roda perto do
-    teto de 30 s e dezenas de processos disputavam CPU com as outras baterias)."""
+def _mod(dispatch: str):
     import importlib.util
     mod = _MODS.get(dispatch)
     if mod is None:
@@ -48,22 +47,32 @@ def _run_inproc(dispatch: str, root: str, event: dict) -> dict:
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         _MODS[dispatch] = mod
+    return mod
+
+
+def _run_inproc(dispatch: str, root: str, event: dict, extra: dict | None = None) -> dict:
+    """Mesmo handler que o main() chama, sem subir um processo por evento (o check.py roda perto do
+    teto de 30 s e dezenas de processos disputavam CPU com as outras baterias)."""
+    mod = _mod(dispatch)
     antes = dict(os.environ)
-    novo = _env(root)
+    novo = _env(root, extra)
     os.environ.clear()
     os.environ.update(novo)
     try:
         if event.get("hook_event_name") == "UserPromptSubmit":
             return mod.handle_user_prompt_submit(event)
+        if event.get("hook_event_name") == "PostToolUse":
+            mod.handle_post_write_artifact_marker(event)
+            return {}
         return mod.handle_pretooluse_guard(event)
     finally:
         os.environ.clear()
         os.environ.update(antes)
 
 
-def _run(dispatch: str, root: str, event: dict) -> dict:
+def _run(dispatch: str, root: str, event: dict, extra: dict | None = None) -> dict:
     if event.get("tool_name") != "Agent":
-        return _run_inproc(dispatch, root, event)
+        return _run_inproc(dispatch, root, event, extra)
     p = subprocess.run([sys.executable, dispatch], input=json.dumps(event).encode("utf-8"),
                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=_env(root))
     try:
@@ -145,14 +154,21 @@ def _matriz(dispatch: str, root: str, com_git: bool) -> dict[str, list[str]]:
     return res
 
 
+_MUT_BASE: list = []
+
+
 def _mutante(nome: str, velho: str, novo: str) -> str:
     src = open(DISPATCH, encoding="utf-8").read()
     assert velho in src, "mutante '" + nome + "': trecho nao achado no dispatch"
-    d = tempfile.mkdtemp(prefix="alia-ciclo-mut-")
-    # o dispatch importa lib/ ao lado do proprio arquivo: o mutante mora em <d>/hooks/ com lib/ irma
-    os.makedirs(os.path.join(d, "hooks"), exist_ok=True)
-    shutil.copytree(os.path.join(V2, "lib"), os.path.join(d, "lib"), dirs_exist_ok=True)
-    out = os.path.join(d, "hooks", "dispatch.py")
+    # o dispatch importa lib/ ao lado da pasta dele: UMA copia de lib/ compartilhada (<base>/lib) e cada
+    # mutante mora em <base>/hN/dispatch.py (a copia da lib por mutante custava ~30 mutantes x copytree)
+    if not _MUT_BASE:
+        _MUT_BASE.append(tempfile.mkdtemp(prefix="alia-ciclo-mut-"))
+        shutil.copytree(os.path.join(V2, "lib"), os.path.join(_MUT_BASE[0], "lib"),
+                        ignore=shutil.ignore_patterns("__pycache__"))
+    d = os.path.join(_MUT_BASE[0], "h%d" % len(os.listdir(_MUT_BASE[0])))
+    os.makedirs(d)
+    out = os.path.join(d, "dispatch.py")
     with open(out, "w", encoding="utf-8") as fh:
         fh.write(src.replace(velho, novo, 1))
     return out
@@ -194,7 +210,7 @@ try:
         "-File encadeado": "powershell -File scripts/update-engine.ps1 ; python -c \"open('X','w')\"",
         "-File com redirecionamento": "powershell -File scripts/update-engine.ps1 > " + os.path.join(prod, "log.txt"),
     }
-    _word = _mutante("E passagem por palavra", "passa = bool(_WALL_PASS_RE.match(cmd) and not _WALL_PASS_BAD_ARG_RE.search(cmd))",
+    _word = _mutante("E passagem por palavra", "passa = bool(_WALL_PASS_RE.fullmatch(cmd.strip()) and not _WALL_PASS_BAD_ARG_RE.search(cmd))",
                      "passa = bool(re.search(r'update-engine|publish-release', cmd))")
     for _n, _c in _bypass.items():
         _ti = {"command": _c}
@@ -234,6 +250,353 @@ try:
         mut = _mutante(nome, velho, novo)
         alvo = notif if nome.startswith("C1") else 'citacao "resolve voce mesma" aqui'
         check(f"negativo {nome}: mutante e pego (libera quando nao devia)", _prompt(alvo, mut))
+finally:
+    shutil.rmtree(root, ignore_errors=True)
+
+# ---------------------------------------------------------------------------
+# 2.1.3 (TASK-862, frente A): furos do deep review dos hooks. Cada conserto: o real acerta E o mutante que
+# reabre o furo inverte o resultado (prova pelo negativo). Tudo em processo (barato).
+# ---------------------------------------------------------------------------
+print("\n=== 2.1.3 hooks: P0/P1 e falsos positivos, cada conserto com mutante ===")
+import threading  # noqa: E402
+import time  # noqa: E402
+
+
+def _motivo(out: dict) -> str:
+    return str((out.get("hookSpecificOutput") or {}).get("permissionDecisionReason", ""))
+
+
+def _git_repo(pasta: str) -> str:
+    os.makedirs(pasta, exist_ok=True)
+    g = ["git", "-c", "user.email=t@t.local", "-c", "user.name=t"]
+    subprocess.run(["git", "init", "-q"], cwd=pasta)
+    with open(os.path.join(pasta, "f.txt"), "w", encoding="utf-8") as fh:
+        fh.write("x")
+    subprocess.run(g + ["add", "f.txt"], cwd=pasta)
+    subprocess.run(g + ["commit", "-q", "-m", "x"], cwd=pasta)
+    return pasta
+
+
+root, prod = _fixture(True)
+outro = _git_repo(os.path.join(root, "outro"))
+RAIZ = root.replace("\\", "/")
+try:
+    def _par(rotulo: str, ev: dict, nega: bool, velho: str, novo: str, extra: dict | None = None,
+             fonte: str = "dispatch") -> None:
+        """real acerta (nega ou libera) E o mutante inverte."""
+        real = _nega(_run(DISPATCH, root, ev, extra))
+        check(f"{rotulo}: real {'NEGA' if nega else 'LIBERA'}", real == nega, _motivo(_run(DISPATCH, root, ev, extra)))
+        mut = _mutante(rotulo, velho, novo)
+        check(f"negativo {rotulo}: mutante reabre o furo (resultado inverte)", _nega(_run(mut, root, ev, extra)) != nega)
+
+    # P1-1: comando quebrado por linha nova
+    _par("P1-1 linha nova esconde o kernel", _ev("Bash", {"command": "echo hi\ncp a engine/x.md"}, True), True,
+         "for clausula in _SPLIT_CLAUSULAS_RE.split(command):  # inclui linha nova (P1-1)",
+         'for clausula in re.split(r"[;&|]+", command):  # ')
+    # P1-2: engine/ relativo e kernel
+    _par("P1-2 engine/ relativo", _ev("Bash", {"command": "echo x > engine/y.md"}, True), True,
+         'if "/engine/" in pn or pn.endswith("/engine"):', 'if "/engine/" in p or p.endswith("/engine"):')
+    # P1-3: `..` normalizado
+    _par("P1-3 .. no caminho", _ev("Write", {"file_path": RAIZ + "/clients/alia-flow-lab/../../engine/a.md", "content": "x"}, True),
+         True, "return posixpath.normpath(_nome_longo(p))", "return _nome_longo(p)")
+    # cwd do evento resolve o relativo: dentro da fonte, `engine/a.md` NAO e kernel
+    _ev_cwd = {**_ev("Bash", {"command": "echo x > engine/a.md"}, True), "cwd": RAIZ + "/clients/alia-flow-lab"}
+    _par("cwd resolve relativo (dentro da fonte do motor)", _ev_cwd, False,
+         r'return cwd.replace("\\", "/").rstrip("/") + "/" + n', "return p")
+    # P1-4: -EncodedCommand e script fora da allowlist na sessao principal (muralha ligada)
+    _par("P1-4 powershell -EncodedCommand", _ev("Bash", {"command": "powershell -NoProfile -EncodedCommand QQBBAEEA"}, False), True,
+         "or _WALL_ENCODED_RE.search(cmd) or", "or False or")
+    _par("P1-4 python script fora da allowlist", _ev("Bash", {"command": "python " + RAIZ + "/tmp/evil.py"}, False), True,
+         "or _wall_script_fora_da_allowlist(cmd, cwd))", "or False)")
+    check("P1-4 positivo: -ExecutionPolicy nao e -EncodedCommand e script de v2/bin passa",
+          not _nega(_run(DISPATCH, root, _ev("Bash", {"command": "pwsh -NoProfile -ExecutionPolicy Bypass -File v2/bin/x.ps1"}, False))))
+    check("P1-4 positivo: o subagente roda script fora da allowlist (a muralha e so da sessao principal)",
+          not _nega(_run(DISPATCH, root, _ev("Bash", {"command": "python " + RAIZ + "/tmp/evil.py"}, True))))
+    # P1-5: passagem estrita (linha nova, fullmatch, pasta scripts/)
+    _pm = _mod(DISPATCH)
+    check("P1-5 passagem nega linha nova depois do -File", not _pm._WALL_PASS_RE.fullmatch(
+        "powershell -File scripts/update-engine.ps1\nrm x"))
+    check("P1-5 passagem nega script fora de scripts/", not _pm._WALL_PASS_RE.fullmatch("powershell -File /tmp/update-engine.ps1"))
+    check("P1-5 passagem aceita a forma legitima", bool(_pm._WALL_PASS_RE.fullmatch(
+        "powershell -ExecutionPolicy Bypass -File clients/x/scripts/publish-release.ps1 -Message m")))
+    _mp5 = _mutante("P1-5 pasta qualquer", r"scripts[\\/](?:publish-release|update-engine)", r"(?:publish-release|update-engine)")
+    check("negativo P1-5 pasta: mutante deixa passar /tmp/update-engine.ps1",
+          bool(_mod(_mp5)._WALL_PASS_RE.fullmatch("powershell -File /tmp/update-engine.ps1")))
+    _ev5 = _ev("Bash", {"command": "powershell -File scripts/update-engine.ps1 -X\npython - <<'EOF'\nopen('f','w').write('x')\nEOF"}, False)
+    _par("P1-5 -File + linha nova + script inline", _ev5, True,
+         "_WALL_PASS_RE.fullmatch(cmd.strip())", "_WALL_PASS_RE.match(cmd)")
+
+    # P0-6: a liberacao do CEO destrava a guarda 4 (clients/<id>/)
+    _gp = os.path.join(root, ".alia", "direto.json")
+    _ev6 = _ev("Write", {"file_path": RAIZ + "/clients/demo/squad/a.md", "content": "x"}, False)
+    check("P0-6 sem liberacao, a sessao principal e negada em clients/<id>/", _nega(_run(DISPATCH, root, _ev6)))
+    _run(DISPATCH, root, {"hook_event_name": "UserPromptSubmit", "session_id": "ciclo-s", "prompt": "resolve voce mesma"})
+    _par("P0-6 liberacao do CEO vale na guarda 4", _ev6, False,
+         "    if _direct_grant_valid(session_id):\n        return False\n    return not", "    return not")
+    if os.path.exists(_gp):
+        os.remove(_gp)
+
+    # P1-7: ninguem forja check-ok.json / direto.json; o repo do push tem que ser o do marcador
+    _par("P1-7 Write em .alia/check-ok.json", _ev("Write", {"file_path": RAIZ + "/.alia/check-ok.json", "content": "{}"}, True),
+         True, "if _e_marcador_proprio(_fp):", "if False:")
+    _par("P1-7 Bash forja direto.json (subagente)", _ev("Bash", {"command": "echo {} > .alia/direto.json"}, True), True,
+         'if _comando_forja_marcador(str(tool_input.get("command") or ""), cwd):', "if False:")
+    check("P1-7 positivo: ler o marcador por Bash passa",
+          not _nega(_run(DISPATCH, root, _ev("Bash", {"command": "cat .alia/check-ok.json"}, True))))
+    _par("P1-7 push de OUTRO repo com marcador do produto", _ev("Bash", {"command": f'git -C "{outro}" push origin main'}, False),
+         True, "if topo and not _mesmo_caminho(topo, repo_dir):", "if False:")
+    check("P1-7 positivo: push do repo do marcador passa",
+          not _nega(_run(DISPATCH, root, _ev("Bash", {"command": f'git -C "{prod}" push origin main'}, False))))
+
+    # marcador com VERSION: repo uma versao atras publica; repo a frente nega (o repo so recebe a nova pelo publicar)
+    _mkp = os.path.join(root, ".alia", "check-ok.json")
+    _mk = json.load(open(_mkp, encoding="utf-8"))
+    _mk["version"] = "2.1.3"
+    json.dump(_mk, open(_mkp, "w", encoding="utf-8"))
+    _push_prod = _ev("Bash", {"command": f'git -C "{prod}" push origin main'}, False)
+    _velho_v = 'if tuple(int(x) for x in ver_repo.split(".")) > tuple(int(x) for x in str(ver_marc).split(".")):'
+    for _vr, _nega_v in (("2.1.2", False), ("2.1.3", False), ("2.1.4", True)):
+        open(os.path.join(prod, "VERSION"), "w", encoding="utf-8").write(_vr + "\n")
+        if _nega_v:
+            _par(f"marcador 2.1.3 x repo em {_vr} (a frente)", _push_prod, True, _velho_v, "if False:")
+        else:
+            check(f"marcador 2.1.3 x repo em {_vr} (atras ou igual) publica", not _nega(_run(DISPATCH, root, _push_prod)))
+    os.remove(os.path.join(prod, "VERSION"))
+
+    # P1-8 e P2-10: publicacao em posicao de comando
+    _old_pub = 'if re.search(r"(?i)\\b(git push|npm publish|package-release|publish-release)\\b", command):'
+    for _c in ("git -C r push origin main", "git  push", "gh release create v1", "pnpm publish"):
+        _par("P1-8 L70 ve `" + _c + "`", _ev("Bash", {"command": _c}, True), True, "if _comando_publica(command):", _old_pub)
+    _par("P2-10 ler o script de publicar nao e publicar", _ev("Bash", {"command": "cat scripts/publish-release.ps1"}, True), False,
+         "if _comando_publica(command):", _old_pub)
+
+    # P2-9: `>` so e redirecionamento fora de aspas/seta/heredoc; `2>arq` conta
+    _velho9 = 'elif ch == ">" and not (i and texto[i - 1] in "-="):'
+    _par("P2-9 seta `->` nao e redirecionamento", _ev("Bash", {"command": "echo ok -> engine/readme.md"}, True), False,
+         _velho9, 'elif ch == ">" and not (i and texto[i - 1] in "XX"):')
+    _par("P2-9 `2>arq` e redirecionamento", _ev("Bash", {"command": "ls 2>engine/z.md"}, True), True,
+         _velho9, 'elif ch == ">" and not (i and texto[i - 1] in "-=0123456789"):')
+    _par("P2-9 corpo de heredoc e texto, nao comando",
+         _ev("Bash", {"command": "cat <<EOF > docs/f.md\ncp a engine/x.md\nEOF"}, True), False,
+         "command = _sem_corpo_heredoc(command)  # o corpo do heredoc e TEXTO, nao comando (P2-9)", "pass")
+    check("P2-9 `<a>` entre aspas nao e redirecionamento", _pm._extract_write_targets("echo '<a>x</a>' ; ls") == [])
+
+    # segredo: minusculo, Bearer, `sk-` com fronteira
+    _fake = lambda t: _ev("Write", {"file_path": RAIZ + "/docs/n.md", "content": t}, True)
+    _tok = 'token = "' + "a1" * 12 + '"'
+    _par("segredo minusculo `token = \"...\"`", _fake(_tok), True, r"(?i)\b\w*(?:key|token|secret", r"(?i)\bQQ\w*(?:key|token|secret")
+    _par("segredo Bearer", _fake("Authorization: Bearer " + "Z" * 30), True, r'r"(?i)\bbearer\s+', r'r"(?i)\bQbearer\s+')
+    _par("`task-<20 letras>` nao e segredo", _fake("ver task-" + "abcdefghij" * 3 + " ok"), False,
+         r'r"(?<![A-Za-z0-9_\-])sk-[A-Za-z0-9]{20,}"', r'r"sk-[A-Za-z0-9]{20,}"')
+    check("segredo: `cache_key = nome_de_variavel_comprido` (codigo) nao e segredo",
+          not _nega(_run(DISPATCH, root, _fake("cache_key = nome_de_variavel_comprido_qualquer"))))
+
+    # MultiEdit tem guard
+    _me = lambda fp, ns: _ev("MultiEdit", {"file_path": fp, "edits": [{"old_string": "a", "new_string": ns}]}, True)
+    _velho_me = 'if tool_name in ("Write", "Edit", "NotebookEdit", "MultiEdit"):\n        path = tool_input'
+    _novo_me = 'if tool_name in ("Write", "Edit", "NotebookEdit"):\n        path = tool_input'
+    _par("MultiEdit com segredo no texto novo", _me(RAIZ + "/docs/a.md", "sk-" + "B" * 24), True, _velho_me, _novo_me)
+    _par("MultiEdit no kernel", _me(RAIZ + "/engine/x.md", "x"), True, _velho_me, _novo_me)
+
+    # nome 8.3 (so onde o volume gera nome curto)
+    if os.name == "nt":
+        import ctypes
+        _longo = os.path.join(root, "clients", "demo-cliente-comprido", "squad")
+        os.makedirs(_longo, exist_ok=True)
+        _buf = ctypes.create_unicode_buffer(1024)
+        ctypes.windll.kernel32.GetShortPathNameW(_longo, _buf, 1024)
+        _curto = _buf.value.replace("\\", "/")
+        if "~" in _curto.split("clients/", 1)[-1]:
+            _par("8.3: nome curto da pasta do Client nao escapa da guarda 4",
+                 _ev("Write", {"file_path": _curto + "/a.md", "content": "x"}, False), True,
+                 'if os.name != "nt" or "~" not in p:\n        return p', "return p",
+                 extra={"ALIA_DELEGATION_WALL_OFF": "1"})
+        else:
+            print("[INFO] volume sem nomes 8.3: prova do nome curto nao se aplica nesta maquina")
+
+    # marcador de artifact so de sub-agente
+    _led = os.path.join(root, "activity.jsonl")
+    _post = {"hook_event_name": "PostToolUse", "tool_name": "Write", "session_id": "ciclo-s",
+             "tool_input": {"file_path": RAIZ + "/clients/demo/artifacts/TASK-77/e.md", "content": "x"}}
+    _run(DISPATCH, root, _post)
+    _n_marc = lambda: sum(1 for l in open(_led, encoding="utf-8") if '"artifact_write"' in l) if os.path.exists(_led) else 0
+    check("marcador artifact_write: a sessao principal (sem agent_id) nao grava", _n_marc() == 0)
+    _run(DISPATCH, root, {**_post, "agent_id": "ag-9"})
+    check("marcador artifact_write: o sub-agente grava", _n_marc() == 1)
+    _mm = _mutante("marcador de qualquer ator", "    if not event.get(\"agent_id\"):\n        return  # 2.1.3", "    if False:\n        return  # 2.1.3")
+    _run(_mm, root, _post)
+    check("negativo marcador: mutante deixa a sessao principal gravar", _n_marc() == 2)
+
+    # corridas: o lock segura o 2o escritor; escrita atomica; PermissionError do O_EXCL e retry
+    def _espera_lock(dispatch: str, chamada, lock: str, arquivo: str) -> tuple[bool, bool]:
+        """(escreveu enquanto o lock estava preso, escreveu depois de solto)."""
+        os.makedirs(os.path.dirname(lock), exist_ok=True)
+        open(lock, "w").close()  # "outro processo" segura o lock
+        th = threading.Thread(target=chamada)
+        th.start()
+        time.sleep(0.15)
+        durante = os.path.exists(arquivo)
+        os.remove(lock)
+        th.join(10)
+        return durante, os.path.exists(arquivo)
+
+    def _cenario_lock(dispatch: str, qual: str) -> tuple[bool, bool]:
+        d = tempfile.mkdtemp(prefix="alia-ciclo-lock-")
+        antes = dict(os.environ)
+        os.environ.update({"ALIA_LEDGER_PATH": os.path.join(d, "activity.jsonl"), "CLAUDE_PROJECT_DIR": d})
+        try:
+            if qual == "contador":
+                m = _mod(dispatch)
+                alvo = os.path.join(d, "activity.jsonl.subagentes.json")
+                return _espera_lock(dispatch, lambda: m._subagent_cap_check({"session_id": "L"}), alvo + ".lock", alvo)
+            if qual == "direto":
+                m = _mod(dispatch)
+                alvo = os.path.join(d, ".alia", "direto.json")
+                return _espera_lock(dispatch, lambda: m.handle_user_prompt_submit(
+                    {"session_id": "L", "prompt": "resolve voce mesma"}), alvo + ".lock", alvo)
+            import importlib.util
+            sys.path.insert(0, os.path.join(V2, "lib"))
+            spec = importlib.util.spec_from_file_location("gg_" + str(abs(hash(dispatch))), dispatch)
+            g = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(g)
+            import ledger as _l
+            alvo = os.path.join(d, "activity.jsonl.grafo.json")
+            return _espera_lock(dispatch, lambda: g.registrar_leitura(_l, "L", command="graphify query x"), alvo + ".lock", alvo)
+        finally:
+            os.environ.clear()
+            os.environ.update(antes)
+
+    _GG = os.path.join(V2, "lib", "grafo_gate.py")
+
+    def _mut_gg(velho: str, novo: str) -> str:
+        d = tempfile.mkdtemp(prefix="alia-ciclo-mutgg-")
+        out = os.path.join(d, "grafo_gate.py")
+        src = open(_GG, encoding="utf-8").read()
+        assert velho in src, "mutante do grafo_gate: trecho nao achado"
+        open(out, "w", encoding="utf-8").write(src.replace(velho, novo, 1))
+        return out
+
+    for _qual, _fonte, _velho, _novo in (
+            ("contador", DISPATCH, "with trava.trava(path):", "if True:"),
+            ("direto", DISPATCH, "with trava.trava(gp):", "if True:"),
+            ("grafo", _GG, "with trava.trava(_sidecar()):  # 2.1.3: ler-alterar-gravar sob lock (duas", "if True:  # (duas")):
+        _durante, _depois = _cenario_lock(_fonte, _qual)
+        check(f"corrida {_qual}: com o lock preso o escritor ESPERA e grava quando solta", not _durante and _depois,
+              f"durante={_durante} depois={_depois}")
+        _mutf = _mutante("corrida " + _qual, _velho, _novo) if _fonte == DISPATCH else _mut_gg(_velho, _novo)
+        _durante_m, _ = _cenario_lock(_mutf, _qual)
+        check(f"negativo corrida {_qual}: mutante sem lock grava por cima (o teste acima o pega)", _durante_m)
+
+    # grafo_gate: `tool_use_id` de um RESULTADO e qualquer mencao ao relatorio nao sao leitura do mapa
+    def _lido(fonte: str, linhas: list[str]) -> bool:
+        spec = _iu_gg.spec_from_file_location("gg_t%d" % abs(hash(fonte)), fonte)
+        g = _iu_gg.module_from_spec(spec)
+        spec.loader.exec_module(g)
+        tr = os.path.join(tempfile.mkdtemp(prefix="alia-ciclo-tr-"), "t.jsonl")
+        open(tr, "w", encoding="utf-8").write("\n".join(linhas) + "\n")
+        return g._lido_no_transcript(tr, "C:/x/clients/c1/graphify-out/GRAPH_REPORT.md")
+    import importlib.util as _iu_gg
+    sys.path.insert(0, os.path.join(V2, "lib"))
+    _l_res = '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"existe C:/x/clients/c1/graphify-out/GRAPH_REPORT.md"}]}}'
+    _l_uso = '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","input":{"file_path":"C:/x/clients/c1/graphify-out/GRAPH_REPORT.md"}}]}}'
+    check("grafo: resultado de ferramenta (tool_use_id) que cita o relatorio NAO conta como leitura", not _lido(_GG, [_l_res]))
+    check("grafo: o tool_use que le o relatorio conta", _lido(_GG, [_l_uso]))
+    check("negativo grafo: mutante que casa 'tool_use' em qualquer linha da leitura onde nao houve",
+          _lido(_mut_gg('if not _TOOL_USE_LINHA.search(linha):', 'if "tool_use" not in linha:'), [_l_res]))
+
+    _m = _mod(DISPATCH)
+    for _s in ("s1", "s2"):
+        _run(DISPATCH, root, {"hook_event_name": "UserPromptSubmit", "session_id": _s, "prompt": "faz voce mesma"})
+    _antes = dict(os.environ)
+    os.environ.update(_env(root))
+    try:
+        _dois = _m._direct_grant_valid("s1") and _m._direct_grant_valid("s2")
+    finally:
+        os.environ.clear()
+        os.environ.update(_antes)
+    check("direto.json: duas sessoes liberadas ao mesmo tempo nao se apagam", _dois)
+    _mg = _mutante("direto sobrescreve", 'grants = dict((atual.get("grants") or {}) if isinstance(atual, dict) else {})', "grants = {}")
+    os.remove(_gp)
+    for _s in ("s1", "s2"):
+        _run(_mg, root, {"hook_event_name": "UserPromptSubmit", "session_id": _s, "prompt": "faz voce mesma"})
+    os.environ.update(_env(root))
+    try:
+        _dois_m = _mod(_mg)._direct_grant_valid("s1") and _mod(_mg)._direct_grant_valid("s2")
+    finally:
+        os.environ.clear()
+        os.environ.update(_antes)
+    check("negativo direto.json: mutante que sobrescreve perde a 1a sessao", not _dois_m)
+
+    # trava.py: PermissionError na disputa do O_EXCL tambem e retry (Windows) e escrita atomica
+    import importlib.util as _iu
+    _TV = os.path.join(V2, "lib", "trava.py")
+
+    def _carrega_trava(path: str):
+        sp = _iu.spec_from_file_location("trava_t%d" % abs(hash(path)), path)
+        mo = _iu.module_from_spec(sp)
+        sp.loader.exec_module(mo)
+        return mo
+
+    def _lock_sob_permission_error(mod) -> bool:
+        d = tempfile.mkdtemp(prefix="alia-ciclo-tv-")
+        alvo = os.path.join(d, "x.json")
+        real_open, n = os.open, {"i": 0}
+
+        def _falso(p, *a, **k):
+            if str(p).endswith(".lock") and n["i"] < 3:
+                n["i"] += 1
+                raise PermissionError(13, "disputa")
+            return real_open(p, *a, **k)
+        os.open = _falso
+        try:
+            with mod.trava(alvo, espera_s=3):
+                return os.path.exists(alvo + ".lock")
+        finally:
+            os.open = real_open
+    check("trava: PermissionError na disputa do O_EXCL e retry e o lock e obtido", _lock_sob_permission_error(_carrega_trava(_TV)))
+    _tm = os.path.join(tempfile.mkdtemp(prefix="alia-ciclo-tvm-"), "trava.py")
+    open(_tm, "w", encoding="utf-8").write(open(_TV, encoding="utf-8").read().replace(
+        "except (FileExistsError, PermissionError):", "except FileExistsError:", 1))
+    check("negativo trava: mutante que nao trata PermissionError segue SEM lock",
+          not _lock_sob_permission_error(_carrega_trava(_tm)))
+    _tv = _carrega_trava(_TV)
+    _arq = os.path.join(tempfile.mkdtemp(prefix="alia-ciclo-at-"), "d.json")
+    _tv.gravar_atomico(_arq, '{"a": 1}')
+    _tv.gravar_atomico(_arq, '{"a": 2}')
+    check("trava: gravar_atomico troca o conteudo inteiro e nao deixa tmp", json.load(open(_arq, encoding="utf-8")) == {"a": 2}
+          and not [f for f in os.listdir(os.path.dirname(_arq)) if f.endswith(".tmp")])
+    _soma = os.path.join(os.path.dirname(_arq), "soma.json")
+    _tv.gravar_atomico(_soma, "0")
+
+    def _incrementa() -> None:
+        for _ in range(40):
+            with _tv.trava(_soma):
+                _tv.gravar_atomico(_soma, str(int(open(_soma, encoding="utf-8").read()) + 1))
+    _ths = [threading.Thread(target=_incrementa) for _ in range(5)]
+    for _t in _ths:
+        _t.start()
+    for _t in _ths:
+        _t.join()
+    check("trava: 5 escritores x 40 incrementos sob lock somam 200 (nenhum se perde)", int(open(_soma, encoding="utf-8").read()) == 200)
+finally:
+    shutil.rmtree(root, ignore_errors=True)
+
+# gatilho `sem delegar` so como PEDIDO, nunca como queixa (P2)
+root, _ = _fixture(False)
+try:
+    _gr = os.path.join(root, ".alia", "direto.json")
+
+    def _libera(texto: str, dispatch: str = DISPATCH) -> bool:
+        if os.path.exists(_gr):
+            os.remove(_gr)
+        _run(dispatch, root, {"hook_event_name": "UserPromptSubmit", "session_id": "ciclo-s", "prompt": texto})
+        return os.path.exists(_gr)
+
+    check("sem delegar: queixa ('ela fez sem delegar de novo') NAO libera", not _libera("ela fez sem delegar de novo"))
+    check("sem delegar: pedido ('faz isso sem delegar') libera", _libera("faz isso sem delegar"))
+    check("sem delegar: pedido no inicio da frase ('Sem delegar, ajusta o botao') libera", _libera("Sem delegar, ajusta o botao"))
+    _mq = _mutante("queixa libera", r'r"|nao\s+delegue|libera', r'r"|sem\s+delegar|nao\s+delegue|libera')
+    check("negativo sem delegar: mutante com o gatilho solto libera a queixa", _libera("ela fez sem delegar de novo", _mq))
 finally:
     shutil.rmtree(root, ignore_errors=True)
 

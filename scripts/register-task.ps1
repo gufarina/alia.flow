@@ -69,7 +69,8 @@ $alvo = $Id
 if (-not $alvo) {
   $brief = [ordered]@{ client = $Client; project = $Project; objetivo = $Title; paths = $Paths; consumidor = $Consumidor
                        destino = $Destino; exemplo_falha = $ExemploFalha; type = $Type }
-  if ($OperatorOrder) { $brief.coordenacao = $true }
+  if ($OperatorOrder) { $brief.coordenacao = $true; $brief.ordem_operator = $true }
+  if (-not $SessionId) { Write-Host "[AVISO] sem -SessionId: a Task nao vira a Task corrente de nenhuma sessao (so _last)" }
   $arqBrief = [System.IO.Path]::GetTempFileName()
   [System.IO.File]::WriteAllText($arqBrief, ($brief | ConvertTo-Json -Compress), (New-Object System.Text.UTF8Encoding($false)))
   $args1 = @("task","open","--brief-file",$arqBrief)
@@ -77,7 +78,8 @@ if (-not $alvo) {
   $r = Invoke-Alia $args1
   Remove-Item -LiteralPath $arqBrief -ErrorAction SilentlyContinue
   if ($r.code -ne 0) { exit $r.code }
-  $alvo = if ($r.json.task) { $r.json.task.id } else { $r.json.tasks[0].id }
+  if (-not $r.json) { Write-Host "[ERRO] a CLI nao devolveu JSON"; exit 1 }
+  $alvo = if ($r.json.task) { $r.json.task.id } elseif ($r.json.tasks) { $r.json.tasks[0].id } else { Write-Host "[ERRO] a CLI nao devolveu a Task"; exit 1 }
 }
 if ($fecha) {
   $args2 = @("task","close","--id",$alvo,"--artifact",$Artifact,"--veredito",$veredito)

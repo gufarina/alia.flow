@@ -10,9 +10,23 @@
 # script inspeciona por CAMINHO/CONTEUDO em disco quando nao ha git (sem "tudo certo" as cegas);
 # so sai com erro se nao conseguir nem enumerar arquivos (pasta inexistente).
 [CmdletBinding()]
-param([string]$Repo = ".", [string[]]$OnlyPaths = @())
+param([string]$Repo = ".", [string[]]$OnlyPaths = @(), [switch]$RequireIdentityRegistry)
 
 $ErrorActionPreference = "Stop"
+# git devolve UTF-8; sem isto o PS 5.1 le nome com acento no codepage OEM (core.quotepath=off abaixo)
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+# nome com acento sai literal do git (sem isto vira "Ã¥..." e o arquivo some da varredura); so neste processo
+$env:GIT_CONFIG_COUNT = "1"; $env:GIT_CONFIG_KEY_0 = "core.quotepath"; $env:GIT_CONFIG_VALUE_0 = "off"
+# lista unica do que viaja (so existe na oficina; no pacote o arquivo nao viaja e a varredura e inteira)
+$releaseSet = Join-Path $PSScriptRoot "_release-set.ps1"   # opcional-no-pacote
+if (Test-Path -LiteralPath $releaseSet) { . $releaseSet }
+$nomesTexto = '(^|/)(\.gitignore|\.gitattributes|LICENSE|CREDITS|VERSION)$'   # texto sem extensao tambem e varrido
+$script:ilegiveis = @()
+function Read-Surf([string]$full, [string]$rel) {
+    # arquivo que nao da pra ler NAO passa como limpo: vira FAIL no fim da varredura
+    try { return [System.IO.File]::ReadAllText($full, (New-Object System.Text.UTF8Encoding($false))) }
+    catch { $script:ilegiveis += $rel; return $null }
+}
 $fail = 0
 $warn = 0
 
@@ -125,6 +139,16 @@ try {
         Write-Host ("[INFO] Escopo restrito a -OnlyPaths (" + ($OnlyPaths -join ", ") + "): " + $arquivos.Count + " arquivo(s) na varredura")
     }
 
+    # A oficina (sem git) tem pasta privada de proposito (clients/, release-reviews/, _backups/...):
+    # varrer tudo gerava ~800 "violacoes" de ruido. Aqui so o conjunto que VIAJA (lista unica de
+    # _release-set.ps1, a mesma do empacotador). Com -OnlyPaths o escopo ja foi escolhido pelo chamador.
+    if ((-not $ehGit) -and $OnlyPaths.Count -eq 0 -and (Test-Path -LiteralPath (Join-Path $repoRaiz "scripts\package-release.ps1")) -and (Get-Command Test-ShipPath -ErrorAction SilentlyContinue)) {
+        $totalOf = $arquivos.Count
+        # CHANGELOG.md da oficina tem o historico inteiro; o pacote publica a versao truncada (conferida no pacote)
+        $arquivos = @($arquivos | Where-Object { (Test-ShipPath $_) -and ($_ -ne 'CHANGELOG.md') })
+        Write-Host ("[INFO] Oficina: varrendo so o que viaja no pacote (" + $arquivos.Count + " de " + $totalOf + " arquivo(s); o resto e privado por desenho)")
+    }
+
     # ---- (1) categorias proibidas no git ----
     # padrao -> motivo. studio.example/ e o cliente de EXEMPLO que ship: fica de fora do veto.
     # Lista ampliada em 10/08/2026 (mandato do CEO: doc de produto e "exclusiva nossa, jamais
@@ -157,6 +181,13 @@ try {
         @{ p = '(^|/)landing/';                  m = 'landing page (qualquer landing/, nao so brand/landing/)' },
         @{ p = '(^|/)brand/';                    m = 'IP de marca/sistema visual do dono (qualquer brand/, nao so docs/BRAND.md)' },
         @{ p = '(^|/)clients/';                  m = 'material de cliente (Cliente-Projeto-Tarefa) - cliente nunca toca em repo publico' },
+        @{ p = '^studio/';                       m = 'pasta de dados do operador (studio/)' },
+        @{ p = '(^|/)\.secrets/';                m = 'cofre de segredos' },
+        @{ p = '(^|/)_inbox/';                   m = 'caixa de entrada do operador' },
+        @{ p = '(^|/)release-reviews/';          m = 'revisao interna de release' },
+        @{ p = '(^|/)rsi-backlog/';              m = 'backlog interno do RSI' },
+        @{ p = '(^|/)_retired/';                 m = 'material aposentado' },
+        @{ p = '(^|/)settings\.local\.json$';    m = 'configuracao local da maquina' },
         # scripts amarrados A INSTANCIA/OFICINA, nao ao motor (defesa em profundidade - a protecao
         # de primeira linha e o allowlist de scripts/ em package-release.ps1; este veto pega o caso
         # de o arquivo ja estar rastreado no git publico de antes, ou de alguem commitar direto).
@@ -177,8 +208,14 @@ try {
     if ($vazou.Count -eq 0) {
         Ok ("Nenhum arquivo de desenvolvimento " + $(if ($ehGit) { "rastreado" } else { "presente em disco" }) + " (" + $arquivos.Count + " arquivo(s) conferido(s))")
     } else {
-        foreach ($x in ($vazou | Sort-Object arq -Unique)) {
-            Bad ("vazou: " + $x.arq + "  (" + $x.motivo + ")")
+        $uniq = @($vazou | Sort-Object arq, motivo -Unique)
+        if ($uniq.Count -le 20) {
+            foreach ($x in $uniq) { Bad ("vazou: " + $x.arq + "  (" + $x.motivo + ")") }
+        } else {
+            foreach ($g in ($uniq | Group-Object motivo | Sort-Object Count -Descending)) {
+                Write-Host ("[FAIL] " + $g.Count + " arquivo(s): " + $g.Name + "  (ex.: " + (($g.Group | Select-Object -First 3 | ForEach-Object { $_.arq }) -join ", ") + ")") -ForegroundColor Red
+                $script:fail += $g.Count
+            }
         }
 
     }
@@ -214,7 +251,7 @@ try {
 
         $textExt = @(".ps1",".py",".md",".json",".yaml",".yml",".html",".js",".ts",".bat",".txt",".svg")
         $scanFiles = $arquivos | Where-Object {
-            ($textExt -contains [IO.Path]::GetExtension($_)) -and
+            ((($textExt -contains [IO.Path]::GetExtension($_)) -or ($_ -match $nomesTexto))) -and
             ($_ -notmatch '(^|/)graphify-out/cache/') -and
             ($_ -notmatch '^studio\.example/')
         }
@@ -223,7 +260,7 @@ try {
         foreach ($rel in $scanFiles) {
             $full = Join-Path $repoRaiz ($rel -replace '/', [IO.Path]::DirectorySeparatorChar)
             if (-not (Test-Path -LiteralPath $full)) { continue }
- $conteudo = Get-Content -LiteralPath $full -Raw -Encoding utf8 -ErrorAction SilentlyContinue
+ $conteudo = Read-Surf $full $rel
             if ([string]::IsNullOrEmpty($conteudo)) { continue }
             if ($selfRegex) { $conteudo = $selfRegex.Replace($conteudo, ' ') }
             $m = $idRegex.Match($conteudo)
@@ -240,7 +277,11 @@ try {
         }
 
     } else {
-        Write-Host "[INFO] Sem state.json de operador com Clients reais em nenhum ancestral - check de identidade de cliente pulado (instalacao limpa)."
+        if ($RequireIdentityRegistry) {
+            Bad "check de identidade de cliente NAO PODE rodar: sem state.json com Clients em nenhum ancestral deste script (publicar sem o registro e fail-open)"
+        } else {
+            Write-Host "[INFO] Sem state.json de operador com Clients reais em nenhum ancestral - check de identidade de cliente pulado (instalacao limpa)."
+        }
     }
 
     # ---- (1.6) cacada de credencial real (TASK-302, 26/08/2026) ----
@@ -270,18 +311,28 @@ try {
         @{ n = 'GitHub token';              p = '\bgh[pousr]_[A-Za-z0-9]{20,}\b' },
         @{ n = 'GitHub fine-grained token'; p = '\bgithub_pat_[A-Za-z0-9_]{20,}\b' },
         @{ n = 'OpenAI-style key';          p = '\bsk-[A-Za-z0-9]{20,}\b' },
+        @{ n = 'OpenAI project key';        p = '\bsk-proj-[A-Za-z0-9_-]{20,}' },
+        @{ n = 'chave privada PEM';         p = '-----BEGIN (?:[A-Z]+ )*PRIVATE KEY-----' },
+        @{ n = 'AWS access key';            p = '\bAKIA[0-9A-Z]{16}\b' },
+        @{ n = 'Google API key';            p = '\bAIza[0-9A-Za-z_-]{35}\b' },
+        @{ n = 'Slack token';               p = '\bxox[abprs]-[A-Za-z0-9-]{10,}' },
+        @{ n = 'Stripe live key';           p = '\b[sr]k_live_[A-Za-z0-9]{16,}' },
+        @{ n = 'password/senha com valor';  p = '(?i)\b(?:password|passwd|senha)["'']?\s*[:=]\s*["''][^"''\s]{8,}["'']' },
         @{ n = 'JWT completo';              p = '\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b' },
         @{ n = 'Bearer token';              p = '\bBearer\s+[A-Za-z0-9._-]{20,}' },
         @{ n = 'token/key com valor';       p = '(?i)\b(access_token|refresh_token|api_key|apiKey)["'']?\s*[:=]\s*["''][A-Za-z0-9._-]{12,}["'']' }
     )
     # subset seguro pra binario: fora os dois needles de "valor de campo"/Bearer (alta chance de
     # colisao com lixo binario decodificado que por acaso parece texto) - so prefixos exclusivos.
-    $credNeedlesBin = @($credNeedlesText | Where-Object { $_.n -notmatch '^(token/key com valor|Bearer token)$' })
+    $credNeedlesBin = @($credNeedlesText | Where-Object { $_.n -notmatch '^(token/key com valor|Bearer token|password/senha com valor)$' })
 
     function Test-CredMencao([string]$caminho, [string]$trecho) {
         if ($caminho -match '(?i)(^|/)(node_modules|\.pnpm)(/|$)') { return $true }
-        if ($caminho -match '(?i)(^|/)(tests?|specs?|__tests__|examples?|fixtures?|mocks?)(/|$)') { return $true }
-        if ($caminho -match '(?i)\.(test|spec)\.[a-z]+$') { return $true }
+        # unica fixture que o pacote traz de proposito com chave em formato real (a prova do proprio guard);
+        # perdoada pelo caminho EXATO, nunca por "fixtures/" generico
+        if ($caminho -eq 'scripts/fixtures/credencial-depois-do-placeholder.md') { return $true }
+        $zonaTeste =($caminho -match '(?i)(^|/)(tests?|specs?|__tests__|examples?|fixtures?|mocks?)(/|$)') -or ($caminho -match '(?i)\.(test|spec)\.[a-z]+$')
+        if ($zonaTeste -and $trecho -match '(?i)fake|dummy|sample|test|mock|0{6,}|a{8,}|x{6,}|1234') { return $true }
         # Marcadores de placeholder EM/PT (achado real ao provar este check: "seu_token_aqui" numa
         # doc de skill passou direto pela lista so-em-ingles da primeira versao - a casa escreve
         # doc em portugues, o placeholder tambem vem em portugues. Lista cresce por achado real,
@@ -316,7 +367,7 @@ try {
 
     $credScanExt = @(".ps1",".py",".md",".json",".yaml",".yml",".html",".js",".ts",".cjs",".mjs",".cmd",".txt")
     $credScanFiles = $arquivos | Where-Object {
-        (($credScanExt -contains [IO.Path]::GetExtension($_)) -or ($_ -match '(?i)(^|/)\.env(\.|$)')) -and
+        (($credScanExt -contains [IO.Path]::GetExtension($_)) -or ($_ -match $nomesTexto) -or ($_ -match '(?i)(^|/)\.env(\.|$)')) -and
         ($_ -notmatch '(^|/)graphify-out/cache/') -and
         ($_ -notmatch '^studio\.example/')
     }
@@ -324,7 +375,7 @@ try {
     foreach ($rel in $credScanFiles) {
         $full = Join-Path $repoRaiz ($rel -replace '/', [IO.Path]::DirectorySeparatorChar)
         if (-not (Test-Path -LiteralPath $full)) { continue }
- $conteudo = Get-Content -LiteralPath $full -Raw -Encoding utf8 -ErrorAction SilentlyContinue
+ $conteudo = Read-Surf $full $rel
         if ([string]::IsNullOrEmpty($conteudo)) { continue }
         # CONSERTO (code review adversarial, 31/08/2026 - FALSO NEGATIVO MEDIDO): esta varredura
         # olhava so a PRIMEIRA ocorrencia de cada agulha no arquivo ([regex]::Match). Bastava um
@@ -403,33 +454,41 @@ try {
     # Segredo com menos de 8 caracteres nunca entra na comparacao (mesma cerca de ruido do
     # secret-write-guard.ps1 - reuse do mesmo limiar). O valor em si NUNCA aparece na saida deste
     # check - so nome e fingerprint (mesma disciplina do ledger).
-    $vaultFile17 = Join-Path $repoRaiz "studio\.secrets\vault.json"
-    $cfgPath17 = Join-Path $repoRaiz "alia.config.json"
-    if (Test-Path -LiteralPath $cfgPath17) {
-        try {
-            $cfg17 = Get-Content -LiteralPath $cfgPath17 -Raw | ConvertFrom-Json
-            $sdir17 = "$($cfg17.studio_dir)".Trim()
-            if ($sdir17 -ne "") {
-                $studioRoot17 = if ($sdir17 -eq "." -or $sdir17 -eq "./" -or $sdir17 -eq ".\") { $repoRaiz } else { Join-Path $repoRaiz $sdir17 }
-                $vaultFile17 = Join-Path $studioRoot17 ".secrets\vault.json"
-            }
-
-        } catch { }
+    $vaultFiles17 = @()
+    $candDirs17 = @($repoRaiz)
+    $d17 = Split-Path -Parent $PSCommandPath
+    for ($i17 = 0; $i17 -lt 12 -and $d17; $i17++) {
+        $candDirs17 += $d17
+        $par17 = Split-Path -Parent $d17
+        if ([string]::IsNullOrWhiteSpace($par17) -or $par17 -eq $d17) { break }
+        $d17 = $par17
+    }
+    foreach ($cd17 in ($candDirs17 | Select-Object -Unique)) {
+        $sd17 = "studio"
+        $cfg17p = Join-Path $cd17 "alia.config.json"
+        if (Test-Path -LiteralPath $cfg17p) {
+            try { $c17 = "$((Get-Content -LiteralPath $cfg17p -Raw | ConvertFrom-Json).studio_dir)".Trim(); if ($c17 -ne "") { $sd17 = $c17 } } catch { }
+        }
+        $root17 = if ($sd17 -eq "." -or $sd17 -eq "./" -or $sd17 -eq ".\") { $cd17 } else { Join-Path $cd17 $sd17 }
+        foreach ($vf17 in @((Join-Path $root17 ".secrets\vault.json"), (Join-Path $cd17 "studio\.secrets\vault.json"))) {
+            if ((Test-Path -LiteralPath $vf17) -and ($vaultFiles17 -notcontains $vf17)) { $vaultFiles17 += $vf17 }
+        }
     }
 
-    if (-not (Test-Path -LiteralPath $vaultFile17)) {
-        Write-Host "[INFO] Segredo do cofre vazado em arquivo: sem vault.json (studio/.secrets/vault.json ausente) - nada a conferir aqui."
+    if ($vaultFiles17.Count -eq 0) {
+        Write-Host "[INFO] Segredo do cofre vazado em arquivo: sem vault.json (nem no alvo nem nos ancestrais deste script) - nada a conferir aqui."
     } else {
-        $vaultRaw17 = Get-Content -LiteralPath $vaultFile17 -Raw -ErrorAction SilentlyContinue
-        $vaultObj17 = $null
-        if (-not [string]::IsNullOrWhiteSpace($vaultRaw17)) { try { $vaultObj17 = $vaultRaw17 | ConvertFrom-Json } catch { } }
         $vaultSecrets17 = @()
-        if ($null -ne $vaultObj17 -and ($vaultObj17.PSObject.Properties.Name -contains 'secrets')) {
-            foreach ($p in $vaultObj17.secrets.PSObject.Properties) {
-                $v = "$($p.Value.value)"
-                if ($v.Length -ge 8) { $vaultSecrets17 += [pscustomobject]@{ nome = "$($p.Value.name)"; escopo = "$($p.Value.scope)"; valor = $v; fp = "$($p.Value.fingerprint)" } }
+        foreach ($vf17 in $vaultFiles17) {
+            $vaultRaw17 = Get-Content -LiteralPath $vf17 -Raw -ErrorAction SilentlyContinue
+            $vaultObj17 = $null
+            if (-not [string]::IsNullOrWhiteSpace($vaultRaw17)) { try { $vaultObj17 = $vaultRaw17 | ConvertFrom-Json } catch { } }
+            if ($null -ne $vaultObj17 -and ($vaultObj17.PSObject.Properties.Name -contains 'secrets')) {
+                foreach ($p in $vaultObj17.secrets.PSObject.Properties) {
+                    $v = "$($p.Value.value)"
+                    if ($v.Length -ge 8) { $vaultSecrets17 += [pscustomobject]@{ nome = "$($p.Value.name)"; escopo = "$($p.Value.scope)"; valor = $v; fp = "$($p.Value.fingerprint)" } }
+                }
             }
-
         }
 
         if ($vaultSecrets17.Count -eq 0) {
@@ -444,7 +503,7 @@ try {
             foreach ($rel in $vaultScanFiles17) {
                 $full = Join-Path $repoRaiz ($rel -replace '/', [IO.Path]::DirectorySeparatorChar)
                 if (-not (Test-Path -LiteralPath $full)) { continue }
- $conteudo17 = Get-Content -LiteralPath $full -Raw -Encoding utf8 -ErrorAction SilentlyContinue
+ $conteudo17 = Read-Surf $full $rel
                 if ([string]::IsNullOrEmpty($conteudo17)) { continue }
                 foreach ($s17 in $vaultSecrets17) {
                     if ($conteudo17.Contains($s17.valor)) { $vaultLeaks += [pscustomobject]@{ arq = $rel; nome = $s17.nome; escopo = $s17.escopo; fp = $s17.fp } }
@@ -479,10 +538,10 @@ try {
     }
     $extPessoal = @(".ps1",".py",".md",".json",".yaml",".yml",".html",".js",".ts",".cjs",".mjs",".bat",".cmd",".txt",".svg",".css",".toml",".sh")
     $pessoalLeaks = @()
-    foreach ($rel in ($arquivos | Where-Object { ($extPessoal -contains [IO.Path]::GetExtension($_)) -and ($_ -notmatch '(^|/)graphify-out/cache/') -and ($_ -notmatch '^studio\.example/') })) {
+    foreach ($rel in ($arquivos | Where-Object { ((($extPessoal -contains [IO.Path]::GetExtension($_)) -or ($_ -match $nomesTexto))) -and ($_ -notmatch '(^|/)graphify-out/cache/') -and ($_ -notmatch '^studio\.example/') })) {
         $full = Join-Path $repoRaiz ($rel -replace '/', [IO.Path]::DirectorySeparatorChar)
         if (-not (Test-Path -LiteralPath $full)) { continue }
-        $conteudo = Get-Content -LiteralPath $full -Raw -Encoding utf8 -ErrorAction SilentlyContinue
+        $conteudo = Read-Surf $full $rel
         if ([string]::IsNullOrEmpty($conteudo)) { continue }
         $m1 = $emailRe.Match($conteudo)
         if ($m1.Success) { $pessoalLeaks += [pscustomobject]@{ arq = $rel; motivo = "e-mail pessoal" } }
@@ -518,6 +577,10 @@ try {
         } else {
             foreach ($mail in $autoriaRuim) { Bad ("autoria: autor/committer do historico nao e noreply: " + $mail) }
         }
+    }
+
+    if ($script:ilegiveis.Count -gt 0) {
+        foreach ($x in ($script:ilegiveis | Sort-Object -Unique)) { Bad ("arquivo ilegivel na varredura (nao da pra afirmar que esta limpo): " + $x) }
     }
 
     # ---- (2) a oficina nao pode ter remoto (so faz sentido em repo git) ----

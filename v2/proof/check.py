@@ -101,6 +101,15 @@ def _start_script(path: str) -> None:
                                      env=_clean_env()), fo, time.perf_counter())
 
 
+# 2.1.3 (WARDEN): prova que se pula calada passa pela propria sujeira (run_proofs pulava a identidade fora do
+# estudio e ninguem via). Toda linha `[SKIP]`/`SKIP ` das baterias e CONTADA e impressa no fim; na COPIA DE
+# EMPACOTAMENTO (release/alia-flow) qualquer SKIP reprova, salvo o declarado abaixo (dado que so existe no
+# estudio do operador e nunca viaja: o gabarito do grafo).
+SKIPS: list[tuple[str, str]] = []
+SKIPS_DECLARADOS = {"test_grafo.py": "gabarito de query e dado privado do estudio (nao viaja no produto)"}
+_SKIP_RE = re.compile(r"^\s*\[?SKIP\]?(?:\s|:|$)")
+
+
 def collect_script(path: str) -> tuple[int, str, float]:
     proc, fo, t0 = _PROCS[path]
     rc = proc.wait()
@@ -108,6 +117,7 @@ def collect_script(path: str) -> tuple[int, str, float]:
     fo.seek(0)
     out = fo.read().decode("utf-8", "replace")
     fo.close()
+    SKIPS.extend((os.path.basename(path), l.strip()) for l in out.splitlines() if _SKIP_RE.match(l))
     return rc, out, dt
 
 
@@ -1511,10 +1521,11 @@ os.remove(_gp)
 _aut = _dispW(_evW("Bash", {"command": "python v2/bin/direto.py grant \"faz voce mesma\" --session wallS"}))
 check("muro: NEGATIVO - a Alia tenta se liberar via Bash e o muro nega",
       _muro(_aut) and not os.path.exists(_gp))
+_forja = lambda o: _muro(o) or "nao se escrevem por ferramenta" in str(o) or "nao se forjam por comando" in str(o)  # 2.1.3: negada tambem pela guarda de marcador
 check("muro: autoliberacao via Write em direto.json tambem negada",
-      _muro(_dispW(_evW("Write", {"file_path": _gp.replace("\\", "/"), "content": "{}"}))))
+      _forja(_dispW(_evW("Write", {"file_path": _gp.replace("\\", "/"), "content": "{}"}))))
 check("muro: autoliberacao via PowerShell negada",
-      _muro(_dispW(_evW("PowerShell", {"command": f"Set-Content {_gp} '{{}}'"}))))
+      _forja(_dispW(_evW("PowerShell", {"command": f"Set-Content {_gp} '{{}}'"}))))
 # PROVA PELO NEGATIVO: mutante com o muro desligado no codigo tem que ser pego pelo teste
 _mut = os.path.join(_TW, "mut", "v2")
 shutil.copytree(V2, _mut, ignore=shutil.ignore_patterns("__pycache__", "proof", "deep"))
@@ -1765,6 +1776,10 @@ check("public-surface: NEGATIVO - mutante sem conferencia de autoria deixa o aut
 
 # ---------------------------------------------------------------------------
 print("\n=== law-ledger - COBERTA exige teste que EXISTE (fim dos testes fantasmas) ===")
+# copia de empacotamento = a que nao leva o empacotador (scripts/package-release.ps1 e oficina-only), onde quer que
+# esteja (antes: so o caminho release/alia-flow, e a copia em %TEMP% do proprio empacotador escapava)
+_EMPACOTAMENTO = (not os.path.isfile(os.path.join(os.path.dirname(V2), "scripts", "package-release.ps1"))
+                  or "/release/alia-flow/" in (V2.replace("\\", "/") + "/"))
 _LEDGER_MD = os.path.join(os.path.dirname(V2), "engine", "governance", "law-ledger.md")
 _ledger_arquivos: set[str] = set()
 for _rt in ("scripts", "v2", "engine"):
@@ -1789,8 +1804,12 @@ def _ledger_coberta_fantasma(linhas: list[str]) -> list[str]:
 
 if os.path.isfile(_LEDGER_MD):
     _ledger_linhas = open(_LEDGER_MD, encoding="utf-8").read().splitlines()
-    check("ledger: nenhuma lei COBERTA cita so teste inexistente", _ledger_coberta_fantasma(_ledger_linhas) == [],
-          str(_ledger_coberta_fantasma(_ledger_linhas)))
+    if _EMPACOTAMENTO:  # L34/L62/L69 citam package-release/smoke-test/release-gate, que so existem na oficina
+        print("[MEDIDO] ledger: conferencia de teste fantasma roda so na oficina (a copia de empacotamento nao leva "
+              "os scripts de release); as unidades abaixo rodam sempre")
+    else:
+        check("ledger: nenhuma lei COBERTA cita so teste inexistente", _ledger_coberta_fantasma(_ledger_linhas) == [],
+              str(_ledger_coberta_fantasma(_ledger_linhas)))
     check("ledger: NEGATIVO - linha COBERTA que cita teste fantasma e pega pela conferencia",
           _ledger_coberta_fantasma(["| L99 | x | y | `nao-existe-w1.ps1` | COBERTA (fixture) |"]) == ["L99"], "")
     check("ledger: positivo - COBERTA citando teste que existe (check.py) nao acusa",
@@ -1867,6 +1886,92 @@ check("L89 persona sem fantasia: Voz e Como pensa saem, Faz e Nao faz ficam",
 check("L89 persona sem fantasia: NEGATIVO - mutante que nao reconhece 'Voz' deixa a fantasia passar (o teste acima o pega)",
       "fantasia-v" in _pf_ob, "")
 
+import datetime as _dt  # noqa: E402
+
+sys.path.insert(0, os.path.join(V2, "lib"))
+def _versao(pasta: str) -> str | None:
+    try:
+        with open(os.path.join(pasta, "VERSION"), "r", encoding="utf-8") as _vf:
+            return _vf.read().strip() or None
+    except OSError:
+        return None
+
+
+def _vtupla(v: str | None) -> tuple | None:
+    try:
+        return tuple(int(x) for x in (v or "").split("."))
+    except ValueError:
+        return None
+
+
+def gravar_marcador(marker_path: str, repo_dir: str, head: str | None, motor_raiz: str) -> str:
+    """2.1.3 (WARDEN): o marcador so carimba o repo que ESTA prova mediu: a VERSION do repo tem que ser a do motor
+    verificado (antes qualquer --repo recebia o carimbo so pelo HEAD, e o check verde de um motor liberava o
+    push de outro repo qualquer). Gravacao atomica. Devolve 'gravado' | 'sem_head' | 'repo_diferente'."""
+    if not head:
+        return "sem_head"
+    # o repo so recebe a VERSION nova PELO publicar (que exige este marcador): ele pode estar na mesma versao
+    # do motor verificado ou em uma ANTERIOR, nunca numa posterior (nem sem VERSION).
+    _vm, _vr = _vtupla(_versao(motor_raiz)), _vtupla(_versao(repo_dir))
+    if _vm is None or _vr is None or _vr > _vm:
+        return "repo_diferente"
+    import trava as _trava  # noqa: E402
+    _trava.gravar_atomico(marker_path, json.dumps({"ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+                                                   "head": head, "repo": repo_dir,
+                                                   "version": _versao(motor_raiz)}))
+    return "gravado"
+
+
+# prova do marcador (barata, sem rodar o check de novo): repo com a VERSION do motor recebe o carimbo; repo com
+# outra VERSION nao; sem HEAD nao; e o mutante que carimba qualquer repo e pego.
+_mk = _sandbox_tempdir("alia-v2-marcador-")
+for _d, _v in (("motor", "9.9.9"), ("igual", "9.9.9"), ("outro", "10.0.0"), ("atras", "9.9.8")):
+    os.makedirs(os.path.join(_mk, _d), exist_ok=True)
+    with open(os.path.join(_mk, _d, "VERSION"), "w", encoding="utf-8") as _fh:
+        _fh.write(_v + "\n")
+_mk_p = os.path.join(_mk, ".alia", "check-ok.json")
+check("marcador: repo com a VERSION do motor verificado recebe o carimbo",
+      gravar_marcador(_mk_p, os.path.join(_mk, "igual"), "a" * 40, os.path.join(_mk, "motor")) == "gravado"
+      and json.load(open(_mk_p, encoding="utf-8"))["repo"] == os.path.join(_mk, "igual"))
+os.remove(_mk_p)
+check("marcador: repo UMA VERSAO ATRAS (o caso normal: recebe a nova so ao publicar) recebe o carimbo, com a VERSION do motor",
+      gravar_marcador(_mk_p, os.path.join(_mk, "atras"), "a" * 40, os.path.join(_mk, "motor")) == "gravado"
+      and json.load(open(_mk_p, encoding="utf-8"))["version"] == "9.9.9")
+os.remove(_mk_p)
+check("marcador: repo numa VERSION POSTERIOR a do motor verificado nao recebe o carimbo",
+      gravar_marcador(_mk_p, os.path.join(_mk, "outro"), "a" * 40, os.path.join(_mk, "motor")) == "repo_diferente"
+      and not os.path.exists(_mk_p))
+check("marcador: sem HEAD nao carimba", gravar_marcador(_mk_p, os.path.join(_mk, "igual"), None, os.path.join(_mk, "motor")) == "sem_head")
+_src_mk = __import__("inspect").getsource(gravar_marcador).replace("if _vm is None or _vr is None or _vr > _vm:", "if False:", 1)
+_ns_mk: dict = {"os": os, "json": json, "_versao": _versao, "_vtupla": _vtupla, "_dt": _dt}
+exec(_src_mk, _ns_mk)
+check("negativo marcador: mutante que carimba qualquer repo e pego (carimbou o repo de outra VERSION)",
+      _ns_mk["gravar_marcador"](_mk_p, os.path.join(_mk, "outro"), "a" * 40, os.path.join(_mk, "motor")) == "gravado")
+
+print(f"\n=== provas puladas: {len(SKIPS)} [SKIP] contado(s) ===")
+for _sk_script, _sk_linha in SKIPS:
+    print(f"[SKIP] {_sk_script}: {_sk_linha}")
+
+
+def skips_reprovam(empacotamento: bool, skips: list[tuple[str, str]]) -> bool:
+    """Na copia de empacotamento, SKIP de bateria nao declarada reprova (a prova que nao rodou nao prova nada)."""
+    return empacotamento and any(a not in SKIPS_DECLARADOS for a, _ in skips)
+
+
+_sk_amostra = [("run_proofs.py", "[SKIP] identidade")]
+check("SKIP: linha `[SKIP] x`, `SKIP x` e `  [SKIP]: x` sao contadas; `[PASS] SKIP` e prosa nao",
+      all(_SKIP_RE.match(l) for l in ("[SKIP] x", "SKIP acerto da query", "  [SKIP]: y"))
+      and not any(_SKIP_RE.match(l) for l in ("[PASS] SKIP x", "nao e SKIP aqui", "SKIPPED")))
+check("SKIP: na copia de empacotamento um SKIP nao declarado REPROVA; no estudio ou declarado, nao",
+      skips_reprovam(True, _sk_amostra) and not skips_reprovam(False, _sk_amostra)
+      and not skips_reprovam(True, [("test_grafo.py", "SKIP gabarito ausente")]))
+_ns_sk: dict = {"SKIPS_DECLARADOS": SKIPS_DECLARADOS}
+exec(__import__("inspect").getsource(skips_reprovam).replace("return empacotamento and any", "return False and any", 1), _ns_sk)
+check("negativo SKIP: mutante que nunca reprova e pego (deixa o SKIP passar na copia de empacotamento)",
+      not _ns_sk["skips_reprovam"](True, _sk_amostra))
+check("nenhuma prova pulada na copia de empacotamento (SKIP so e tolerado no estudio, e contado)",
+      not skips_reprovam(_EMPACOTAMENTO, SKIPS), f"{len(SKIPS)} SKIP(s)" if SKIPS else "")
+
 DT_TOTAL = time.perf_counter() - T0
 print(f"\n=== resultado ({DT_TOTAL:.2f} s) ===")
 check("tempo total ate 30 s (alvo do contrato)", DT_TOTAL <= 30, f"{DT_TOTAL:.2f} s")
@@ -1909,12 +2014,13 @@ try:
         _head = _proc_head.stdout.decode("utf-8", "replace").strip()
 except OSError:
     _head = None
-if _head:
-    os.makedirs(os.path.dirname(_marker_path), exist_ok=True)
-    with open(_marker_path, "w", encoding="utf-8") as _fh:
-        json.dump({"ts": _dt.datetime.now(_dt.timezone.utc).isoformat(), "head": _head,
-                   "repo": _repo_dir}, _fh)
+
+_estado_marcador = gravar_marcador(_marker_path, _repo_dir, _head, os.path.dirname(V2))
+if _estado_marcador == "gravado":
     print(f"[MEDIDO] marcador de check verde gravado: {_marker_path} (repo={_repo_dir} head={_head})")
+elif _estado_marcador == "repo_diferente":
+    print(f"[MEDIDO] marcador NAO gravado: o repo {_repo_dir} (VERSION {_versao(_repo_dir)}) nao e a copia verificada "
+          f"(VERSION {_versao(os.path.dirname(V2))}); publicacao segue travada")
 else:
     print(f"[MEDIDO] marcador NAO gravado: {_repo_dir} sem HEAD de git; publicacao segue travada")
 

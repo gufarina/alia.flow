@@ -39,6 +39,11 @@ if ($DryRun) { $Check = $true }
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $lab  = if ($From -ne "") { $From } else { Join-Path $root "clients\alia-flow-lab" }
+# -From relativo (ou com ..) quebrava o Substring dos caminhos relativos: resolve para absoluto, sem barra no fim
+if ($From -ne "") {
+  if (-not [System.IO.Path]::IsPathRooted($lab)) { $lab = Join-Path (Get-Location).Path $lab }
+  $lab = [System.IO.Path]::GetFullPath($lab).TrimEnd('\', '/')
+}
 
 Write-Host "=== Atualizar o motor (laboratorio -> esta instancia) ==="
 Write-Host ("  fonte:   " + $lab)
@@ -83,6 +88,12 @@ $labCheck = Join-Path $lab "v2\proof\check.py"
 if ($Check) {
   Write-Host "1/3 (modo CHECK - portao do lab pulado, nada sera propagado)"
 } else {
+  $pyOk = $false
+  try { $pyv = & python --version 2>&1; $pyOk = (($LASTEXITCODE -eq 0) -and ("$pyv" -match 'Python 3')) } catch { $pyOk = $false }
+  if (-not $pyOk) {
+    Write-Host "[ERRO] Python 3 nao encontrado: a prova (check.py) roda nele e sem ela nao propago nada. Abortei sem tocar em nada."
+    exit 1
+  }
   Write-Host "1/3 Validando o laboratorio (so propaga motor que passa no check.py)..."
   $labOk = $false
   if (Test-Path -LiteralPath $labCheck) {
@@ -244,7 +255,15 @@ foreach ($d in $mergeDirs) {
     foreach ($rel in $mergeDiff.Removed) { [void]$overlayReport.Add("  - LOCAL  " + $d + "/" + $rel.Replace('\','/')) }
     [void]$overlayReport.Add("")
     if ($Check) { robocopy $src (Join-Path $root $d) /E /L /NFL /NDL /NP /NS /NC /NJH /NJS | Out-Null }
-    else        { robocopy $src (Join-Path $root $d) /E    /NFL /NDL /NP /NS /NC /NJH /NJS | Out-Null }
+    else {
+      # o merge SOBRESCREVE arquivo do mesmo caminho (ex.: .claude/settings.json): guarda a versao local no backup antes
+      foreach ($rel in $mergeDiff.Changed) {
+        Backup-InstanceFile $bkp $d $rel (Join-Path (Join-Path $root $d) $rel)
+        if ($rel -ieq "settings.json") { Write-Host ("        [AVISO] " + $d + "\settings.json local sera substituido pelo do motor; a sua versao ficou em _backups\" + (Split-Path $bkp -Leaf) + "\" + $d) }
+      }
+      robocopy $src (Join-Path $root $d) /E /NFL /NDL /NP /NS /NC /NJH /NJS | Out-Null
+      if ($LASTEXITCODE -ge 8) { Write-Host ("[ERRO] merge de " + $d + " falhou (robocopy " + $LASTEXITCODE + "). Arquivos antigos em _backups\" + (Split-Path $bkp -Leaf)); exit 1 }
+    }
   }
 }
 foreach ($f in $productFiles) {
@@ -327,5 +346,6 @@ if ($rc -eq 0) {
   Write-Host "=== MOTOR ATUALIZADO (instancia ALL GREEN). Seus clientes e dados intactos. ==="
 } else {
   Write-Host "=== ATENCAO: update aplicado, mas a prova da instancia acusou falha acima. Verifique. ==="
+  Write-Host ("    Para desfazer: copie de volta o conteudo de " + $bkp + " (cada arquivo no mesmo caminho relativo).")
 }
 exit $rc
