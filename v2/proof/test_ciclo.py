@@ -461,7 +461,9 @@ try:
             spec.loader.exec_module(g)
             import ledger as _l
             alvo = os.path.join(d, "activity.jsonl.grafo.json")
-            return _espera_lock(dispatch, lambda: g.registrar_leitura(_l, "L", command="graphify query x"), alvo + ".lock", alvo)
+            os.makedirs(os.path.join(d, "graphify-out"), exist_ok=True)  # TASK-867: a consulta grava o escopo do cwd (precisa de mapa)
+            open(os.path.join(d, "graphify-out", "GRAPH_REPORT.md"), "w").write("# God Nodes\n")
+            return _espera_lock(dispatch, lambda: g.registrar_leitura(_l, "L", command="python -m graphify query x", cwd=d), alvo + ".lock", alvo)
         finally:
             os.environ.clear()
             os.environ.update(antes)
@@ -494,15 +496,18 @@ try:
         spec.loader.exec_module(g)
         tr = os.path.join(tempfile.mkdtemp(prefix="alia-ciclo-tr-"), "t.jsonl")
         open(tr, "w", encoding="utf-8").write("\n".join(linhas) + "\n")
-        return g._lido_no_transcript(tr, "C:/x/clients/c1/graphify-out/GRAPH_REPORT.md")
+        return g._lido_no_transcript(tr, "C:/x/clients/c1/graphify-out/GRAPH_REPORT.md", "clients/c1")
     import importlib.util as _iu_gg
     sys.path.insert(0, os.path.join(V2, "lib"))
     _l_res = '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"existe C:/x/clients/c1/graphify-out/GRAPH_REPORT.md"}]}}'
-    _l_uso = '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","input":{"file_path":"C:/x/clients/c1/graphify-out/GRAPH_REPORT.md"}}]}}'
+    _l_uso = '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"C:/x/clients/c1/graphify-out/GRAPH_REPORT.md"}}]}}'
     check("grafo: resultado de ferramenta (tool_use_id) que cita o relatorio NAO conta como leitura", not _lido(_GG, [_l_res]))
     check("grafo: o tool_use que le o relatorio conta", _lido(_GG, [_l_uso]))
-    check("negativo grafo: mutante que casa 'tool_use' em qualquer linha da leitura onde nao houve",
-          _lido(_mut_gg('if not _TOOL_USE_LINHA.search(linha):', 'if "tool_use" not in linha:'), [_l_res]))
+    # TASK-867: so tool_use Read com file_path == mapa conta (um Edit/Grep sobre o relatorio nao e leitura)
+    _l_edit = _l_uso.replace('"name":"Read"', '"name":"Edit"')
+    check("grafo: Edit do relatorio NAO conta como leitura", not _lido(_GG, [_l_edit]))
+    check("negativo grafo: mutante que aceita qualquer ferramenta como leitura do mapa",
+          _lido(_mut_gg('if it.get("name") == "Read":', 'if True:'), [_l_edit]))
 
     _m = _mod(DISPATCH)
     for _s in ("s1", "s2"):

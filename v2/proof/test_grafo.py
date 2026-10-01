@@ -113,6 +113,136 @@ try:
     t = grafo_saude.varrer_transcripts(tv, vault)
     check("index primeiro: varrer sem ler index e acusado", t["varreu_sem_index"] == ["s1"] and t["varreu_com_index"] == ["s2"])
     check("privacidade: sessao que leu wiki/therapy e acusada", t["sessoes_que_tocaram_people_therapy"] == ["s3"])
+
+    # ---- 5. TASK-867: grafo_gate (itens 1-5) + muralha /dev/null (6) + dispatch grava a Task da sessao (7).
+    # Cada conserto e provado PELO NEGATIVO: um mutante que devolve o comportamento antigo tem de FALHAR no mesmo cenario.
+    import importlib.util
+    sys.path.insert(0, os.path.join(V2, "flow"))
+    LIB, BIN, HOOKS = (os.path.join(V2, x) for x in ("lib", "bin", "hooks"))
+
+    def carrega(fonte: str, mutacoes: list[tuple[str, str]] | None = None):
+        src = open(fonte, encoding="utf-8").read()
+        for velho, novo in mutacoes or []:
+            assert velho in src, "mutante: trecho nao achado: " + velho[:50]
+            src = src.replace(velho, novo, 1)
+        alvo = os.path.join(D, "mut%d" % len(os.listdir(D)), os.path.basename(fonte))
+        grava(alvo, src)
+        spec = importlib.util.spec_from_file_location("m%d" % abs(hash(alvo)), alvo)
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return m
+
+    ge = os.path.join(D, "est5")
+    ext = os.path.join(D, "ext5")
+    for c in ("alfa", "beta"):
+        grava(os.path.join(ge, "clients", c, "graphify-out", "GRAPH_REPORT.md"), "# God Nodes" + NL)
+        grava(os.path.join(ge, "clients", c, "graphify-out", "graph.json"), "{}")
+        grava(os.path.join(ge, "clients", c, "src", "a.ts"), "x")
+    grava(os.path.join(ge, "memory", "n.md"), "x")
+    grava(os.path.join(ext, "graphify-out", "GRAPH_REPORT.md"), "# God Nodes" + NL)
+    grava(os.path.join(ext, "memory", "codigo.py"), "x")
+    alfa_map = ge.replace(chr(92), "/") + "/clients/alfa/graphify-out/GRAPH_REPORT.md"
+    beta_map = alfa_map.replace("/alfa/", "/beta/")
+    alfa_graph = alfa_map.replace("GRAPH_REPORT.md", "graph.json")
+    antes_env = dict(os.environ)
+    os.environ.update({"CLAUDE_PROJECT_DIR": ge, "ALIA_LEDGER_PATH": os.path.join(ge, "led.jsonl"),
+                       "ALIA_CURRENT_TASK_PATH": os.path.join(ge, "cur.json")})
+    for k in ("ALIA_GRAPH_GATE_OFF", "ALIA_DELEGATION_WALL_OFF", "ALIA_SPINE_OFF"):
+        os.environ.pop(k, None)
+    try:
+        import ledger as _led
+        GG = os.path.join(LIB, "grafo_gate.py")
+        atual = carrega(GG)
+        BS = chr(92)
+        M_TRANSCRIPT = [("                try:\n                    obj = json.loads(linha)",
+                         "                if _n(mapa).lower() in linha.replace(" + repr(BS + BS) + ', "/").replace(' + repr(BS) + ', "/").lower() or re.search("graphify' + BS + BS + 's+(query|path|explain)", linha, re.I):' + NL
+                         + "                    return True" + NL + "                try:" + NL + "                    obj = json.loads(linha)")]
+        M_REGISTRO = [("        escopo = _escopo_da_consulta(command, cwd)",
+                       r'        escopo = "*" if re.search(r"graph_report|graphify\s+(query|path|explain)", command, re.I) else None')]
+        M_RAIZ = [("for a in achados:", "for a in []:")]
+        M_PATTERN = [("if path or not pattern or not os.path.isabs(pattern):", "if True:")]
+        M_INFRA = [('return any(low.startswith(raiz + d + "/") for d in INFRA_RAIZ)', 'return any("/" + d + "/" in low for d in INFRA_RAIZ)')]
+        mutantes = {"transcript": M_TRANSCRIPT, "registro": M_REGISTRO, "raiz": M_RAIZ, "pattern": M_PATTERN + M_RAIZ, "infra": M_INFRA}
+
+        def cenarios(g, rotulo: str) -> dict:
+            def ldt(linhas: list[str], mapa: str, escopo: str) -> bool:
+                tr = os.path.join(D, "tr5-%s-%d.jsonl" % (rotulo, abs(hash(tuple(linhas)))))
+                grava(tr, "".join(l + NL for l in linhas))
+                try:
+                    return g._lido_no_transcript(tr, mapa, escopo)
+                except TypeError:
+                    return g._lido_no_transcript(tr, mapa)
+
+            def tu(nome: str, inp: dict) -> str:
+                return json.dumps({"cwd": ge, "message": {"content": [{"type": "tool_use", "name": nome, "input": inp}]}})
+
+            bq = tu("Bash", {"command": "python -m graphify query 'x' --graph " + alfa_graph})
+            r = {}
+            r["1a graphify query do alfa nao libera o beta"] = (ldt([bq], alfa_map, "clients/alfa") and not ldt([bq], beta_map, "clients/beta"))
+            r["1b Write que cita o comando nao vale como leitura"] = not ldt(
+                [tu("Write", {"file_path": "x.md", "content": "python -m graphify query x --graph " + alfa_graph})], alfa_map, "clients/alfa")
+            r["2a Grep com pattern GRAPH_REPORT, Edit e ls nao contam como leitura"] = not any(ldt([l], alfa_map, "clients/alfa") for l in (
+                tu("Grep", {"pattern": "GRAPH_REPORT", "path": alfa_map}), tu("Edit", {"file_path": alfa_map}),
+                tu("Bash", {"command": "ls " + alfa_map})))
+            r["2b Read do mapa conta (drive minusculo e barra invertida tambem)"] = (
+                ldt([tu("Read", {"file_path": alfa_map})], alfa_map, "clients/alfa")
+                and ldt([tu("Read", {"file_path": alfa_map[0].lower() + alfa_map[1:].replace("/", BS)})], alfa_map, "clients/alfa"))
+            ra = g.registrar_leitura(_led, "S-reg-" + rotulo, command="ls " + alfa_map, cwd=ge)
+            rb = g.registrar_leitura(_led, "S-reg2-" + rotulo, command="python -m graphify query x", cwd=ge + "/clients/alfa/src")
+            r["3 ls do GRAPH_REPORT nao grava escopo; graphify query grava o escopo do cwd"] = (
+                ra.get("registrado") is False and rb.get("registrado") is True and rb.get("escopo") == "clients/alfa")
+
+            def acao(sess, tool, path):
+                try:
+                    return g.checar(_led, sess, tool, path, ge, "claude").get("acao")
+                except Exception as e:  # Recusa grafo_nao_lido
+                    return "bloqueia" if "grafo_nao_lido" in repr(e) or getattr(e, "regra", "") == "grafo_nao_lido" else "erro:" + repr(e)[:60]
+
+            r["4a Grep sem path na raiz do studio e varredura de todos os escopos"] = acao("S-raiz-" + rotulo, "Grep", "") in ("bloqueia", "avisa")
+            alvo = g.alvo_da_varredura("", ge + "/clients/alfa/**/*.ts") if hasattr(g, "alvo_da_varredura") else ""
+            r["4b Glob com pattern absoluto vira varredura do escopo do pattern"] = acao("S-glob-" + rotulo, "Glob", alvo) in ("bloqueia", "avisa")
+            r["5 /memory/ de codebase externo e varrido; o da raiz do studio segue infra"] = (
+                g.achar_escopo(ext + "/memory/codigo.py") is not None and g.achar_escopo(ge + "/memory/n.md") is None)
+            return r
+
+        novo = cenarios(atual, "novo")
+        for nome, ok in novo.items():
+            check("TASK-867 " + nome + " (codigo novo)", ok)
+        nomes = {"1a": "transcript", "1b": "transcript", "2a": "transcript", "2b": None, "3": "registro", "4a": "raiz", "4b": "pattern", "5": "infra"}
+        antigos = {q: cenarios(carrega(GG, m), "m-" + q) for q, m in mutantes.items()}
+        for nome in novo:
+            qual = nomes[nome.split(" ")[0]]
+            if qual:
+                check("negativo TASK-867 " + nome + ": o mutante (codigo antigo) FALHA", not antigos[qual][nome])
+
+        # 6. /dev/null nunca e alvo de escrita para a muralha
+        DISP = os.path.join(HOOKS, "dispatch.py")
+        sys.path.insert(0, LIB)
+
+        def muralha(m) -> bool:
+            ev = {"session_id": "w6", "cwd": ge, "tool_name": "Bash", "tool_input": {"command": "ls clients 2>/dev/null"}}
+            return m._wall_check(ev) is None and m._wall_path_allowed("/dev/null") and m._wall_path_allowed("NUL")
+        check("TASK-867 6 muralha: 2>/dev/null nao e escrita", muralha(carrega(DISP)))
+        check("negativo TASK-867 6: mutante com a comparacao antiga FALHA", not muralha(carrega(
+            DISP, [('p.lstrip("/") in tuple(x.lstrip("/") for x in _WALL_NULL_SINKS):', 'p.lstrip("/") in _WALL_NULL_SINKS:')])))
+
+        # 7. task dispatch --session X --id T grava a Task corrente da sessao X
+        ALIA = os.path.join(BIN, "alia.py")
+        st = os.path.join(ge, "state.json")
+
+        def dispatch_grava(m) -> bool:
+            grava(st, json.dumps({"clients": [{"id": "acme", "status": "active", "squad": {"gateway": "gw", "specialists": ["bruno"]}, "projects": ["p"]}],
+                                  "tasks": [{"id": "TASK-001", "client": "acme", "project": "p", "status": "open", "title": "t"}]}))
+            if os.path.exists(os.environ["ALIA_CURRENT_TASK_PATH"]):
+                os.remove(os.environ["ALIA_CURRENT_TASK_PATH"])
+            rc, _res = m.run(["--state", st, "task", "dispatch", "--id", "TASK-001", "--specialist", "Explore", "--session", "sess7"])
+            import paths as _p
+            return rc == 0 and _p.read_current_task("sess7") == "TASK-001"
+        check("TASK-867 7 dispatch --session grava a task corrente da sessao", dispatch_grava(carrega(ALIA)))
+        check("negativo TASK-867 7: mutante sem a gravacao FALHA", not dispatch_grava(carrega(ALIA, [("if a.id and a.session:", "if False:")])))
+    finally:
+        os.environ.clear()
+        os.environ.update(antes_env)
 finally:
     shutil.rmtree(D, ignore_errors=True)
 

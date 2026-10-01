@@ -1010,7 +1010,7 @@ def _direct_grant_valid(session_id: str | None) -> bool:
 
 def _wall_path_allowed(path: str) -> bool:
     p = "/" + _norm(path.strip().strip("'\"")).lower().lstrip("/")
-    if p.lstrip("/") in _WALL_NULL_SINKS:
+    if p.lstrip("/") in tuple(x.lstrip("/") for x in _WALL_NULL_SINKS):  # /dev/null e NUL nunca sao alvo de escrita
         return True
     if any(a in p for a in WALL_ALLOW_FRAGMENTS):
         return True
@@ -1557,8 +1557,10 @@ def _espinha_grafo(event: dict) -> dict | None:
     tool_input = event.get("tool_input") or {}
     if not event.get("session_id"):
         return None
+    import grafo_gate  # tardio: so o Grep|Glob paga
+    alvo = grafo_gate.alvo_da_varredura(str(tool_input.get("path") or ""), str(tool_input.get("pattern") or "") if event.get("tool_name") == "Glob" else "")
     codigo, res = _alia(["graph", "check", "--session", str(event["session_id"]), "--tool", str(event.get("tool_name")),
-                         "--path", str(tool_input.get("path") or ""), "--cwd", str(event.get("cwd") or ""),
+                         "--path", alvo, "--cwd", str(event.get("cwd") or ""),
                          "--host", "claude", "--transcript", str(event.get("transcript_path") or "")])
     negacao = _negacao_da_espinha(codigo, res, str(event["session_id"]))
     if negacao:

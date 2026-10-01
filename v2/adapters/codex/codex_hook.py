@@ -3,7 +3,7 @@
 
 BLOQUEIA (PreToolUse, a doc cobre Bash/apply_patch/MCP): comando de shell que varre Client
 (rg|grep|egrep|fgrep|find) -> `alia graph check --host codex`.
-SO AVISA/REGISTRA: SessionStart -> `alia open`; shell que le GRAPH_REPORT / roda `graphify query` -> `alia graph read`.
+SO AVISA/REGISTRA: SessionStart -> `alia open`; shell que le GRAPH_REPORT (--path) / roda `python -m graphify query` (--command) -> `alia graph read`.
 Lacunas declaradas: Codex nao tem Grep/Glob nem ferramenta de subagente nos hooks (task dispatch nao alcanca);
 ferramentas hospedadas (WebSearch) ficam fora do PreToolUse. Sem Codex CLI nesta maquina: o formato do payload e
 da decisao segue a doc de hooks [X1] e esta provado so por teste de unidade da traducao (test_espinha.py).
@@ -21,7 +21,8 @@ BIN = os.environ.get("ALIA_BIN") or os.path.join(os.path.dirname(os.path.abspath
 SEM_VOTO = ("state_ausente", "erro_interno", "uso_invalido")
 BUSCA = {"rg", "grep", "egrep", "fgrep", "find", "select-string", "findstr", "ag", "ack"}
 _SEPARADORES = re.compile(r"&&|\|\||[;|&\n]")  # comando encadeado: cada trecho e checado (C8)
-_CONSULTA = re.compile(r"graph_report|graphify\s+(query|path|explain)", re.IGNORECASE)
+_CONSULTA = re.compile(r"^\s*(?:py|python3?)(?:\.exe)?\s+-m\s+graphify\s+(?:query|path|explain)\b", re.IGNORECASE)  # igual ao gate
+LEITORES = {"cat", "type", "head", "tail", "more", "less", "bat", "get-content", "gc", "nl"}
 DECLARA = {"host": "codex", "bloqueia": ["PreToolUse Bash (rg|grep|find|Select-String|git grep|findstr, tambem encadeado)"],
            "avisa": ["SessionStart", "PreToolUse Bash (leitura do mapa)"]}
 
@@ -53,6 +54,19 @@ def _alvo_do_trecho(trecho: str) -> str | None:
     return resto[0] if resto else ""
 
 
+def _leituras_do_mapa(command: str) -> list[str]:
+    """Caminhos de GRAPH_REPORT.md / graph.json lidos por cat/type/head/Get-Content... (um por trecho)."""
+    achados = []
+    for trecho in _SEPARADORES.split(command):
+        try:
+            toks = shlex.split(trecho, posix=False)
+        except ValueError:
+            toks = trecho.split()
+        if toks and _nome(toks[0]) in LEITORES:
+            achados += [t.strip("'\"") for t in toks[1:] if os.path.basename(t.strip("'\"").replace("\\", "/")).lower() in ("graph_report.md", "graph.json")]
+    return achados
+
+
 def _alvos_da_busca(command: str) -> list[str]:
     """Um alvo por trecho de busca do comando (encadeado com && || ; | &)."""
     return [a for a in (_alvo_do_trecho(t) for t in _SEPARADORES.split(command)) if a is not None]
@@ -78,6 +92,8 @@ def traduzir(evento: dict) -> list[list[str]]:
     chamadas: list[list[str]] = []
     if _CONSULTA.search(comando):
         chamadas.append(["graph", "read", "--session", sid, "--command", comando, "--cwd", cwd])
+    for mapa in _leituras_do_mapa(comando):  # leitura de arquivo: o gate novo so aceita --path (nao --command)
+        chamadas.append(["graph", "read", "--session", sid, "--path", mapa if os.path.isabs(mapa) else os.path.join(cwd, mapa), "--cwd", cwd])
     for alvo in _alvos_da_busca(comando):
         chamadas.append(["graph", "check", "--session", sid, "--tool", "Bash", "--path", alvo, "--cwd", cwd,
                          "--host", "codex"])

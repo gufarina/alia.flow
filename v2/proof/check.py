@@ -95,10 +95,11 @@ def run_py(args: list[str]) -> tuple[int, str, float]:
 _PROCS: dict[str, tuple] = {}
 
 
-def _start_script(path: str) -> None:
+def _start_script(path: str, baixa: bool = False) -> None:
     fo = tempfile.TemporaryFile()
     _PROCS[path] = (subprocess.Popen([sys.executable, path], stdout=fo, stderr=subprocess.STDOUT,
-                                     env=_clean_env()), fo, time.perf_counter())
+                                     env=_clean_env(), creationflags=_BAIXA if baixa and os.name == "nt" else 0),
+                    fo, time.perf_counter())
 
 
 # 2.1.3 (WARDEN): prova que se pula calada passa pela propria sujeira (run_proofs pulava a identidade fora do
@@ -121,11 +122,18 @@ def collect_script(path: str) -> tuple[int, str, float]:
     return rc, out, dt
 
 
-for _n in ("run_proofs.py", "test_task.py", "test_gate.py", "test_migrate.py", "test_rsi_reincidencia.py",
+# TASK-867 (causa raiz do flaky): run_proofs.py mede a LATENCIA do hook (mediana de 20 execucoes < 150 ms, Stop
+# de 50 mil linhas < 300 ms). Medida de relogio dentro de um pool de 12 processos disputando CPU reprova por
+# vizinhanca, nao por defeito do hook (medido: 112 ms sozinho; 3 check.py juntos = 290 ms e FAIL). Isolar em fila
+# custava +4 s de 30 s, entao as OUTRAS baterias sobem em prioridade abaixo do normal (herdada pelos filhos):
+# run_proofs ganha a CPU na disputa e continua tudo em paralelo (tempo total preservado).
+_BAIXA = 0x00004000  # BELOW_NORMAL_PRIORITY_CLASS (Windows; noutros SO a flag e ignorada)
+_start_script(os.path.join(HERE, "run_proofs.py"))
+for _n in ("test_task.py", "test_gate.py", "test_migrate.py", "test_rsi_reincidencia.py",
            "test_memoria_check.py", "test_frescor_divida.py", "test_grafo.py", "test_espinha.py", "test_ciclo.py"):
-    _start_script(os.path.join(HERE, _n))
+    _start_script(os.path.join(HERE, _n), baixa=True)
 for _n in ("test_risk.py", "test_slice.py"):
-    _start_script(os.path.join(V2, "flow", _n))
+    _start_script(os.path.join(V2, "flow", _n), baixa=True)
 
 # ---- squad-bridge -Only (2.0.6): fixture isolada, 4 chamadas de powershell (~1-2 s cada) ----
 # Sobe numa THREAD aqui no topo (custo isolado: roda enquanto o resto corre) e e coletada no fim.

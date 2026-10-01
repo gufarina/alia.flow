@@ -155,7 +155,10 @@ def _executar(a: argparse.Namespace) -> dict:
     if not tid:
         raise espinha.Recusa("dispatch_sem_task", "nenhuma Task aberta nesta sessao: abra com `alia task open` "
                              "antes de acionar um agente de squad", session=a.session or None)
-    return espinha.task_dispatch(state, ledger, led, tid, a.specialist, a.session)
+    res = espinha.task_dispatch(state, ledger, led, tid, a.specialist, a.session)
+    if a.id and a.session:  # dispatch explicito de uma sessao tambem fixa a Task corrente dela (so `open` gravava)
+        paths.write_current_task(tid, session_id=a.session)
+    return res
 
 
 def run(argv: list[str]) -> tuple[int, dict]:

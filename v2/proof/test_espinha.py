@@ -331,7 +331,7 @@ def principal() -> int:
     rc, res = varre("g5")
     check("interruptor por arquivo .claude/graph-gate.off tambem desliga so o bloqueio", rc == 0 and res["acao"] == "avisa", str(res)[:100])
     os.remove(os.path.join(work, ".claude", "graph-gate.off"))
-    check("caminho de infra (memory/) nunca entra", varre("g6", os.path.join(mapa, "clients", "acme", "memory", "x"))[0] == 0)
+    check("caminho de infra (memory/) nunca entra", varre("g6", os.path.join(work, "memory", "clients", "acme", "x"))[0] == 0)  # TASK-867: infra ancorada na raiz do studio
     check("caminho sem mapa e fallback: nunca bloqueia", varre("g6", os.path.join(sandbox, "sem-mapa"))[0] == 0)
     check("host sem modo declarado so avisa (matriz)", varre("g7", host="host-desconhecido")[1].get("acao") == "avisa")
     wiki = os.path.join(mapa, "vault", "wiki", "paginas")
@@ -391,6 +391,11 @@ def principal() -> int:
           == [["graph", "check", "--session", "cx", "--tool", "Bash", "--path", cli_arvore, "--cwd", cli_arvore, "--host", "codex"]])
     check("Codex: ls nao tem nada a ver com a espinha", codex_hook.traduzir(ev("ls -la")) == [])
     check("Codex: cat do GRAPH_REPORT vira graph read (so registra)", codex_hook.traduzir(ev(f"cat {rel}"))[0][:2] == ["graph", "read"])
+    _cr = codex_hook.traduzir(ev(f"cat {rel}"))
+    check("Codex: cat do GRAPH_REPORT registra por --path (o gate novo nao aceita --command de cat)",
+          _cr == [["graph", "read", "--session", "cx", "--path", rel, "--cwd", cli_arvore]], str(_cr))
+    check("Codex: ls/echo citando GRAPH_REPORT nao registra", codex_hook.traduzir(ev(f"echo {rel}")) == [] and codex_hook.traduzir(ev(f"ls {rel}")) == [])
+    check("Codex: python -m graphify query registra por --command", codex_hook.traduzir(ev("python -m graphify query x"))[0][:2] == ["graph", "read"])
     check("Codex: SessionStart vira alia open", codex_hook.traduzir({"hook_event_name": "SessionStart", "session_id": "cx"}) == [["open", "--session", "cx"]])
     check("Codex: com a CLI real, busca sem mapa lido e NEGADA", codex_hook.decidir(ev(f"rg foo {cli_arvore}")).get("hookSpecificOutput", {}).get("permissionDecision") == "deny")
     check("Codex: adaptador nao tem regra - CLI que libera => libera", codex_hook.decidir(ev(f"rg foo {cli_arvore}"), lambda a: (0, {"ok": True})) == {})

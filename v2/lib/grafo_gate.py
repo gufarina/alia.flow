@@ -23,10 +23,12 @@ import espinha
 import paths
 import trava
 
-INFRA = ("/memory/", "/_backups/", "/.claude/", "/node_modules/", "/scratchpad", "/.git/")
+INFRA = ("/node_modules/", "/scratchpad", "/.git/")  # em qualquer ponto
+INFRA_RAIZ = ("memory", "_backups", ".claude")  # so na raiz do estudio (um /memory/ de codebase externo e codigo)
 RELATORIOS = ("graph_report.md", "graph.json")
-_CONSULTA_BASH = re.compile(r"graph_report|graphify\s+(query|path|explain)", re.IGNORECASE)
-_CONSULTA_GRAPHIFY = re.compile(r"graphify\s+(query|path|explain)", re.IGNORECASE)
+# Consulta ao grafo = comando que COMECA por `python -m graphify query|path|explain` (nao qualquer menção)
+_CONSULTA_GRAPHIFY = re.compile(r"^\s*(?:py|python3?)(?:\.exe)?\s+-m\s+graphify\s+(?:query|path|explain)\b", re.IGNORECASE)
+_GRAPH_ARG = re.compile(r"--graph(?:=|\s+)(\"[^\"]+\"|'[^']+'|\S+)")
 _TOOL_USE_LINHA = re.compile(r'"type"\s*:\s*"tool_use"')
 
 
@@ -36,7 +38,29 @@ def _n(p: str) -> str:
 
 def _infra(ap: str) -> bool:
     low = _n(ap).lower() + "/"
-    return any(m in low for m in INFRA)
+    if any(m in low for m in INFRA):
+        return True
+    raiz = _n(paths.studio_root()).lower().rstrip("/") + "/"
+    return any(low.startswith(raiz + d + "/") for d in INFRA_RAIZ)
+
+
+def _mesmo_arquivo(a: str, b: str) -> bool:
+    """normcase + realpath: trata nome 8.3 e letra de drive maiuscula/minuscula."""
+    try:
+        return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+    except (OSError, ValueError):
+        return False
+
+
+def _escopo_da_consulta(command: str, cwd: str) -> str | None:
+    """Escopo de um `python -m graphify query|path|explain`: o do --graph, senao o do cwd. None = nao e
+    consulta (ou sem mapa no escopo)."""
+    if not command or not _CONSULTA_GRAPHIFY.search(command):
+        return None
+    m = _GRAPH_ARG.search(command)
+    alvo = m.group(1).strip("\"'") if m else ""
+    achado = achar_escopo(os.path.dirname(os.path.dirname(alvo)) if alvo else "", cwd) if alvo else achar_escopo("", cwd)
+    return achado["escopo"] if achado else None
 
 
 def achar_escopo(path: str, cwd: str = "") -> dict | None:
@@ -118,8 +142,8 @@ def registrar_leitura(ledger_mod, session: str, path: str = "", command: str = "
     if not session:
         return {"ok": True, "registrado": False, "motivo": "sem session"}
     escopo = None
-    if command and _CONSULTA_BASH.search(command):
-        escopo = "*"
+    if command:
+        escopo = _escopo_da_consulta(command, cwd)
     elif path:
         base = os.path.basename(_n(path)).lower()
         if base in RELATORIOS or (base == "index.md" and os.path.basename(os.path.dirname(_n(path))).lower() == "wiki"):
@@ -139,24 +163,60 @@ def registrar_leitura(ledger_mod, session: str, path: str = "", command: str = "
     return {"ok": True, "registrado": True, "escopo": escopo}
 
 
-def _lido_no_transcript(transcript: str, mapa: str) -> bool:
-    """Host que nao hooka Read (Claude Code: matcher so Grep|Glob, de proposito - um spawn por Read
-    custaria mais que o gate vale): a leitura do mapa esta no transcript da propria sessao. Busca de
-    texto, sem parse; so roda quando a sessao ainda nao esta marcada como lida."""
+def _lido_no_transcript(transcript: str, mapa: str, escopo: str = "") -> bool:
+    """Host que nao hooka Read (Claude Code: matcher so Grep|Glob, de proposito): a leitura do mapa esta
+    no transcript da propria sessao. Conta SO tool_use Read com file_path == mapa, ou tool_use Bash cujo
+    comando comeca por `python -m graphify query|path|explain` no escopo (--graph ou cwd da linha)."""
     if not transcript or not os.path.isfile(transcript):
         return False
-    alvo = _n(mapa).lower()
     try:
         with open(transcript, "r", encoding="utf-8", errors="replace") as fh:
             for linha in fh:
-                if not _TOOL_USE_LINHA.search(linha):  # 2.1.3: `tool_use_id` de um resultado nao e uma leitura
+                if not _TOOL_USE_LINHA.search(linha):  # `tool_use_id` de um resultado nao e uma leitura
                     continue
-                baixo = linha.replace("\\\\", "/").replace("\\", "/").lower()
-                if alvo in baixo or _CONSULTA_GRAPHIFY.search(baixo):
-                    return True
+                try:
+                    obj = json.loads(linha)
+                except json.JSONDecodeError:
+                    continue
+                cwd = str(obj.get("cwd") or "")
+                conteudo = (obj.get("message") or {}).get("content") if isinstance(obj.get("message"), dict) else None
+                for it in conteudo if isinstance(conteudo, list) else []:
+                    if not isinstance(it, dict) or it.get("type") != "tool_use":
+                        continue
+                    inp = it.get("input") if isinstance(it.get("input"), dict) else {}
+                    if it.get("name") == "Read":
+                        fp = str(inp.get("file_path") or "")
+                        if fp and _mesmo_arquivo(fp if os.path.isabs(fp) else os.path.join(cwd, fp), mapa):
+                            return True
+                    elif it.get("name") == "Bash" and escopo:
+                        if _escopo_da_consulta(str(inp.get("command") or ""), cwd) == escopo:
+                            return True
     except OSError:
         return False
     return False
+
+
+def alvo_da_varredura(path: str, pattern: str = "") -> str:
+    """Glob com pattern absoluto e sem path varre o prefixo fixo do pattern; senao o proprio path."""
+    if path or not pattern or not os.path.isabs(pattern):
+        return path
+    fixo = re.split(r"[*?\[{]", pattern, maxsplit=1)[0]
+    return fixo if fixo.endswith(("/", "\\")) else os.path.dirname(fixo)
+
+
+def _escopos_da_raiz() -> list[dict]:
+    """Varredura sem path na raiz do estudio: todos os Clients que tem mapa."""
+    base = os.path.join(paths.studio_root(), "clients")
+    achados = []
+    try:
+        nomes = sorted(os.listdir(base))
+    except OSError:
+        return achados
+    for nome in nomes:
+        a = achar_escopo(os.path.join(base, nome))
+        if a:
+            achados.append(a)
+    return achados
 
 
 def checar(ledger_mod, session: str, tool: str, path: str, cwd: str, host: str, transcript: str = "") -> dict:
@@ -167,15 +227,27 @@ def checar(ledger_mod, session: str, tool: str, path: str, cwd: str, host: str, 
     if path and os.path.isfile(path if os.path.isabs(path) else os.path.join(cwd or os.getcwd(), path)):
         return {"ok": True, "acao": "libera", "motivo": "alvo e um arquivo, nao varredura"}
     achado = achar_escopo(path, cwd)
+    if achado is None and not path:
+        achados = _escopos_da_raiz() if _n(os.path.abspath(cwd or os.getcwd())).lower().rstrip("/") == _n(paths.studio_root()).lower().rstrip("/") else []
+        res = None
+        for a in achados:  # varredura da raiz = varredura de TODOS os escopos com mapa (o 1o nao lido barra/avisa)
+            r = _checar_escopo(ledger_mod, session, tool, a, host, transcript)
+            if res is None or r.get("acao") == "avisa" and res.get("acao") != "avisa":
+                res = r
+        return res or {"ok": True, "acao": "libera", "motivo": "sem mapa neste escopo"}
     if achado is None:
         return {"ok": True, "acao": "libera", "motivo": "sem mapa neste escopo"}
+    return _checar_escopo(ledger_mod, session, tool, achado, host, transcript)
+
+
+def _checar_escopo(ledger_mod, session: str, tool: str, achado: dict, host: str, transcript: str) -> dict:
     escopo = achado["escopo"]
     with trava.trava(_sidecar()):  # 2.1.3: ler-alterar-gravar sob lock
         d = _ler()
         sess = d.setdefault(session, {})
         ent = sess.setdefault(escopo, {})
         lido = bool(ent.get("lido") or (sess.get("*") or {}).get("lido"))
-        if not lido and _lido_no_transcript(transcript, achado["mapa"]):
+        if not lido and _lido_no_transcript(transcript, achado["mapa"], escopo):
             lido = ent["lido"] = True
             ledger_mod.append_event(paths.ledger_path(), {"event": "graph_read", "session_id": session, "scope": escopo,
                                                           "fonte": "transcript"})

@@ -18,6 +18,17 @@ testado na instancia viva (a instancia aplicada) antes de fechar. Um update = um
 reversivel. Fluxo: alterar engine -> bump VERSION -> entrada no CHANGELOG -> smoke-test-studio
 ALL GREEN -> tag.
 
+## [2.1.4] - 2026-10-01
+
+A 2.1.4 saiu em 01/10 às 18:20 e trouxe 6 mudanças:
+
+- A trava do mapa só conta como lido quando o relatório foi aberto de verdade ou o mapa foi consultado; ler o mapa de um Client não libera outro, e `ls` ou citar o relatório não valem.
+- Busca sem pasta a partir da raiz do estúdio não libera mais tudo, e busca por caminho absoluto passa a ser conferida.
+- As pastas de infraestrutura só ficam isentas na raiz do estúdio.
+- `2>/dev/null` deixou de ser tratado como escrita.
+- Despachar uma Task com a sessão informada agora liga a Task à sessão.
+- O adaptador Codex registra a leitura do mapa do jeito que a trava nova aceita, e a prova oficial deixou de reprovar por disputa de CPU.
+
 ## [2.1.3] - 2026-10-01
 
 A 2.1.3 saiu em 01/10 e fechou os furos achados na revisão dos ganchos, da espinha e do empacotamento:
