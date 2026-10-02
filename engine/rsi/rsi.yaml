@@ -63,6 +63,8 @@ triggers:
     window: 14d
     proposes: prompt           # ou flow / domain_pack, conforme o alvo do item
     requires_human: false
+    decided_by: alia           # L91: promove se >=3 sessoes e sem regra; arquiva com motivo se coberto
+    decision_deadline_days: 3  # CEO so se a licao mudar lei constitucional
 
   - id: gate-criteria-shift
     source: memory

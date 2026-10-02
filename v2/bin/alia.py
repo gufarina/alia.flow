@@ -76,6 +76,7 @@ def _parser() -> argparse.ArgumentParser:
     s.add_argument("--veredito", default="")
     s.add_argument("--root-cause", dest="root_cause", default="")
     s.add_argument("--criterio-reprovado", dest="criterio_reprovado", default="")
+    s.add_argument("--licao", default="")
     s.add_argument("--studio-root", dest="studio_root", default="")
     s = t.add_parser("retire")
     s.add_argument("--id", required=True)
@@ -150,7 +151,7 @@ def _executar(a: argparse.Namespace) -> dict:
     if a.acao == "close":
         return _task_cli(task_cli.cmd_close, state, id=a.id, artifact=a.artifact, veredito=a.veredito,
                          root_cause=a.root_cause, criterio_reprovado=a.criterio_reprovado, ledger=led,
-                         studio_root=a.studio_root)
+                         studio_root=a.studio_root, licao=a.licao)
     if a.acao == "retire":
         return _task_cli(task_cli.cmd_retire, state, id=a.id, motivo=a.motivo, nota=a.nota)
     if a.acao == "pending":

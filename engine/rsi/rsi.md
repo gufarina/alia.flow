@@ -113,7 +113,7 @@ texto livre dos digests, calibrado nos DOIS padroes que a casa ja sabia que eram
 (ver `memory/delegar-exige-classificar-o-dominio.md` e o numero fossil citado em
 `memory/_proposals/_archive/reflection-inbox-2026-07-03-c5e36aa2.md`). O detector NUNCA aplica
 nada sozinho - so escreve um relatorio de candidatos (`-Write`, opcional) para virar proposta da
-PECA 1 por decisao humana.
+PECA 1 por decisao da ALIA (L91, ver "Quem decide padrao" abaixo).
 
 Validado RETROATIVAMENTE em 10/08/2026 contra o historico real (77 digests + 0 atritos, a PECA 2
 sendo nova): achou "delegacao-furada" em 8 sessoes distintas (2026-08-02 a 2026-08-06) - o padrao
@@ -133,7 +133,7 @@ Consertado sem inventar peca nova - as 4 pontas que ja existiam passaram a cobri
 `scripts/promote-memory.ps1` reclassifica friction/patterns como `[STAGING]` (nunca promovidas -
 insumo de OUTRO fluxo, nao proposta de memoria) e so arquiva `friction-*.md` quando ele ja foi
 CONSUMIDO por esta PECA 3 (citado como `Fonte` num `patterns-*.md` escrito) - `patterns-*.md`
-nunca arquiva sozinho, e relatorio de decisao humana pendente, nao processo automatico;
+nunca arquiva sozinho: e relatorio com decisao da Alia pendente (prazo 3 dias, L91);
 `scripts/smoke-test-studio.ps1` secao (i) trava staleness > 3 dias nas 3 classes, nao so na
 primeira; `scripts/mission-control.ps1` mostra contagem+idade das 3 no painel ("Pendencias do
 motor"). Prova pelo negativo de cada ponta na Task que fechou este cluster.
@@ -232,8 +232,25 @@ Os limites numericos (N de falhas, janela de observacao, teto de propostas por c
 
 O que continua **EXISTE MAS NAO PROVADO** (honestidade acima de placar): o estagio PROPOE
 (escrever o manifest/teste do candidato) hoje e manual - nenhum agente ainda gera candidato
-sozinho a partir de um padrao detectado pela PECA 3. O elo PECA 3 -> PECA 1 e decisao humana por
-desenho (o proprio detector "NUNCA aplica nada sozinho"), nao um furo a fechar depois.
+sozinho a partir de um padrao detectado pela PECA 3. O elo PECA 3 -> PECA 1 e decisao da ALIA
+(L91), nao do CEO: o detector "NUNCA aplica nada sozinho", mas quem julga o relatorio e a Alia.
+
+## Quem decide padrao (L91, mandato do CEO em 01/10/2026)
+
+A Alia decide, com este criterio escrito, em ate 3 dias da data do `patterns-*.md`:
+
+1. **PROMOVER** quando o bucket reincide em >=3 sessoes distintas E nenhuma regra/memoria/lei o cobre
+   (`rsi-promote-pattern.ps1` cria o candidato; vale o `rsi-apply.ps1`).
+2. **TRAVA no lugar de texto** quando a regra existe e o padrao reincide (a regra em prosa nao
+   funciona): o candidato nasce apontando a trava executavel (hook, recusa na CLI, teste).
+3. **ARQUIVAR com motivo** (mover para `memory/_proposals/_archive/`, nunca apagar) quando a regra ja
+   cobre e o padrao nao reincide depois dela, ou quando o bucket e sintoma sem acao propria.
+4. **Chamar o CEO** SO quando a licao exigir mudar lei constitucional (`constitution.md`, principios
+   I-X). Todo o resto e da Alia.
+
+Prazo e cadeado: `v2/bin/rsi_decisao.py --check` e o smoke "RSI vivo" reprovam relatorio vivo com mais
+de 3 dias. Licao por Task: `alia task close --licao` e obrigatoria (L90) e cai em
+`memory/_proposals/licoes-tasks.jsonl`; licao igual em 3 Tasks conta como sessao para o criterio 1.
 
 ## Metrica viva
 

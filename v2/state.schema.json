@@ -94,6 +94,7 @@
     "schema_invalido": "escrita nova fora do schema (task_nova / status)",
     "retirar_status_invalido": "alia task retire: so Task open/review se retira",
     "retirar_motivo_invalido": "alia task retire: motivo fora de superada|abandonada",
+    "licao_ausente": "alia task close: sem --licao (15 a 400 caracteres)",
     "criterio_reprovado_ausente": "alia task close: veredito FAIL/CONCERN sem --criterio-reprovado",
     "grafo_nao_lido": "alia graph check: varredura de codigo/wiki sem ter lido GRAPH_REPORT/index.md na sessao"
   }

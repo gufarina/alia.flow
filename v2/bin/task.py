@@ -229,7 +229,7 @@ def _close(args: argparse.Namespace) -> dict:
         task_fechada = task_model.fechar(
             task, args.veredito, args.artifact, events,
             root_cause=args.root_cause, criterio_reprovado=args.criterio_reprovado,
-            bases=bases_de_artifact(args),
+            bases=bases_de_artifact(args), licao=getattr(args, "licao", ""),
         )
     except task_model.TaskError as exc:
         return _err(exc.msg, **{"regra": "task_invalida", **exc.extra})
@@ -269,7 +269,24 @@ def _close(args: argparse.Namespace) -> dict:
     idx = tasks.index(task)
     tasks[idx] = task_fechada
     _save_state(args.state, state)
+    _licao_para_rsi(_raiz_do_recibo(args), task_fechada)
     return _ok(task=task_fechada, custo_somado_do_ledger=cost)
+
+
+def _licao_para_rsi(raiz: str, task: dict) -> None:
+    """L90: a licao da Task cai na caixa do RSI (memory/_proposals/licoes-tasks.jsonl), uma linha por
+    Task. So grava se a pasta ja existe (nunca cria estrutura em raiz errada); falha de escrita nao
+    desfaz o fechamento, a licao continua gravada na propria Task."""
+    pasta = os.path.join(raiz, "memory", "_proposals")
+    if not os.path.isdir(pasta):
+        return
+    linha = {"task": task.get("id"), "client": task.get("client"), "veredito": task.get("gate_verdict"),
+             "licao": task.get("licao"), "quando": task.get("closed_at")}
+    try:
+        with open(os.path.join(pasta, "licoes-tasks.jsonl"), "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(linha, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
 
 
 def cmd_context(args: argparse.Namespace) -> dict:
@@ -297,6 +314,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_close.add_argument("--root-cause", dest="root_cause", default="")
     p_close.add_argument("--criterio-reprovado", dest="criterio_reprovado", default="",
                           help="criterio do gate que reprovou (exigido quando veredito != PASS)")
+    p_close.add_argument("--licao", default="",
+                          help="o que aprender com o erro OU o acerto desta Task (15 a 400 caracteres; alimenta o RSI)")
     p_close.add_argument("--ledger", default="")
     p_close.add_argument("--studio-root", dest="studio_root", default="",
                          help="raiz do estudio para o recibo de conhecimento (padrao: pasta do --state se tiver clients/, senao a raiz do estudio da sessao)")

@@ -27,6 +27,7 @@ param(
   [string]$GateVerdict = "",
   [ValidateSet("pesquisa","construcao","revisao","correcao")][string]$Type = "construcao",
   [string]$RootCause = "",
+  [string]$Licao = "",
   [string]$StateFile = "",
   [switch]$OperatorOrder,
   [int]$Tokens = -1,
@@ -93,6 +94,7 @@ if (-not $alvo) {
 if ($fecha) {
   $args2 = @("task","close","--id",$alvo,"--artifact",$Artifact,"--veredito",$veredito)
   if ($RootCause) { $args2 += @("--root-cause", $RootCause) }
+  if ($Licao) { $args2 += @("--licao", $Licao) }  # L90: close exige licao
   $r = Invoke-Alia $args2
   exit $r.code
 }

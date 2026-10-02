@@ -90,6 +90,8 @@ def sha256(path: str) -> str:
 
 
 def run_task(*args) -> tuple[dict, int]:
+    if "close" in args and "--licao" not in args and "--id" in args:  # L90: close exige licao
+        args = (*args, "--licao", "licao de prova: conferir o artifact antes de fechar")
     # Ambiente LIMPO: nunca herda CLAUDE_PROJECT_DIR nem ALIA_* do host (achado do CEO,
     # 24/09/2026 - CLAUDE_PROJECT_DIR do studio vivo vazava dado real pro teste em sandbox).
     env = {k: v for k, v in os.environ.items()

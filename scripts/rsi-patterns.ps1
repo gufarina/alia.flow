@@ -4,7 +4,7 @@
   Varre memory/_proposals/ (staging vivo) E memory/_proposals/_archive/ (digests/atritos ja
   julgados) e procura o MESMO TIPO de item aparecendo em 3+ SESSOES DISTINTAS. So relata -
   NUNCA aplica nada, nunca escreve proposta pronta, nunca decide. Vira insumo de uma proposta
-  de PECA 1 (rsi-apply.ps1) por decisao HUMANA.
+  de PECA 1 (rsi-apply.ps1) por decisao da ALIA em ate 3 dias (L91).
 
   Duas fontes, dois classificadores:
     1. friction-*.md (PECA 2) - JA estruturado: cada item tem "tipo:" no proprio texto. So agrupa.
@@ -174,7 +174,7 @@ if ($candidates.Count -gt 0 -and $Write) {
   [void]$sb.AppendLine("# Candidatos a padrao - " + $today)
   [void]$sb.AppendLine("")
   [void]$sb.AppendLine("> Gerado por scripts/rsi-patterns.ps1. NUNCA aplica nada - vira proposta de")
-  [void]$sb.AppendLine("> PECA 1 (rsi-apply.ps1) so por decisao humana.")
+  [void]$sb.AppendLine("> PECA 1 (rsi-apply.ps1) por decisao da Alia em ate 3 dias (L91: promover se >=3 sessoes e sem regra; arquivar com motivo se coberto).")
   [void]$sb.AppendLine("")
   foreach ($c in $candidates) {
     [void]$sb.AppendLine("## " + $c.Bucket + " - " + $c.Sessions.Count + " sessao(oes) distinta(s)")

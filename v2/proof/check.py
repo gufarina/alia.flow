@@ -148,7 +148,7 @@ def collect_script(path: str) -> tuple[int, str, float]:
 # run_proofs ganha a CPU na disputa e continua tudo em paralelo (tempo total preservado).
 _BAIXA = 0x00004000  # BELOW_NORMAL_PRIORITY_CLASS (Windows; noutros SO a flag e ignorada)
 _start_script(os.path.join(HERE, "run_proofs.py"), extra={"RUN_PROOFS_RELOGIO": "adiado"})  # relogio roda isolado (relogio.py)
-for _n in ("test_task.py", "test_gate.py", "test_migrate.py", "test_rsi_reincidencia.py",
+for _n in ("test_task.py", "test_gate.py", "test_migrate.py", "test_rsi_reincidencia.py", "test_rsi_decisao.py",
            "test_memoria_check.py", "test_frescor_divida.py", "test_grafo.py", "test_espinha.py", "test_ciclo.py",
            "test_layout.py"):
     # test_grafo chama `python -m graphify` (pacote instalado no site do USUARIO): so ele mantem o site
@@ -187,7 +187,8 @@ if os.path.isfile(_reg845):
                             "-Client", "acme", "-Project", projeto, "-Title", "t845 ate o criterio de aceite",
                             "-Type", "construcao", "-Status", "done", "-Artifact", _art845,
                             "-Paths", _art845, "-Consumidor", "WARDEN", "-Destino", "interno",
-                            "-ExemploFalha", "fechar sem veredito", "-StateFile", st_i, *extra],
+                            "-ExemploFalha", "fechar sem veredito", "-Licao", "licao de prova do wrapper: veredito vem do ledger",
+                            "-StateFile", st_i, *extra],
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                            env=_clean_env({"ALIA_LEDGER_PATH": led_i, "CLAUDE_PROJECT_DIR": _T845,
                                            "ALIA_CURRENT_TASK_PATH": os.path.join(_T845, ".cur" + sufixo + ".json")}))
@@ -1673,7 +1674,7 @@ _w1_ev = [{"event": "review_verdict", "task_id": "TASK-GATE", "veredito": "PASS"
 def _fecha_sem_artifact(mod) -> bool:
     """True quando fechar com --artifact vazio foi RECUSADO (o comportamento certo)."""
     try:
-        mod.fechar(dict(_w1_task), "PASS", "", _w1_ev)
+        mod.fechar(dict(_w1_task), "PASS", "", _w1_ev, licao="licao de prova do mutante L65")
     except mod.TaskError:
         return True
     return False
@@ -1872,6 +1873,7 @@ if rc != 0:
 # ---------------------------------------------------------------------------
 print("\n=== provas ligadas (RSI reincidencia, memoria_check, divida renovavel, grafo) ===")
 for _tn, _rot in (("test_rsi_reincidencia.py", "rsi_reincidencia.py (teste de reincidencia por aprendizado, com negativo)"),
+                  ("test_rsi_decisao.py", "rsi_decisao.py (L91: padrao sem decisao em 3 dias reprova, com negativo)"),
                   ("test_memoria_check.py", "memoria_check.py (orfa + valido_de, com negativo)"),
                   ("test_frescor_divida.py", "frescor: divida renovavel no maximo 1 vez"),
                   ("test_grafo.py", "grafo_saude / grafo_uso"),

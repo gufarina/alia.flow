@@ -129,6 +129,10 @@ def cenario(nome: str, v2root: str, work: str) -> dict:
         tid = abre()
         ledger.append_event(os.environ["ALIA_LEDGER_PATH"], {"event": "review_verdict", "task_id": tid, "veredito": "FAIL"})
         return run("task", "close", "--id", tid, "--artifact", art, "--veredito", "FAIL")
+    if nome == "licao":
+        tid = abre()
+        ledger.append_event(os.environ["ALIA_LEDGER_PATH"], {"event": "review_verdict", "task_id": tid, "veredito": "PASS"})
+        return run("task", "close", "--id", tid, "--artifact", art, "--veredito", "PASS")
     raise SystemExit(f"cenario desconhecido: {nome}")
 
 
@@ -156,6 +160,7 @@ CENARIOS = {
     "coord_texto": ("brief_tipo_invalido", "lib/task_model.py", 'if "coordenacao" in brief and not isinstance(brief["coordenacao"], bool):', "if False:"),
     "type_enum": ("type_invalido", "lib/task_model.py", 'if brief.get("type") not in (None, "") and brief["type"] not in TIPOS_VALIDOS:', "if False:"),
     "schema_open": ("schema_invalido", "bin/task.py", "erros = espinha.validar_task_nova(new_task)", "erros = []"),
+    "licao": ("licao_ausente", "lib/task_model.py", "    if not (15 <= len(licao) <= 400):", "    if False:"),
     "criterio": ("criterio_reprovado_ausente", "lib/task_model.py", 'if veredito != "PASS" and not criterio_reprovado:', "if False:"),
 }
 
@@ -274,7 +279,7 @@ def principal() -> int:
     open(parecer, "w", encoding="utf-8").write(f"funciona: PASS\nevidencia: {pa}\n{ACENTO_PARECER}\ngoal-backward: PASS\nevidencia: {pa}\nveredito: PASS\n")
     rc, res = run("gate", "record", "--task", tid, "--parecer", parecer, "--session", "s1")
     check("gate record grava gate_check (parecer valido)", rc == 0 and any(e.get("event") == "gate_check" and e.get("task_id") == tid for e in eventos()), str(res)[:160])
-    rc, res = run("task", "close", "--id", tid, "--artifact", art, "--veredito", "PASS")
+    rc, res = run("task", "close", "--id", tid, "--artifact", art, "--veredito", "PASS", "--licao", "licao de prova: gate antes de fechar")
     check("close com veredito + artifact + evidencia fecha e cumpre o schema do status",
           rc == 0 and res["task"]["status"] == "done" and espinha.validar_task_nova(res["task"], so_status=True) == [], str(res)[:200])
     rc, res = run("task", "pending", "--session", "s1")

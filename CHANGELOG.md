@@ -18,6 +18,14 @@ testado na instancia viva (a instancia aplicada) antes de fechar. Um update = um
 reversivel. Fluxo: alterar engine -> bump VERSION -> entrada no CHANGELOG -> smoke-test-studio
 ALL GREEN -> tag.
 
+## [2.1.7] - 2026-10-01
+
+A 2.1.7 saiu em 01/10 e trouxe 3 mudanças:
+
+- Toda Task passa a fechar com a lição aprendida: `alia task close` exige `--licao` (15 a 400 caracteres), `register-task -Licao` repassa, e a lição cai na caixa do RSI para virar insumo.
+- O padrão do RSI passa a ser decidido pela Alia em até 3 dias (`v2/bin/rsi_decisao.py`, com `test_rsi_decisao.py`): relatório parado além do prazo reprova, e o texto do RSI (`rsi.md`, `rsi.yaml`) diz quando promover e quando arquivar.
+- O filtro de ruído da reflexão de sessão deixa de transformar aviso de manutenção em aprendizado pendente.
+
 ## [2.1.6] - 2026-10-01
 
 A 2.1.6 saiu em 01/10 e trouxe 4 mudanças:

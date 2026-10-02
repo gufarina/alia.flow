@@ -231,7 +231,8 @@ def artifacts_inexistentes(artifact: str, bases: list[str]) -> list[str]:
 
 
 def fechar(task: dict, veredito: str, artifact: str, events: list[dict],
-           root_cause: str = "", criterio_reprovado: str = "", bases: Optional[list[str]] = None) -> dict:
+           root_cause: str = "", criterio_reprovado: str = "", bases: Optional[list[str]] = None,
+           licao: str = "") -> dict:
     """Aplica a transicao de fechamento. Levanta TaskError se: a Task ja esta done (nao reabre
     por cima), falta --artifact, veredito fora do enum, Task de correcao sem root_cause, ou
     falta evidencia de veredito no ledger. Devolve uma COPIA da Task com os campos de
@@ -276,6 +277,14 @@ def fechar(task: dict, veredito: str, artifact: str, events: list[dict],
                 id=task.get("id"), veredito_digitado=veredito, veredito_gate_check=veredito_gate,
             )
 
+    # L90: toda Task fecha com a licao (o que aprender com o erro OU o acerto). E o combustivel do RSI
+    # por Task; sem ela o aprendizado dependia do CEO reclamar. Checada por ultimo: a recusa mais
+    # especifica (artifact, veredito, gate) sempre aparece primeiro.
+    licao = (licao or "").strip()
+    if not (15 <= len(licao) <= 400):
+        raise TaskError("close exige --licao (15 a 400 caracteres): o que aprender com o erro OU o acerto desta Task",
+                        regra="licao_ausente", tamanho=len(licao))
+
     novo_status = "done" if veredito == "PASS" else "review"
     permitidas = TRANSICOES_VALIDAS.get(status_atual, set())
     if status_atual is not None and novo_status not in permitidas:
@@ -286,6 +295,7 @@ def fechar(task: dict, veredito: str, artifact: str, events: list[dict],
     nova["gate_verdict"] = veredito
     nova["status"] = novo_status
     nova["evidencia_veredito"] = fonte_evidencia
+    nova["licao"] = licao
     if root_cause:
         nova["root_cause"] = root_cause
     if veredito != "PASS":
