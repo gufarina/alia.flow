@@ -58,6 +58,9 @@ def _run_inproc(dispatch: str, root: str, event: dict, extra: dict | None = None
     os.environ.clear()
     os.environ.update(novo)
     try:
+        if event.get("hook_event_name") == "PostToolUse":
+            mod.handle_post_write_artifact_marker(event)
+            return {}
         return mod.handle_pretooluse_guard(event)
     finally:
         os.environ.clear()
@@ -312,6 +315,34 @@ try:
     _novo_me = 'if tool_name in ("Write", "Edit", "NotebookEdit"):\n        path = tool_input'
     _par("MultiEdit com segredo no texto novo", _me(RAIZ + "/docs/a.md", "sk-" + "B" * 24), True, _velho_me, _novo_me)
     _par("MultiEdit no kernel", _me(RAIZ + "/engine/x.md", "x"), True, _velho_me, _novo_me)
+
+    # nome 8.3 (so onde o volume gera nome curto)
+    if os.name == "nt":
+        import ctypes
+        _longo = os.path.join(root, "clients", "demo-cliente-comprido", "squad")
+        os.makedirs(_longo, exist_ok=True)
+        _buf = ctypes.create_unicode_buffer(1024)
+        ctypes.windll.kernel32.GetShortPathNameW(_longo, _buf, 1024)
+        _curto = _buf.value.replace("\\", "/")
+        if "~" in _curto.split("clients/", 1)[-1]:
+            _par("8.3: nome curto da pasta do Client nao escapa da guarda 4",
+                 _ev("Write", {"file_path": _curto + "/a.md", "content": "x"}, False), True,
+                 'if os.name != "nt" or "~" not in p:\n        return p', "return p")
+        else:
+            print("[INFO] volume sem nomes 8.3: prova do nome curto nao se aplica nesta maquina")
+
+    # marcador de artifact so de sub-agente
+    _led = os.path.join(root, "activity.jsonl")
+    _post = {"hook_event_name": "PostToolUse", "tool_name": "Write", "session_id": "ciclo-s",
+             "tool_input": {"file_path": RAIZ + "/clients/demo/artifacts/TASK-77/e.md", "content": "x"}}
+    _run(DISPATCH, root, _post)
+    _n_marc = lambda: sum(1 for l in open(_led, encoding="utf-8") if '"artifact_write"' in l) if os.path.exists(_led) else 0
+    check("marcador artifact_write: a sessao principal (sem agent_id) nao grava", _n_marc() == 0)
+    _run(DISPATCH, root, {**_post, "agent_id": "ag-9"})
+    check("marcador artifact_write: o sub-agente grava", _n_marc() == 1)
+    _mm = _mutante("marcador de qualquer ator", "    if not event.get(\"agent_id\"):\n        return  # 2.1.3", "    if False:\n        return  # 2.1.3")
+    _run(_mm, root, _post)
+    check("negativo marcador: mutante deixa a sessao principal gravar", _n_marc() == 2)
 
     # corridas: o lock segura o 2o escritor; escrita atomica; PermissionError do O_EXCL e retry
     def _espera_lock(dispatch: str, chamada, lock: str, arquivo: str) -> tuple[bool, bool]:

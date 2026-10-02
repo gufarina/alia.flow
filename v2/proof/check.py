@@ -1425,8 +1425,8 @@ for _k, _nome in (("full", "geracao completa da fixture gera os bundles dos 2 Cl
     check("squad-bridge -Only: " + _nome, _ok, _det)
 
 # ---------------------------------------------------------------------------
-# SEM MURO DE DELEGACAO (2.1.8, ordem do CEO 02/10/2026): o pedido do CEO e a autorizacao. A sessao
-# principal escreve onde o CEO mandou, sem frase magica nem liberacao com prazo. Prova pelo negativo:
+# SEM MURO DE DELEGACAO (2.1.8, ordem do CEO 02/10/2026): sem frase magica nem liberacao com prazo.
+# A delegacao de trabalho de Client ao especialista (4a negacao) continua (2.1.9). Prova pelo negativo:
 # um mutante que volta a negar a escrita da sessao principal tem que ser pego.
 # ---------------------------------------------------------------------------
 print("\n=== SEM MURO: a sessao principal executa o que o CEO pede ===")
@@ -1456,8 +1456,8 @@ _wp = _TW.replace("\\", "/") + "/src/app.py"
 _wc = _TW.replace("\\", "/") + "/clients/zeta/artifacts/TASK-1/peca.md"
 _ev_w = _evW("Write", {"file_path": _wp, "content": "x"})
 check("sem muro: sessao principal Write de dominio passa", not _negado(_dispW(_ev_w)))
-check("sem muro: sessao principal Write em clients/<id>/ passa sem sub-agente",
-      not _negado(_dispW(_evW("Write", {"file_path": _wc, "content": "x"}))))
+check("delegacao segue: sessao principal Write em clients/<id>/ sem especialista e negado (4a negacao fica)",
+      _negado(_dispW(_evW("Write", {"file_path": _wc, "content": "x"}))))
 check("sem muro: Bash `>` em arquivo de dominio passa", not _negado(_dispW(_evW("Bash", {"command": f"echo oi > {_wp}"}))))
 check("sem muro: python -c que escreve arquivo passa",
       not _negado(_dispW(_evW("Bash", {"command": "python -c \"open('a.txt','w').write('x')\""}))))
@@ -1465,7 +1465,7 @@ check("sem muro: prompt do CEO nao gera liberacao nem contexto", _dispW(
       {"hook_event_name": "UserPromptSubmit", "session_id": "wallS", "prompt": "faz voce mesma"}) == {})
 _src_d = open(_DISPATCH_W, encoding="utf-8").read()
 check("sem muro: dispatch nao tem mais muralha nem liberacao por frase",
-      not any(t in _src_d for t in ("_wall_check", "direto.json", "_DIRECT_ASK_RE", "_is_client_write_without_delegation")))
+      not any(t in _src_d for t in ("_wall_check", "direto.json", "_DIRECT_ASK_RE")))
 # PROVA PELO NEGATIVO: mutante que nega toda escrita da sessao principal tem que ser pego
 _mut = os.path.join(_TW, "mut", "v2")
 shutil.copytree(V2, _mut, ignore=shutil.ignore_patterns("__pycache__", "proof", "deep"))

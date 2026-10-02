@@ -18,6 +18,12 @@ testado na instancia viva (a instancia aplicada) antes de fechar. Um update = um
 reversivel. Fluxo: alterar engine -> bump VERSION -> entrada no CHANGELOG -> smoke-test-studio
 ALL GREEN -> tag.
 
+## [2.1.9] - 2026-10-02
+
+A 2.1.9 saiu em 02/10 e trouxe 1 mudança:
+
+- Volta a regra de delegação removida por engano na 2.1.8: a sessão principal não escreve trabalho de Client (`clients/<id>/`) sem acionar o especialista do squad. A muralha e a liberação por frase continuam fora.
+
 ## [2.1.8] - 2026-10-02
 
 A 2.1.8 saiu em 02/10 e trouxe 2 mudanças:

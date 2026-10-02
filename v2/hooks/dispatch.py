@@ -624,6 +624,12 @@ def _extract_write_targets(command: str) -> list[str]:
     return alvos
 
 
+# so artifacts/<task_id>/ isenta a 4a negacao, e so quando o proprio PostToolUse ja marcou
+# no ledger que um sub-agente escreveu naquele task_id (nao mais /artifacts/ inteiro).
+ARTIFACT_TASK_RE = re.compile(r"/artifacts/(TASK-\d+)/", re.IGNORECASE)
+NEGATION4_COORDINATION_EXEMPT = "/artifacts/coordination/"
+
+
 # achado do CEO, 24/09/2026: a FONTE do motor (a oficina, clients/alia-flow-lab/) nunca e o
 # kernel PROTEGIDO - e exatamente onde a lei manda o kernel EVOLUIR (fonte -> migrate.py ->
 # instancia). Proteger a fonte pelo mesmo nome de arquivo do kernel da instancia travava a
@@ -764,6 +770,60 @@ def _artifacts_que_nao_existem(command: str, event: dict) -> list[str]:
 
 def _has_secret(text: str) -> bool:
     return any(p.search(text or "") for p in SECRET_PATTERNS)
+
+
+def _is_client_write_without_delegation(event: dict, path: str) -> bool:
+    p = "/" + _norm(path.strip().strip("'\"")).lower().lstrip("/")
+    m = re.search(r"/clients/([a-z0-9\-]+)/", p)
+    if not m:
+        return False
+    client_id = m.group(1)
+    if NEGATION4_COORDINATION_EXEMPT in p:
+        return False
+    m_artifact = ARTIFACT_TASK_RE.search(p)
+    if m_artifact and _artifact_marked_by_subagent(m_artifact.group(1).upper(), client_id):
+        return False
+    if event.get("_is_subagent"):
+        # a propria sessao delegada (Agent/Task <id>-*) escrevendo no proprio
+        # Client nunca e negada; a negacao e so sobre a SESSAO PRINCIPAL.
+        return False
+    session_id = event.get("session_id")
+    return not ledger.session_has_agent_prefix(_ledger_path(), session_id, client_id + "-")
+
+
+def _artifact_marked_by_subagent(task_id: str, client_id: str | None = None) -> bool:
+    """True se ja existe um marcador `artifact_write` no ledger (gravado pelo proprio
+    PostToolUse quando um sub-agente escreveu em artifacts/<task_id>/) para este task_id. Marcador com
+    Client gravado so vale para esse Client (2.1.3); o antigo, sem Client, segue valendo."""
+    for ev in ledger.read_events(_ledger_path()):
+        if ev.get("event") == "artifact_write" and ev.get("task_id") == task_id:
+            if client_id and ev.get("client") and ev.get("client") != client_id:
+                continue
+            return True
+    return False
+
+
+def handle_post_write_artifact_marker(event: dict) -> None:
+    """PostToolUse de Write/Edit em artifacts/<task_id>/: grava o marcador que a 4a negacao
+    consulta depois. So marca quando o PreToolUse ja deixou passar (PostToolUse so roda se o
+    Write/Edit foi de fato executado)."""
+    if not event.get("agent_id"):
+        return  # 2.1.3: so a escrita de SUB-AGENTE marca; a da sessao principal nunca se auto-isenta
+    tool_input = event.get("tool_input") or {}
+    path = _norm(tool_input.get("file_path", ""))
+    m = ARTIFACT_TASK_RE.search(path.lower())
+    if not m:
+        return
+    task_id = m.group(1).upper()
+    m_cli = re.search(r"/clients/([a-z0-9\-]+)/", "/" + path.lower().lstrip("/"))
+    ledger.append_event(_ledger_path(), {
+        "event": "artifact_write",
+        "session_id": event.get("session_id"),
+        "agent_id": event.get("agent_id"),
+        "task_id": task_id,
+        "client": m_cli.group(1) if m_cli else None,
+        "path": path,
+    })
 
 
 CHECK_MARKER_MAX_AGE_S = 30 * 60  # 30 minutos (mandato do CEO, 24/09/2026)
@@ -961,6 +1021,11 @@ def handle_pretooluse_guard(event: dict) -> dict:
                     f"{vazamento}. Use um nome generico; a evidencia real fica na pasta privada "
                     "(opportunities/)."
                 )
+        if _is_client_write_without_delegation(event, path):
+            return _deny(
+                "guard: Write/Edit em clients/<id>/ pela sessao principal sem "
+                "Agent/Task <id>-* visto nesta sessao (herda delegation-gate L33/L45)"
+            )
         return _layout_deny(event) or _no_decision()
 
     if tool_name in ("Bash", "PowerShell"):
@@ -1415,6 +1480,8 @@ def main() -> int:
         if hook == "PostToolUse":
             if tool_name in ("Agent", "Task"):
                 handle_post_agent(event)
+            if tool_name in ("Write", "Edit", "MultiEdit"):
+                handle_post_write_artifact_marker(event)
             _write_stdout({})
             return 0
 

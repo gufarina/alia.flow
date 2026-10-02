@@ -444,6 +444,11 @@ check("nega Bash mv v2/AGENTS.md docs/bak.md (forma pura sem flag, origem no ker
 # 1c) TASK-811 (achado do CEO, 24/09/2026): a protecao do kernel vale para a INSTANCIA, nunca
 # para a FONTE (a oficina, clients/alia-flow-lab/) - senao o kernel nao pode mais evoluir pelo
 # caminho da lei (fonte -> migrate.py -> instancia). Prova nos DOIS sentidos.
+# registra delegacao (4a negacao e ortogonal a esta prova - alia-flow-lab-warden visto na
+# sessao satisfaz o delegation-gate, senao a escrita cairia numa negacao DIFERENTE)
+run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Agent", "session_id": "s2",
+              "tool_use_id": "tu-src1", "tool_input": {"subagent_type": "alia-flow-lab-warden",
+              "prompt": "conserta o guard do kernel"}})
 out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s2",
                            "tool_input": {"file_path": "C:/instancia-exemplo/clients/alia-flow-lab/v2/AGENTS.md", "content": "x"}})
 check("positivo: escrita na FONTE (clients/alia-flow-lab/v2/AGENTS.md) NAO e negada", out == {}, str(out))
@@ -710,15 +715,64 @@ if _git_ok:
 else:
     print("[INFO] git indisponivel neste ambiente - prova de HEAD divergente pulada (marcador+idade ja provados acima)")
 
-# 4) 2.1.8 (ordem do CEO 02/10/2026): a 4a negacao saiu. A sessao principal escreve em clients/<id>/
-# sem precisar de sub-agente visto; o pedido do CEO e a autorizacao.
+# 4) Write/Edit em clients/<id>/ pela sessao principal sem Agent <id>-* visto
 LEDGER = fresh_sandbox()
 out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s3",
                            "tool_input": {"file_path": "C:/studio/clients/acme/squad/knowledge/x.md", "content": "y"}})
-check("sessao principal escreve em clients/acme/ sem delegacao (4a negacao removida)", out == {}, str(out))
+check("nega Write em clients/acme/ sem delegacao vista na sessao", out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+
+# registra que a sessao viu um Agent acme-dev (delegacao legitima)
+run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Agent", "session_id": "s3",
+              "tool_use_id": "tu9", "tool_input": {"subagent_type": "acme-dev", "prompt": "faz algo"}})
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s3",
+                           "tool_input": {"file_path": "C:/studio/clients/acme/squad/knowledge/x.md", "content": "y"}})
+check("positivo: apos Agent acme-dev visto, Write em clients/acme/ passa", out == {}, str(out))
+
+# condicao 3 do Gate, corrigida: artifacts/coordination/ continua isento (laudo do Gateway),
+# mas artifacts/<task>/ SO isenta quando o proprio PostToolUse ja marcou no ledger que um
+# SUB-AGENTE escreveu la (nao mais /artifacts/ inteiro isento por padrao).
+LEDGER = fresh_sandbox()
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s4",
+                           "tool_input": {"file_path": "C:/studio/clients/acme/artifacts/coordination/laudo.md", "content": "y"}})
+check("nao acusa laudo em artifacts/coordination/ mesmo sem Agent visto (falso alarme do response-guard morre aqui)",
+      out == {}, str(out))
+
 out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s4",
                            "tool_input": {"file_path": "C:/studio/clients/acme/artifacts/TASK-801/laudo.md", "content": "y"}})
-check("sessao principal escreve em artifacts/TASK-801/ sem marcador", out == {}, str(out))
+check("prova negativa: artifacts/TASK-801/ SEM marcador no ledger ainda e negado (a isencao de /artifacts/ inteiro acabou)",
+      out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+
+# um sub-agente delegado (agent_id presente) escreve de verdade em artifacts/TASK-801/: o
+# PreToolUse passa (dentro do sub-agente nunca e negado) e o PostToolUse grava o marcador.
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s4",
+                           "agent_id": "agent-SUB1", "agent_type": "acme-dev",
+                           "tool_input": {"file_path": "C:/studio/clients/acme/artifacts/TASK-801/laudo.md", "content": "y"}})
+check("Write de dentro do sub-agente em artifacts/TASK-801/ passa (agent_id presente)", out == {}, str(out))
+run_dispatch({"hook_event_name": "PostToolUse", "tool_name": "Write", "session_id": "s4",
+              "agent_id": "agent-SUB1",
+              "tool_input": {"file_path": "C:/studio/clients/acme/artifacts/TASK-801/laudo.md", "content": "y"}})
+marcados = [e for e in read_ledger() if e.get("event") == "artifact_write" and e.get("task_id") == "TASK-801"]
+check("PostToolUse gravou o marcador artifact_write para TASK-801", len(marcados) == 1, str(marcados))
+
+# agora a SESSAO PRINCIPAL (sem agent_id, sem Agent acme-* visto) escreve no MESMO
+# artifacts/TASK-801/: o marcador ja existe, entao isenta.
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s4",
+                           "tool_input": {"file_path": "C:/studio/clients/acme/artifacts/TASK-801/resumo.md", "content": "y"}})
+check("positivo: apos o marcador existir para TASK-801, sessao principal grava em artifacts/TASK-801/ sem negacao",
+      out == {}, str(out))
+
+# outro task_id, sem marcador proprio, continua negado (a isencao e por task_id, nao geral)
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s4",
+                           "tool_input": {"file_path": "C:/studio/clients/acme/artifacts/TASK-802/laudo.md", "content": "y"}})
+check("prova negativa: TASK-802 sem marcador proprio continua negado (isencao nao vaza entre Tasks)",
+      out["hookSpecificOutput"]["permissionDecision"] == "deny", str(out))
+
+# escrita dentro do proprio sub-agente delegado (agent_id presente) nunca e negada
+out, _, _ = run_dispatch({"hook_event_name": "PreToolUse", "tool_name": "Write", "session_id": "s4",
+                           "agent_id": "agent-ZZZ", "agent_type": "acme-dev",
+                           "tool_input": {"file_path": "C:/studio/clients/acme/squad/knowledge/x.md", "content": "y"}})
+check("Write feito de DENTRO do sub-agente (agent_id presente) nunca e negado pela 4a negacao",
+      out == {}, str(out))
 
 # ---------------------------------------------------------------------------
 print("\n=== Stop: aviso de entrega sem veredito (TASK-812/2.0.1, additionalContext + indice) ===")
