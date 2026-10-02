@@ -29,10 +29,14 @@ CAMPOS_TEXTO = ("client", "project", "objetivo", "paths", "consumidor", "destino
 # Transicoes validas por status atual. None = Task ainda nao existe (abertura).
 TRANSICOES_VALIDAS = {
     None: {"open"},
-    "open": {"review", "done"},
-    "review": {"review", "done"},
+    "open": {"review", "done", "retired"},
+    "review": {"review", "done", "retired"},
+    "retired": set(),  # retirada (superada/abandonada) e definitiva; reabrir = Task NOVA
     "done": set(),  # done nao reabre por cima - a Task de correcao seguinte e uma Task NOVA
 }
+
+
+MOTIVOS_RETIRADA = ("superada", "abandonada")
 
 
 class TaskError(Exception):
@@ -286,4 +290,23 @@ def fechar(task: dict, veredito: str, artifact: str, events: list[dict],
         nova["root_cause"] = root_cause
     if veredito != "PASS":
         nova["gate_criteria_failed"] = [criterio_reprovado]
+    return nova
+
+
+def retirar(task: dict, motivo: str, nota: str = "") -> dict:
+    """Transicao open/review -> retired (2.1.6). So Task ainda aberta pode ser retirada; o motivo e do enum
+    (superada: o Client seguiu sem ela; abandonada: parada sem entrega). Nao apaga nada: o registro e a linhagem
+    ficam. Devolve uma COPIA com os campos de retirada; nunca muta o dict recebido."""
+    status_atual = task.get("status")
+    if "retired" not in TRANSICOES_VALIDAS.get(status_atual, set()):
+        raise TaskError("retire so vale para Task open/review", regra="retirar_status_invalido",
+                        id=task.get("id"), status_atual=status_atual)
+    if motivo not in MOTIVOS_RETIRADA:
+        raise TaskError("retire exige --motivo superada|abandonada", regra="retirar_motivo_invalido",
+                        motivo_recebido=motivo, motivos_validos=list(MOTIVOS_RETIRADA))
+    nova = dict(task)
+    nova["status"] = "retired"
+    nova["retired_reason"] = motivo
+    if nota:
+        nova["retired_note"] = nota
     return nova

@@ -1879,9 +1879,9 @@ for _tn, _rot in (("test_rsi_reincidencia.py", "rsi_reincidencia.py (teste de re
                   ("test_layout.py", "layout: portao de pastas (caminho novo bloqueia, existente passa, cada regra com mutante)")):
     _rc, _out, _dt = collect_script(os.path.join(HERE, _tn))
     check(f"{_rot} - {_tn} sai verde", _rc == 0, (_out[-300:] if _rc else f"{_dt*1000:.0f} ms"))
-# TASK-870: o legado de pastas da oficina so encolhe (catraca em studio/layout-baseline.txt). Sem baseline (produto
+# TASK-870: o legado de pastas so encolhe (catraca em studio/layout-baseline.txt). Sem baseline (produto
 # publicado) a conferencia nao se aplica - e INFO, nunca SKIP.
-_ly_rc, _ly_out, _ly_dt = run_py([os.path.join(V2, "lib", "layout.py"), "--check", "--perfil", "oficina", "--root", os.path.dirname(V2)])
+_ly_rc, _ly_out, _ly_dt = run_py([os.path.join(V2, "lib", "layout.py"), "--check", "--perfil", "auto", "--root", os.path.dirname(V2)])
 if _ly_rc == 2:
     print("[INFO] layout: sem studio/layout-baseline.txt nesta instalacao - catraca de pastas nao se aplica")
 else:

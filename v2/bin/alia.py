@@ -11,6 +11,7 @@ implementacao de open/close que esta CLI reaproveita (uma so regra, nao duas).
   alia task open (--brief JSON | --brief-file ARQ) [--session ID]
   alia task dispatch --specialist {client}-{papel} [--id T] [--session ID]
   alia task close --id T --artifact A --veredito PASS|FAIL|CONCERN
+  alia task retire --id T --motivo superada|abandonada [--nota TXT]
   alia task pending [--session ID] [--id T]
   alia gate record --task T --parecer ARQUIVO.md [--session ID]
   alia graph check --session ID --tool Grep --path P [--host claude]     trava de adocao do grafo/wiki
@@ -76,6 +77,10 @@ def _parser() -> argparse.ArgumentParser:
     s.add_argument("--root-cause", dest="root_cause", default="")
     s.add_argument("--criterio-reprovado", dest="criterio_reprovado", default="")
     s.add_argument("--studio-root", dest="studio_root", default="")
+    s = t.add_parser("retire")
+    s.add_argument("--id", required=True)
+    s.add_argument("--motivo", default="")
+    s.add_argument("--nota", default="")
     s = t.add_parser("pending")
     s.add_argument("--session", default="")
     s.add_argument("--id", default="")
@@ -146,6 +151,8 @@ def _executar(a: argparse.Namespace) -> dict:
         return _task_cli(task_cli.cmd_close, state, id=a.id, artifact=a.artifact, veredito=a.veredito,
                          root_cause=a.root_cause, criterio_reprovado=a.criterio_reprovado, ledger=led,
                          studio_root=a.studio_root)
+    if a.acao == "retire":
+        return _task_cli(task_cli.cmd_retire, state, id=a.id, motivo=a.motivo, nota=a.nota)
     if a.acao == "pending":
         return espinha.task_pending(state, ledger, led, a.session, a.id, not a.sem_divida)
     # dispatch

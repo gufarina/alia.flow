@@ -18,6 +18,15 @@ testado na instancia viva (a instancia aplicada) antes de fechar. Um update = um
 reversivel. Fluxo: alterar engine -> bump VERSION -> entrada no CHANGELOG -> smoke-test-studio
 ALL GREEN -> tag.
 
+## [2.1.6] - 2026-10-01
+
+A 2.1.6 saiu em 01/10 e trouxe 4 mudanças:
+
+- O portão de pastas ganhou `--perfil auto`: a conferência da instância passa a usar o perfil da instância, e não o da oficina.
+- O gancho deixou de barrar por engano `cd x; mv` e comando com aspas contendo espaço, e também `mv` cujo destino é uma pasta.
+- Nova `alia task retire`; `register-task -Status retired` agora falha alto, e `task-sweep` retira as Tasks de fato.
+- A prova oficial (`check.py`) ficou mais rápida, em torno de 24 s.
+
 ## [2.1.5] - 2026-10-01
 
 A 2.1.5 saiu em 01/10 e trouxe o portão de pastas e o fechamento das pendências da 2.1.4:

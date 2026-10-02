@@ -1139,7 +1139,12 @@ def _layout_deny(event: dict) -> dict | None:
         ti = event.get("tool_input") or {}
         cwd = event.get("cwd")
         if event.get("tool_name") in ("Bash", "PowerShell"):
-            alvos = [_com_cwd(a, cwd) for a in _extract_write_targets(str(ti.get("command") or ""))]
+            cmd = str(ti.get("command") or "")
+            # 2.1.6: `cd x; mv a b` ou argumento entre aspas com espaco - o cwd do comando deixa de ser o do evento, entao caminho RELATIVO nao resolve
+            # com seguranca (a origem do mv "nao existia" e virava caminho novo). Relativo so vale sem cd/pushd.
+            muda_dir = bool(re.search(r"(?:^|[;&|\n])\s*(?:cd|pushd|popd|set-location|sl)\b", cmd, re.IGNORECASE) or re.search(r"([\"'])[^\"']*\s[^\"']*\1", cmd))  # 2.1.6: aspas com espaco tambem (o extrator parte no espaco)
+            alvos = [_com_cwd(a, cwd) for a in _extract_write_targets(cmd)
+                     if not (muda_dir and not re.match(r"^(?:[A-Za-z]:|[/\\~])", a.strip().strip("'\"")))]
         else:
             alvos = [_com_cwd(str(ti.get("file_path") or ti.get("notebook_path") or ""), cwd)]
         for a in alvos:

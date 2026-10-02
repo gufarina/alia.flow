@@ -13,7 +13,7 @@ proprias). Infra (memory/, _backups/, .claude/, node_modules, scratchpad ...) nu
 coringa isenta: so o que o manifesto declara `opacas` (saida gerada) ou Client com codigo-fonte dentro.
 
 Interruptor de emergencia (desliga so o bloqueio): ALIA_LAYOUT_GATE_OFF=1 ou `.claude/layout-gate.off`.
-Uso: python layout.py --sweep|--check|--freeze [--perfil estudio|oficina|client] [--root DIR]
+Uso: python layout.py --sweep|--check|--freeze [--perfil auto|estudio|oficina|client] [--root DIR]
 So biblioteca padrao.
 """
 from __future__ import annotations
@@ -160,7 +160,13 @@ def violacao_de_caminho(caminho: str, studio: str) -> dict | None:
     while novo < len(rel) and os.path.lexists(os.path.join(raiz, *rel[: novo + 1])):
         novo += 1
     for i in range(novo, len(rel)):
-        v = _segmento(perfil, rel, i, i < len(rel) - 1, pref)
+        ultimo = i == len(rel) - 1
+        v = _segmento(perfil, rel, i, not ultimo, pref)
+        if v and ultimo and not os.path.splitext(rel[i])[1] and not rel[i].startswith("."):
+            # 2.1.6: nome sem extensao no fim do caminho pode ser PASTA (destino de mv/cp): passa se qualquer das
+            # duas leituras (arquivo ou pasta) cabe no manifesto; so bloqueia quando as duas violam.
+            if _segmento(perfil, rel, i, True, pref) is None:
+                v = None
         if v:
             return v
     return None
@@ -222,6 +228,19 @@ def ler_baseline(raiz: str) -> dict[str, str] | None:
         return None
 
 
+def perfil_da_baseline(raiz: str) -> str:
+    """Perfil gravado no cabecalho da baseline (`perfil=<x>`); sem baseline, pelo nome da pasta: oficina so quando
+    a raiz e clients/alia-flow-lab."""
+    try:
+        with open(baseline_path(raiz), "r", encoding="utf-8") as fh:
+            m = re.search(r"perfil=(estudio|oficina|client)", fh.readline())
+        if m:
+            return m.group(1)
+    except OSError:
+        pass
+    return "oficina" if os.path.basename(os.path.abspath(raiz)).lower() == "alia-flow-lab" else "estudio"
+
+
 def comparar(raiz: str, perfil: str) -> dict:
     base = ler_baseline(raiz)
     agora = _chaves(sweep(raiz, perfil))
@@ -256,6 +275,8 @@ def main(argv: list[str]) -> int:
         sys.path.insert(0, HERE)
         import paths
         raiz = paths.studio_root()
+    if perfil == "auto":  # 2.1.6: o perfil e o que a BASELINE da raiz declara (a oficina e o estudio tem uma cada)
+        perfil = perfil_da_baseline(raiz)
     if perfil not in ("estudio", "oficina", "client"):
         print("perfil invalido")
         return 2

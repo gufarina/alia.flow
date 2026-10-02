@@ -72,8 +72,9 @@
   },
   "x-transicoes": {
     "<nova>": ["open"],
-    "open": ["review", "done"],
-    "review": ["review", "done"],
+    "open": ["review", "done", "retired"],
+    "review": ["review", "done", "retired"],
+    "retired": [],
     "done": []
   },
   "x-recusas": {
@@ -91,6 +92,8 @@
     "brief_tipo_invalido": "alia task open: campo do brief com tipo errado (lista, numero, coordenacao como texto)",
     "type_invalido": "alia task open: type fora de pesquisa|construcao|revisao|correcao",
     "schema_invalido": "escrita nova fora do schema (task_nova / status)",
+    "retirar_status_invalido": "alia task retire: so Task open/review se retira",
+    "retirar_motivo_invalido": "alia task retire: motivo fora de superada|abandonada",
     "criterio_reprovado_ausente": "alia task close: veredito FAIL/CONCERN sem --criterio-reprovado",
     "grafo_nao_lido": "alia graph check: varredura de codigo/wiki sem ter lido GRAPH_REPORT/index.md na sessao"
   }

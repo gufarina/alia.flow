@@ -36,7 +36,8 @@ param(
   [string]$Paths = "",
   [string]$Consumidor = "",
   [string]$Destino = "",
-  [string]$ExemploFalha = ""
+  [string]$ExemploFalha = "",
+  [ValidateSet("superada","abandonada")][string]$Motivo = "superada"
 )
 $ErrorActionPreference = "Stop"
 $alia = Join-Path (Split-Path -Parent $PSScriptRoot) "v2\bin\alia.py"
@@ -65,6 +66,14 @@ if ($fecha) {
 }
 if ($DryRun) { Write-Host "[DRYRUN] alia task $(if ($Id) { 'close' } else { 'open' }) client=$Client project=$Project status=$Status"; exit 0 }
 
+if ($Status -eq "retired") {
+  # 2.1.6: retirar uma Task aberta (superada/abandonada). Sem -Id nao ha o que retirar: falha ALTO, nunca abre Task nova.
+  if (-not $Id) { Write-Host "[ERRO] -Status retired exige -Id da Task a retirar."; exit 1 }
+  $r = Invoke-Alia @("task","retire","--id",$Id,"--motivo",$Motivo)
+  if ($r.code -eq 0 -and $r.json -and $r.json.ok -ne $false) { exit 0 }
+  exit $(if ($r.code -ne 0) { $r.code } else { 1 })
+}
+if ($Status -notin @("open","done","review")) { Write-Host "[ERRO] -Status $Status nao e suportado pela CLI alia (open, done, review, retired)."; exit 1 }
 $alvo = $Id
 if (-not $alvo) {
   $brief = [ordered]@{ client = $Client; project = $Project; objetivo = $Title; paths = $Paths; consumidor = $Consumidor

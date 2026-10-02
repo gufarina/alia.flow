@@ -245,6 +245,9 @@ if ($toClose.Count -gt 0) {
 }
 
 $toRetire = @{}
+$motivoDe = @{}
+foreach ($r in $superada) { $motivoDe[$r.id] = "superada" }
+foreach ($r in $abandonada) { $motivoDe[$r.id] = "abandonada" }
 foreach ($r in $superada) { $toRetire[$r.id] = "o Client fechou " + $r.doneAfter + " Tasks depois desta sem que ela fosse retomada (varredura " + $hoje + ")" }
 foreach ($r in $abandonada) { $toRetire[$r.id] = "sem movimento por " + $r.age + " dias, sem entrega registrada (varredura " + $hoje + ")" }
 foreach ($id in $retireIds) { $toRetire[$id] = "superada por decisao do Operator na varredura" }
@@ -266,7 +269,7 @@ foreach ($id in $toRetire.Keys) {
     $falhas += $id
     continue
   }
-  & powershell -ExecutionPolicy Bypass -File $registerScript -Id $id -Client $taskClient -Status "retired" -Specialist $specialist -StateFile $StateFile @opOrderArgs | Out-Null
+  & powershell -ExecutionPolicy Bypass -File $registerScript -Id $id -Client $taskClient -Status "retired" -Motivo $(if ($motivoDe.ContainsKey($id)) { $motivoDe[$id] } else { "superada" }) -Specialist $specialist -StateFile $StateFile @opOrderArgs | Out-Null
   if ($LASTEXITCODE -ne 0) { Write-Host ("[AVISO] register-task.ps1 falhou ao retirar " + $id + " (exit " + $LASTEXITCODE + "), pulando."); $falhas += $id; continue }
   $refreshed = [System.IO.File]::ReadAllText($StateFile) | ConvertFrom-Json
   $refreshedTasks = @($refreshed.tasks)

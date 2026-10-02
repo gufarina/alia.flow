@@ -76,6 +76,8 @@ try:
     check("C5: artifact solto direto em artifacts/ bloqueia", regra("clients/zeta/artifacts/solto.md") == "C5")
     check("C5: pasta de projeto sem data bloqueia e sugere slug-AAAA-MM-DD", regra("clients/zeta/artifacts/landing/a.md") == "C5" and "landing-20" in v("clients/zeta/artifacts/landing/a.md")["msg"])
     check("C5: slug-AAAA-MM-DD, coordination e TASK-N (entrega delegada) passam", regra("clients/zeta/artifacts/lp-2026-10-02/a.md") == "" and regra("clients/zeta/artifacts/coordination/a.json") == "" and regra("clients/zeta/artifacts/TASK-9/e.md") == "")
+    check("nome sem extensao no fim pode ser PASTA: artifacts/slug-AAAA-MM-DD passa, artifacts/sem-data continua bloqueado",
+          regra("clients/zeta/artifacts/proj-beta-2026-10-02") == "" and regra("clients/zeta/artifacts/proj-sem-data") == "C5")
     check("C6: _backups dentro do Client bloqueia (vai para _backups/ do estudio)", regra("clients/zeta/_backups/x.zip") == "C6")
     check("C10: pasta misc/tmp dentro do Client bloqueia", regra("clients/zeta/docs/misc/a.md") == "C10")
     check("Client com codigo-fonte dentro (package.json) e opaco", regra("clients/codigo/src/Main.TSX") == "")
@@ -128,6 +130,12 @@ try:
     check("Bash com redirecionamento para caminho novo: DENY", negado(hook("Bash", {"command": f'echo oi > "{novo}"'})))
     check("Bash para caminho valido: passa", not negado(hook("Bash", {"command": f'echo oi > "{os.path.join(ST, "docs", "ok.txt")}"'})))
     check("Bash que so le (cat) nao bloqueia", not negado(hook("Bash", {"command": f'cat "{novo}"'})))
+    check("Bash com cd: caminho RELATIVO nao resolve e nao bloqueia (mv de origem relativa)",
+          not negado(hook("Bash", {"command": f'cd "{os.path.join(ST, "docs")}"; mv origem-a.txt destino-b.txt'})))
+    check("Bash com caminho entre aspas COM ESPACO (o extrator parte no espaco): relativo fantasma nao bloqueia",
+          not negado(hook("Bash", {"command": f'cp "{os.path.join(ST, "docs", "a b.txt")}" "{os.path.join(ST, "docs", "c d")}"'})))
+    check("Bash com cd: caminho ABSOLUTO novo fora do manifesto continua bloqueado",
+          negado(hook("Bash", {"command": f'cd "{ST}/docs"; echo oi > "{novo}"'})))
     check("interruptor ALIA_LAYOUT_GATE_OFF=1 desliga so o bloqueio", not negado(hook("Write", {"file_path": novo, "content": "x"}, {"ALIA_LAYOUT_GATE_OFF": "1"})))
     touch(os.path.join(ST, ".claude", "layout-gate.off"), "1")
     check("arquivo .claude/layout-gate.off tambem desliga", not negado(hook("Write", {"file_path": novo, "content": "x"})))
@@ -154,6 +162,8 @@ try:
     linhas = layout.sweep(OF, "oficina")
     depois = sorted(os.path.relpath(os.path.join(d, f), OF) for d, _, fs in os.walk(OF) for f in fs)
     check("sweep lista o legado e NAO move nem apaga nada", any("legado-solto.txt" in l for l in linhas) and antes == depois)
+    check("perfil auto: sem baseline, pasta alia-flow-lab = oficina; outra raiz = estudio",
+          layout.perfil_da_baseline(OF) == "oficina" and layout.perfil_da_baseline(ST) == "estudio")
     check("check sem baseline: rc 2 (nao se aplica)", layout.main(["--check", "--perfil", "oficina", "--root", OF]) == 2)
     check("freeze cria a baseline", layout.main(["--freeze", "--perfil", "oficina", "--root", OF]) == 0)
     check("check com a baseline: verde", layout.main(["--check", "--perfil", "oficina", "--root", OF]) == 0)

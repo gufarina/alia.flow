@@ -280,6 +280,29 @@ def principal() -> int:
     rc, res = run("task", "pending", "--session", "s1")
     check("depois do veredito a Task sai das pendencias", rc == 0 and tid not in res["pendentes"], str(res)[:120])
 
+    print("\n=== retire (2.1.6): open/review -> retired, com motivo ===")
+    rc, res = run("task", "open", "--brief", json.dumps(brief), "--session", "s-ret")
+    rid = res["task"]["id"]
+    rc, res = run("task", "retire", "--id", rid)
+    check("retire sem --motivo e recusado (retirar_motivo_invalido)", rc != 0 and res.get("regra") == "retirar_motivo_invalido", str(res)[:160])
+    rc, res = run("task", "retire", "--id", rid, "--motivo", "porque sim")
+    check("retire com motivo fora do enum e recusado", rc != 0 and res.get("regra") == "retirar_motivo_invalido", str(res)[:160])
+    rc, res = run("task", "retire", "--id", rid, "--motivo", "superada", "--nota", "o Client seguiu sem ela")
+    check("retire open -> retired grava motivo, nota e retired_at (e o registro fica)",
+          rc == 0 and res["task"]["status"] == "retired" and res["task"]["retired_reason"] == "superada" and res["task"].get("retired_at"), str(res)[:200])
+    rc, res = run("task", "retire", "--id", rid, "--motivo", "abandonada")
+    check("retired nao se retira de novo (retirar_status_invalido)", rc != 0 and res.get("regra") == "retirar_status_invalido", str(res)[:160])
+    rc, res = run("task", "retire", "--id", tid, "--motivo", "superada")
+    check("Task done nao se retira (retirar_status_invalido)", rc != 0 and res.get("regra") == "retirar_status_invalido", str(res)[:160])
+    rc, res = run("task", "retire", "--id", "TASK-999", "--motivo", "superada")
+    check("retire de Task inexistente e recusado (task_inexistente)", rc != 0 and res.get("regra") == "task_inexistente", str(res)[:160])
+    import inspect
+    fonte_mut = inspect.getsource(task_model.retirar).replace('if "retired" not in TRANSICOES_VALIDAS.get(status_atual, set()):', "if False:")
+    ns_mut: dict = {"TaskError": task_model.TaskError, "TRANSICOES_VALIDAS": task_model.TRANSICOES_VALIDAS, "MOTIVOS_RETIRADA": task_model.MOTIVOS_RETIRADA}
+    exec(fonte_mut.replace("def retirar(", "def retirar_mut(", 1), ns_mut)
+    check("NEGATIVO: mutante sem a trava de status retira ate Task done - a prova pega o defeito",
+          ns_mut["retirar_mut"]({"id": "X", "status": "done"}, "superada")["status"] == "retired")
+
     print("\n=== legado: as tasks antigas nao quebram ===")
     real = next((p for p in (os.path.join(V2, "..", "state.json"), os.path.join(V2, "..", "..", "..", "state.json")) if os.path.exists(p)), None)
     if real:

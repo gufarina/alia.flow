@@ -191,6 +191,24 @@ def bases_de_artifact(args: argparse.Namespace) -> list[str]:
     return [os.getcwd(), raiz, os.path.dirname(os.path.abspath(raiz))]
 
 
+def cmd_retire(args: argparse.Namespace) -> dict:
+    """open/review -> retired com motivo. Reversivel por desenho: nao apaga a Task."""
+    with espinha.com_trava(args.state):
+        state = _load_state(args.state)
+        tasks = state.get("tasks", [])
+        task = next((t for t in tasks if t.get("id") == args.id), None)
+        if task is None:
+            return _err("Task nao encontrada", regra="task_inexistente", id_recebido=args.id)
+        try:
+            nova = task_model.retirar(task, args.motivo, args.nota)
+        except task_model.TaskError as exc:
+            return _err(exc.msg, **{"regra": "task_invalida", **exc.extra})
+        nova["retired_at"] = _now()
+        tasks[tasks.index(task)] = nova
+        _save_state(args.state, state)
+        return _ok(task=nova)
+
+
 def cmd_close(args: argparse.Namespace) -> dict:
     with espinha.com_trava(args.state):
         return _close(args)
@@ -283,6 +301,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_close.add_argument("--studio-root", dest="studio_root", default="",
                          help="raiz do estudio para o recibo de conhecimento (padrao: pasta do --state se tiver clients/, senao a raiz do estudio da sessao)")
     p_close.set_defaults(func=cmd_close)
+
+    p_retire = sub.add_parser("retire")
+    p_retire.add_argument("--id", required=True)
+    p_retire.add_argument("--motivo", default="", help="superada|abandonada")
+    p_retire.add_argument("--nota", default="")
+    p_retire.set_defaults(func=cmd_retire)
 
     p_context = sub.add_parser("context")
     p_context.add_argument("--id", required=True)
