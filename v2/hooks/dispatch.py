@@ -80,8 +80,8 @@ def _nome_longo(p: str) -> str:
 
 
 def _norm(p: str) -> str:
-    """Barra normal + `..`/`.` resolvidos (2.1.3: `clients/x/../../engine/a.md` escapava do kernel, da
-    muralha e da isencao de artifacts) + nome longo no Windows."""
+    """Barra normal + `..`/`.` resolvidos (2.1.3: `clients/x/../../engine/a.md` escapava do kernel)
+    + nome longo no Windows."""
     p = (p or "").replace("\\", "/")
     if not p:
         return p
@@ -365,7 +365,6 @@ SECRET_PATTERNS = [
 
 _SPLIT_CLAUSULAS_RE = re.compile(r"[;&|\n\r]+")
 _PREFIXOS_COMANDO = {"sudo", "env", "command", "time", "nohup", "exec", "call", "start", "&", ".", "builtin"}
-_SHELLS = {"bash", "sh", "zsh", "pwsh", "powershell", "cmd"}
 _INTERPRETES = {"python", "python3", "py", "node", "pwsh", "powershell", "bash", "sh", "zsh"}
 _PUBLICADORES = {"package-release", "publish-release"}
 
@@ -450,18 +449,6 @@ def _repo_do_push(command: str, cwd: str) -> str | None:
             destino = _com_cwd(toks[toks.index("-C") + 1], destino)
             break
     return destino or None
-# 2.1.2 (TASK-862): comandos regidos SO por L70 + marcador de check valido, fora da muralha L80
-# (a sessao principal e a unica que publica/propaga; barrar a escrita dela ai deixava zero ator).
-# update-engine nao exige marcador: so sai da muralha. A passagem vale SO para o comando INTEIRO
-# `powershell|pwsh [-NoProfile] [-ExecutionPolicy X] -File <...>publish-release|update-engine.ps1
-# [args]`: sem -Command/-c, sem encadeamento nem redirecionamento, so esses dois scripts.
-# 2.1.3 (P1-5): `[ \t]` no lugar de `\s` (a linha nova e separador de comando, nao espaco), fullmatch,
-# e o script so vale dentro de uma pasta `scripts/` (antes: qualquer pasta, ate /tmp/x/update-engine.ps1).
-_WALL_PASS_RE = re.compile(
-    r"""(?ix)[ \t]*(?:powershell|pwsh)(?:\.exe)?(?:[ \t]+-NoProfile)?(?:[ \t]+-ExecutionPolicy[ \t]+\w+)?
-    [ \t]+-File[ \t]+(?P<q>["']?)(?:[^"'\s;&|<>`$()]*[\\/])?scripts[\\/](?:publish-release|update-engine)\.ps1(?P=q)
-    (?:[ \t]+[\w.:\\/\-"']+)*[ \t]*""")
-_WALL_PASS_BAD_ARG_RE = re.compile(r"(?i)\s-(?:c|command|e|ec|encodedcommand)(?:\s|$)")
 
 # lista EXPLICITA do kernel (revisao independente: a checagem antiga procurava "/kernel/",
 # uma pasta que nao existe - o kernel real e este punhado de arquivo + a pasta engine/).
@@ -636,11 +623,6 @@ def _extract_write_targets(command: str) -> list[str]:
                     alvos.append(nao_flag[-1].strip("'\""))
     return alvos
 
-# so artifacts/<task_id>/ isenta a 4a negacao, e so quando o proprio PostToolUse ja marcou
-# no ledger que um sub-agente escreveu naquele task_id (nao mais /artifacts/ inteiro).
-ARTIFACT_TASK_RE = re.compile(r"/artifacts/(TASK-\d+)/", re.IGNORECASE)
-NEGATION4_COORDINATION_EXEMPT = "/artifacts/coordination/"
-
 
 # achado do CEO, 24/09/2026: a FONTE do motor (a oficina, clients/alia-flow-lab/) nunca e o
 # kernel PROTEGIDO - e exatamente onde a lei manda o kernel EVOLUIR (fonte -> migrate.py ->
@@ -784,64 +766,6 @@ def _has_secret(text: str) -> bool:
     return any(p.search(text or "") for p in SECRET_PATTERNS)
 
 
-def _is_client_write_without_delegation(event: dict, path: str) -> bool:
-    p = "/" + _norm(path.strip().strip("'\"")).lower().lstrip("/")
-    m = re.search(r"/clients/([a-z0-9\-]+)/", p)
-    if not m:
-        return False
-    client_id = m.group(1)
-    if NEGATION4_COORDINATION_EXEMPT in p:
-        return False
-    m_artifact = ARTIFACT_TASK_RE.search(p)
-    if m_artifact and _artifact_marked_by_subagent(m_artifact.group(1).upper(), client_id):
-        return False
-    if event.get("_is_subagent"):
-        # a propria sessao delegada (Agent/Task <id>-*) escrevendo no proprio
-        # Client nunca e negada; a negacao e so sobre a SESSAO PRINCIPAL.
-        return False
-    session_id = event.get("session_id")
-    # 2.1.3 (P0-6): a liberacao expressa do CEO (direto.json) tambem destrava ESTA guarda; sem isso o
-    # CEO liberava a sessao principal na muralha e a guarda 4 seguia negando: acao sem ator.
-    if _direct_grant_valid(session_id):
-        return False
-    return not ledger.session_has_agent_prefix(_ledger_path(), session_id, client_id + "-")
-
-
-def _artifact_marked_by_subagent(task_id: str, client_id: str | None = None) -> bool:
-    """True se ja existe um marcador `artifact_write` no ledger (gravado pelo proprio
-    PostToolUse quando um sub-agente escreveu em artifacts/<task_id>/) para este task_id. Marcador com
-    Client gravado so vale para esse Client (2.1.3); o antigo, sem Client, segue valendo."""
-    for ev in ledger.read_events(_ledger_path()):
-        if ev.get("event") == "artifact_write" and ev.get("task_id") == task_id:
-            if client_id and ev.get("client") and ev.get("client") != client_id:
-                continue
-            return True
-    return False
-
-
-def handle_post_write_artifact_marker(event: dict) -> None:
-    """PostToolUse de Write/Edit em artifacts/<task_id>/: grava o marcador que a 4a negacao
-    consulta depois. So marca quando o PreToolUse ja deixou passar (PostToolUse so roda se o
-    Write/Edit foi de fato executado)."""
-    if not event.get("agent_id"):
-        return  # 2.1.3: so a escrita de SUB-AGENTE marca; a da sessao principal nunca se auto-isenta
-    tool_input = event.get("tool_input") or {}
-    path = _norm(tool_input.get("file_path", ""))
-    m = ARTIFACT_TASK_RE.search(path.lower())
-    if not m:
-        return
-    task_id = m.group(1).upper()
-    m_cli = re.search(r"/clients/([a-z0-9\-]+)/", "/" + path.lower().lstrip("/"))
-    ledger.append_event(_ledger_path(), {
-        "event": "artifact_write",
-        "session_id": event.get("session_id"),
-        "agent_id": event.get("agent_id"),
-        "task_id": task_id,
-        "client": m_cli.group(1) if m_cli else None,
-        "path": path,
-    })
-
-
 CHECK_MARKER_MAX_AGE_S = 30 * 60  # 30 minutos (mandato do CEO, 24/09/2026)
 
 
@@ -930,186 +854,12 @@ def _check_marker_valido(command: str = "", cwd: str | None = None) -> bool:
     return True
 
 
-# ---------------------------------------------------------------------------
-# MURO DE DELEGACAO (mandato do CEO, 30/09/2026) - a Alia na SESSAO PRINCIPAL so delega.
-# Distincao: PreToolUse carrega agent_id so quando a chamada nasce num sub-agente; sem agent_id
-# = sessao principal. Ai Write/Edit/NotebookEdit e Bash/PowerShell de escrita so passam em infra
-# liberada (memoria, docs/ops, state.json, task corrente, briefs) ou com a LIBERACAO do CEO.
-# Liberacao: <studio>/.alia/direto.json {session_id, granted_at, expires_at, ceo_quote}, nasce SO
-# do hook UserPromptSubmit (handle_user_prompt_submit) quando a mensagem do CEO traz o pedido
-# expresso; grava evento direct_grant no ledger; vale 1 sessao e no maximo 60 min. A sessao
-# principal nunca a cria: qualquer comando dela que cite direto.json e negado pelo proprio muro. Interruptor: ALIA_DELEGATION_WALL_OFF=1 ou
-# .claude/delegation-wall.off (padrao end-lock.off/graph-gate.off; desliga so o bloqueio).
-# ---------------------------------------------------------------------------
-
-WALL_ALLOW_FRAGMENTS = ("/memory/", "/docs/ops/", "/briefs/", "/artifacts/coordination/")
-WALL_DIRECT_MAX_S = 60 * 60
-_WALL_NULL_SINKS = ("/dev/null", "nul", "$null")
-_WALL_INTERP_RE = re.compile(r"(?i)\b(python3?|py|node|pwsh|powershell)(\.exe)?\b[^\n]*"
-                             r"(\s-c\b|\s-e\b|\s-command\b|<<|\s-\s*<)")
-# 2.1.3 (P1-4): powershell -EncodedCommand/-enc/-ec esconde o script em base64 (nada de token de escrita
-# visivel): vale como script inline que escreve. `-ExecutionPolicy` NAO casa (o `x` quebra o -e\w*).
-_WALL_ENCODED_RE = re.compile(r"(?i)\b(?:pwsh|powershell)(?:\.exe)?\b[^\n]*?\s-e(?:c|n\w*)?(?=\s|$)")
 _SCRIPT_EXT = (".py", ".js", ".mjs", ".cjs", ".ps1", ".sh")
-_SCRIPT_ALLOW_RE = re.compile(r"(?:^|/)(?:v2/(?:bin|proof|flow)|scripts|\.claude/skills/[^/]+/scripts)/")
+_WRITE_TOKENS_RE = re.compile(r"(?i)(open\s*\([^)]*['\"][wa]|write_text|write_bytes|writefile|"
+                              r"fs\.\w*write|set-content|add-content|out-file|\.write\()")
 
 
-def _wall_script_fora_da_allowlist(command: str, cwd: str | None) -> bool:
-    """`python x.py`/`node x.js`/`pwsh -File x.ps1`/`bash x.sh` rodando script FORA da allowlist (v2/bin,
-    v2/proof, v2/flow, scripts/, skills/*/scripts/, e a infra liberada): o arquivo pode escrever o que
-    quiser e o texto do comando nao mostra (P1-4). `python -m`/`-c` ficam com a regra inline."""
-    for c in _SPLIT_CLAUSULAS_RE.split(_sem_corpo_heredoc(command)):
-        toks = _cmd_tokens(c)
-        if not toks or _base_cmd(toks[0]) not in _INTERPRETES:
-            continue
-        script = None
-        for a in toks[1:]:
-            low = a.lower()
-            if low in ("-c", "-command", "-m", "-e"):
-                break
-            if a.startswith("-"):
-                continue
-            if low.endswith(_SCRIPT_EXT):
-                script = a
-                break
-        if script is None:
-            continue
-        alvo = "/" + _norm(_com_cwd(script, cwd)).lower().lstrip("/")
-        if not (_SCRIPT_ALLOW_RE.search(alvo) or _wall_path_allowed(_com_cwd(script, cwd))):
-            return True
-    return False
-_WALL_WRITE_TOKENS_RE = re.compile(r"(?i)(open\s*\([^)]*['\"][wa]|write_text|write_bytes|writefile|"
-                                   r"fs\.\w*write|set-content|add-content|out-file|\.write\()")
-
-
-def _wall_off() -> bool:
-    if os.environ.get("ALIA_DELEGATION_WALL_OFF") == "1":
-        return True
-    return os.path.exists(os.path.join(_project_dir(), ".claude", "delegation-wall.off"))
-
-
-def _direct_grant_path() -> str:
-    return os.path.join(paths.studio_root(), ".alia", "direto.json")
-
-
-def _direct_grant_valid(session_id: str | None) -> bool:
-    try:
-        with open(_direct_grant_path(), "r", encoding="utf-8") as fh:
-            g = json.load(fh)
-        # 2.1.3: o arquivo guarda UMA liberacao por sessao em "grants" (duas sessoes nao se sobrescrevem);
-        # o formato antigo (liberacao solta no topo) segue valendo.
-        g = ((g.get("grants") or {}).get(session_id) if session_id else None) or g
-        now = time.time()
-        return (bool(session_id) and g.get("session_id") == session_id
-                and len(str(g.get("ceo_quote") or "").strip()) >= 5
-                and now < float(g["expires_at"])
-                and float(g["expires_at"]) - float(g["granted_at"]) <= WALL_DIRECT_MAX_S)
-    except (OSError, ValueError, KeyError, TypeError):
-        return False
-
-
-def _wall_path_allowed(path: str) -> bool:
-    p = "/" + _norm(path.strip().strip("'\"")).lower().lstrip("/")
-    if p.lstrip("/") in tuple(x.lstrip("/") for x in _WALL_NULL_SINKS):  # /dev/null e NUL nunca sao alvo de escrita
-        return True
-    if any(a in p for a in WALL_ALLOW_FRAGMENTS):
-        return True
-    base = p.rsplit("/", 1)[-1]
-    return base in ("state.json", os.path.basename(paths.current_task_path()).lower())
-
-
-def _wall_target_hint(path: str) -> str:
-    m = re.search(r"/clients/([a-z0-9\-]+)/", _norm(path).lower())
-    if m and m.group(1) == "alia-flow-lab":
-        return "o motor: acione alia-flow-lab-nexus (Gateway), que roteia ao Specialist dono (WARDEN hooks/prova, GAUGE contexto, CANON leis...)"
-    if m:
-        return f"acione o Gateway do Client {m.group(1)} (agente {m.group(1)}-*), que roteia ao Specialist dono"
-    return "acione o Specialist dono do dominio via Agent/Task (Gateway do Client em caso de duvida)"
-
-
-def _wall_check(event: dict) -> dict | None:
-    """Devolve _deny(...) quando a SESSAO PRINCIPAL tenta escrever fora da infra liberada."""
-    if event.get("_is_subagent") or _wall_off():
-        return None
-    tool = event.get("tool_name")
-    ti = event.get("tool_input") or {}
-    if tool in ("Bash", "PowerShell") and re.search(r"(?i)direto\.json|direto\.py", str(ti.get("command") or "")):
-        return _deny("muralha de delegacao: a sessao principal nao cria a propria liberacao - so o "
-                     "pedido expresso do CEO na mensagem dele (hook de prompt) libera.")
-    cwd = event.get("cwd")
-    if tool in ("Write", "Edit", "NotebookEdit", "MultiEdit"):
-        alvos = [ti.get("file_path") or ti.get("notebook_path") or ""]
-        inline = False
-    else:
-        cmd = str(ti.get("command") or "")
-        alvos = [_com_cwd(a, cwd) for a in _extract_write_targets(cmd)]
-        # passagem: o proprio comando de publicar/propagar, sem encadear nada, nao e "script inline
-        # que escreve arquivo" (invocado via -Command). Alvo de escrita explicito segue valendo.
-        passa = bool(_WALL_PASS_RE.fullmatch(cmd.strip()) and not _WALL_PASS_BAD_ARG_RE.search(cmd))
-        inline = not passa and bool(
-            (_WALL_INTERP_RE.search(cmd) and _WALL_WRITE_TOKENS_RE.search(cmd))
-            or _WALL_ENCODED_RE.search(cmd) or _wall_script_fora_da_allowlist(cmd, cwd))
-    fora = [a for a in alvos if not _wall_path_allowed(a)]
-    if not fora and not inline:
-        return None
-    if _direct_grant_valid(event.get("session_id")):
-        return None
-    alvo = fora[0] if fora else "(script inline que escreve arquivo)"
-    return _deny(
-        f"muralha de delegacao: a sessao principal so delega - escrita em {alvo} negada. "
-        f"Quem faz: {_wall_target_hint(alvo)}. Se o CEO pediu EXPRESSAMENTE que voce faca e voce "
-        "confirmou, o CEO precisa pedir isso na mensagem dele (o hook de prompt libera, vale esta "
-        "sessao, max 60 min) - voce nao se libera sozinha.")
-
-
-_DIRECT_ASK_RE = re.compile(
-    r"(?i)(fa[cz]a|faz|executa|execute|resolve|resolva|mexe|mexa)\s+(voce|vc)\s+mesm[ao]"
-    r"|(pode|quero que)\s+(voce|vc)\s+(mesm[ao]\s+)?(faz|fazer|execute|executar|mexer)"
-    r"|(?:^|[.!?\n]\s*)sem\s+delegar"  # 2.1.3: "ela fez sem delegar" e queixa, nao pedido
-    r"|(?<!ela )(?<!ele )(?<!alia )(?<!voce )(?<!vc )\b(?:faz|faca|execute|executa|resolve|resolva|mexe|mexa|rode|roda|edite|edita|escreva|escreve)\b[^.!?\n]{0,40}\bsem\s+delegar"
-    r"|\b(?:quero|pode|precisa|preciso)\b[^.!?\n]{0,30}\bsem\s+delegar"
-    r"|nao\s+delegue|libera(r)?\s+(a\s+)?alia\s+(pra|para)\s+(fazer|executar)")
-
-
-_HARNESS_PROMPT_MARKERS = ("<task-notification>", "[system notification", "<system-reminder>")
-
-
-def handle_user_prompt_submit(event: dict) -> dict:
-    """Unica origem da liberacao do muro: o prompt do CEO traz o pedido expresso. Devolve contexto
-    mandando a Alia CONFIRMAR ao CEO que vai executar direto."""
-    import unicodedata
-    prompt = str(event.get("prompt") or "")
-    # 2.1.2 (TASK-862, caso C): notificacao do harness (tarefa em segundo plano) nao e mensagem do
-    # CEO, e frase entre aspas/crase/citacao (>) e citacao, nao pedido. O regex abaixo nao mudou.
-    if any(m in prompt.lower() for m in _HARNESS_PROMPT_MARKERS):
-        return {}
-    pedido = re.sub(r'(?m)"[^"\n]*"|“[^”]*”|`[^`]*`|^\s*>.*$', " ", prompt)
-    norm = unicodedata.normalize("NFKD", pedido).encode("ascii", "ignore").decode("ascii")
-    sid = event.get("session_id")
-    if not sid or not _DIRECT_ASK_RE.search(norm):
-        return {}
-    agora = time.time()
-    grant = {"session_id": sid, "granted_at": agora, "expires_at": agora + WALL_DIRECT_MAX_S,
-             "ceo_quote": prompt.strip()[:300]}
-    gp = _direct_grant_path()
-    with trava.trava(gp):
-        try:
-            with open(gp, "r", encoding="utf-8") as fh:
-                atual = json.load(fh)
-            grants = dict((atual.get("grants") or {}) if isinstance(atual, dict) else {})
-        except (OSError, json.JSONDecodeError):
-            grants = {}
-        grants = {k: v for k, v in grants.items() if isinstance(v, dict) and float(v.get("expires_at") or 0) > agora}
-        grants[sid] = grant
-        trava.gravar_atomico(gp, json.dumps({**grant, "grants": grants}, ensure_ascii=False))
-    ledger.append_event(_ledger_path(), {"event": "direct_grant", "session_id": sid,
-                                         "ceo_quote": grant["ceo_quote"], "expires_at": grant["expires_at"]})
-    return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext":
-            "[MURALHA] O CEO pediu para voce executar direto. Confirme a ele numa frase que vai "
-            "executar sozinha; a liberacao vale esta sessao por ate 60 min."}}
-
-
-_MARCADORES_PROPRIOS = ("direto.json", "check-ok.json")
+_MARCADORES_PROPRIOS = ("check-ok.json",)
 
 
 def _e_marcador_proprio(path: str) -> bool:
@@ -1117,14 +867,13 @@ def _e_marcador_proprio(path: str) -> bool:
 
 
 def _comando_forja_marcador(command: str, cwd: str | None) -> bool:
-    """2.1.3 (P1-7): .alia/check-ok.json e .alia/direto.json (a liberacao do CEO e o check verde) so nascem
-    do proprio check.py e do hook de prompt. NINGUEM os forja por Bash/PowerShell, sub-agente inclusive:
-    alvo de escrita com esse nome, ou o nome junto de gravacao inline. So LER nao e barrado."""
-    if not re.search(r"(?i)(?:direto|check-ok)\.json", command):
+    """2.1.3 (P1-7): .alia/check-ok.json (o check verde) so nasce do proprio check.py. NINGUEM o forja
+    por Bash/PowerShell: alvo de escrita com esse nome, ou o nome junto de gravacao inline. So LER nao e barrado."""
+    if not re.search(r"(?i)check-ok\.json", command):
         return False
     if any(_e_marcador_proprio(a) for a in _extract_write_targets(command)):
         return True
-    return bool(_WALL_WRITE_TOKENS_RE.search(command) or re.search(r"(?i)\bsed\b[^\n]*\s-i", command))
+    return bool(_WRITE_TOKENS_RE.search(command) or re.search(r"(?i)\bsed\b[^\n]*\s-i", command))
 
 
 def _layout_deny(event: dict) -> dict | None:
@@ -1174,16 +923,10 @@ def handle_pretooluse_guard(event: dict) -> dict:
     if tool_name in ("Write", "Edit", "NotebookEdit", "MultiEdit"):
         _fp = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
         if _e_marcador_proprio(_fp):
-            return _deny("guard: .alia/check-ok.json e .alia/direto.json nao se escrevem por ferramenta - "
-                         "so o check.py (marcador) e o pedido expresso do CEO (liberacao) os criam")
+            return _deny("guard: .alia/check-ok.json nao se escreve por ferramenta - so o check.py o cria")
     elif tool_name in ("Bash", "PowerShell"):
         if _comando_forja_marcador(str(tool_input.get("command") or ""), cwd):
-            return _deny("guard: .alia/check-ok.json e .alia/direto.json nao se forjam por comando - "
-                         "so o check.py (marcador) e o pedido expresso do CEO (liberacao) os criam")
-    if tool_name in ("Write", "Edit", "NotebookEdit", "MultiEdit", "Bash", "PowerShell"):
-        _negado_muralha = _wall_check(event)
-        if _negado_muralha:
-            return _negado_muralha
+            return _deny("guard: .alia/check-ok.json nao se forja por comando - so o check.py o cria")
 
     if tool_name in ("Write", "Edit", "NotebookEdit", "MultiEdit"):
         path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
@@ -1218,11 +961,6 @@ def handle_pretooluse_guard(event: dict) -> dict:
                     f"{vazamento}. Use um nome generico; a evidencia real fica na pasta privada "
                     "(opportunities/)."
                 )
-        if _is_client_write_without_delegation(event, path):
-            return _deny(
-                "guard: Write/Edit em clients/<id>/ pela sessao principal sem "
-                "Agent/Task <id>-* visto nesta sessao (herda delegation-gate L33/L45)"
-            )
         return _layout_deny(event) or _no_decision()
 
     if tool_name in ("Bash", "PowerShell"):
@@ -1673,15 +1411,10 @@ def main() -> int:
             _write_stdout(_no_decision())
             return 0
 
-        if hook == "UserPromptSubmit":
-            _write_stdout(handle_user_prompt_submit(event))
-            return 0
 
         if hook == "PostToolUse":
             if tool_name in ("Agent", "Task"):
                 handle_post_agent(event)
-            if tool_name in ("Write", "Edit", "MultiEdit"):
-                handle_post_write_artifact_marker(event)
             _write_stdout({})
             return 0
 

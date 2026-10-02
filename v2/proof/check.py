@@ -70,9 +70,6 @@ def _clean_env(extra: dict | None = None) -> dict:
     studio em vez do sandbox de teste). `extra` sobrescreve por cima."""
     env = {k: v for k, v in os.environ.items()
            if k != "CLAUDE_PROJECT_DIR" and not k.startswith("ALIA_")}
-    # as provas LEGADAS simulam a sessao principal escrevendo; o muro de delegacao (dispatch.py,
-    # _wall_check) tem bateria propria e liga o muro la (ALIA_DELEGATION_WALL_OFF=0).
-    env["ALIA_DELEGATION_WALL_OFF"] = "1"
     # idem a espinha: as provas legadas acionam agentes sem Task aberta; o dispatch da espinha
     # tem bateria propria (test_espinha.py) e liga la.
     env["ALIA_SPINE_OFF"] = "1"
@@ -1428,24 +1425,17 @@ for _k, _nome in (("full", "geracao completa da fixture gera os bundles dos 2 Cl
     check("squad-bridge -Only: " + _nome, _ok, _det)
 
 # ---------------------------------------------------------------------------
-# MURO DE DELEGACAO (30/09/2026): a sessao principal so delega. Prova pelo negativo: alem dos
-# casos de nega/libera, um MUTANTE do dispatch (muro desligado no codigo) tem que ser pego.
+# SEM MURO DE DELEGACAO (2.1.8, ordem do CEO 02/10/2026): o pedido do CEO e a autorizacao. A sessao
+# principal escreve onde o CEO mandou, sem frase magica nem liberacao com prazo. Prova pelo negativo:
+# um mutante que volta a negar a escrita da sessao principal tem que ser pego.
 # ---------------------------------------------------------------------------
-print("\n=== MURO DE DELEGACAO: sessao principal nao escreve dominio ===")
+print("\n=== SEM MURO: a sessao principal executa o que o CEO pede ===")
 _TW = _sandbox_tempdir("alia-v2-wall-")
 _DISPATCH_W = os.path.join(V2, "hooks", "dispatch.py")
 
 
-def _dispW(event: dict, extra_env: dict | None = None, dispatch: str = _DISPATCH_W, off_file: bool = False) -> dict:
-    os.makedirs(os.path.join(_TW, ".claude"), exist_ok=True)
-    _of = os.path.join(_TW, ".claude", "delegation-wall.off")
-    if off_file:
-        open(_of, "w").write("x")
-    elif os.path.exists(_of):
-        os.remove(_of)
-    env = _clean_env({"ALIA_LEDGER_PATH": os.path.join(_TW, "activity.jsonl"),
-                      "CLAUDE_PROJECT_DIR": _TW, "ALIA_DELEGATION_WALL_OFF": "0",
-                      **(extra_env or {})})
+def _dispW(event: dict, dispatch: str = _DISPATCH_W) -> dict:
+    env = _clean_env({"ALIA_LEDGER_PATH": os.path.join(_TW, "activity.jsonl"), "CLAUDE_PROJECT_DIR": _TW})
     proc = subprocess.run([sys.executable, dispatch], input=json.dumps(event).encode("utf-8"),
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     try:
@@ -1454,93 +1444,39 @@ def _dispW(event: dict, extra_env: dict | None = None, dispatch: str = _DISPATCH
         return {"_raw": proc.stdout.decode("utf-8", "replace")}
 
 
-def _muro(out: dict) -> bool:
-    return "muralha de delegacao" in str((out.get("hookSpecificOutput") or {}).get("permissionDecisionReason", ""))
+def _negado(out: dict) -> bool:
+    return (out.get("hookSpecificOutput") or {}).get("permissionDecision") == "deny"
 
 
-def _evW(tool: str, ti: dict, sess: str = "wallS", sub: bool = False) -> dict:
-    e = {"hook_event_name": "PreToolUse", "tool_name": tool, "session_id": sess, "tool_input": ti}
-    if sub:
-        e["agent_id"] = "ag1"
-    return e
+def _evW(tool: str, ti: dict) -> dict:
+    return {"hook_event_name": "PreToolUse", "tool_name": tool, "session_id": "wallS", "tool_input": ti}
 
 
 _wp = _TW.replace("\\", "/") + "/src/app.py"
-_wm = _TW.replace("\\", "/") + "/memory/nota.md"
-_o = _dispW(_evW("Write", {"file_path": _wp, "content": "x"}))
-check("muro: sessao principal Write fora da infra e negada", _muro(_o))
-check("muro: a negacao diz a quem delegar", "Specialist" in str(_o) or "Gateway" in str(_o))
-check("muro: Write em memoria (infra) passa", not _muro(_dispW(_evW("Write", {"file_path": _wm, "content": "x"}))))
-check("muro: Write em state.json passa", not _muro(_dispW(_evW("Write", {"file_path": _TW + "/state.json", "content": "{}"}))))
-check("muro: Write em docs/ops passa", not _muro(_dispW(_evW("Write", {"file_path": _TW + "/docs/ops/a.md", "content": "x"}))))
-check("muro: sub-agente (agent_id) escreve fora da infra sem ser barrado",
-      not _muro(_dispW(_evW("Write", {"file_path": _wp, "content": "x"}, sub=True))))
-check("muro: NotebookEdit da sessao principal negado",
-      _muro(_dispW(_evW("NotebookEdit", {"notebook_path": _TW + "/n.ipynb", "new_source": "x"}))))
-check("muro: Bash `>` em arquivo de dominio negado",
-      _muro(_dispW(_evW("Bash", {"command": f"echo oi > {_wp}"}))))
-check("muro: PowerShell Set-Content em dominio negado",
-      _muro(_dispW(_evW("PowerShell", {"command": f"Set-Content -Path {_wp} -Value x"}))))
-check("muro: python -c que escreve arquivo negado",
-      _muro(_dispW(_evW("Bash", {"command": "python -c \"open('a.txt','w').write('x')\""}))))
-check("muro: Bash so de leitura passa",
-      not _muro(_dispW(_evW("Bash", {"command": f"cat {_wp} | grep x 2>&1"}))))
-check("muro: Bash escrevendo em memoria passa",
-      not _muro(_dispW(_evW("Bash", {"command": f"echo oi >> {_wm}"}))))
-# liberacao com prazo
-_gp = os.path.join(_TW, ".alia", "direto.json")
-os.makedirs(os.path.dirname(_gp), exist_ok=True)
-
-
-def _grant(sess="wallS", ini=0.0, dur=1800, quote="faz voce mesma"):
-    t = time.time() + ini
-    with open(_gp, "w", encoding="utf-8") as fh:
-        json.dump({"session_id": sess, "granted_at": t, "expires_at": t + dur, "ceo_quote": quote}, fh)
-
-
+_wc = _TW.replace("\\", "/") + "/clients/zeta/artifacts/TASK-1/peca.md"
 _ev_w = _evW("Write", {"file_path": _wp, "content": "x"})
-_grant()
-check("muro: liberacao valida (mesma sessao) deixa passar", not _muro(_dispW(_ev_w)))
-_grant(sess="outra")
-check("muro: liberacao de OUTRA sessao nao vale", _muro(_dispW(_ev_w)))
-_grant(ini=-7200, dur=1800)
-check("muro: liberacao vencida nao vale", _muro(_dispW(_ev_w)))
-_grant(dur=86400)
-check("muro: liberacao com prazo > 60 min nao vale", _muro(_dispW(_ev_w)))
-_grant(quote="")
-check("muro: liberacao sem frase do CEO nao vale", _muro(_dispW(_ev_w)))
-os.remove(_gp)
-# interruptor
-check("muro: ALIA_DELEGATION_WALL_OFF=1 desliga o bloqueio",
-      not _muro(_dispW(_ev_w, {"ALIA_DELEGATION_WALL_OFF": "1"})))
-check("muro: .claude/delegation-wall.off desliga o bloqueio", not _muro(_dispW(_ev_w, off_file=True)))
-check("muro: sem interruptor volta a bloquear", _muro(_dispW(_ev_w)))
-# liberacao SO pelo hook de prompt do CEO; a sessao principal nao se libera
-_ups = {"hook_event_name": "UserPromptSubmit", "session_id": "wallS"}
-_dispW({**_ups, "prompt": "bom dia, como esta o status?"})
-check("muro: prompt comum do CEO NAO libera", not os.path.exists(_gp) and _muro(_dispW(_ev_w)))
-_o_up = _dispW({**_ups, "prompt": "Alia, faz voce mesma essa edicao"})
-check("muro: pedido expresso do CEO (UserPromptSubmit) libera e manda confirmar",
-      os.path.exists(_gp) and not _muro(_dispW(_ev_w)) and "Confirme" in str(_o_up))
-os.remove(_gp)
-_aut = _dispW(_evW("Bash", {"command": "python v2/bin/direto.py grant \"faz voce mesma\" --session wallS"}))
-check("muro: NEGATIVO - a Alia tenta se liberar via Bash e o muro nega",
-      _muro(_aut) and not os.path.exists(_gp))
-_forja = lambda o: _muro(o) or "nao se escrevem por ferramenta" in str(o) or "nao se forjam por comando" in str(o)  # 2.1.3: negada tambem pela guarda de marcador
-check("muro: autoliberacao via Write em direto.json tambem negada",
-      _forja(_dispW(_evW("Write", {"file_path": _gp.replace("\\", "/"), "content": "{}"}))))
-check("muro: autoliberacao via PowerShell negada",
-      _forja(_dispW(_evW("PowerShell", {"command": f"Set-Content {_gp} '{{}}'"}))))
-# PROVA PELO NEGATIVO: mutante com o muro desligado no codigo tem que ser pego pelo teste
+check("sem muro: sessao principal Write de dominio passa", not _negado(_dispW(_ev_w)))
+check("sem muro: sessao principal Write em clients/<id>/ passa sem sub-agente",
+      not _negado(_dispW(_evW("Write", {"file_path": _wc, "content": "x"}))))
+check("sem muro: Bash `>` em arquivo de dominio passa", not _negado(_dispW(_evW("Bash", {"command": f"echo oi > {_wp}"}))))
+check("sem muro: python -c que escreve arquivo passa",
+      not _negado(_dispW(_evW("Bash", {"command": "python -c \"open('a.txt','w').write('x')\""}))))
+check("sem muro: prompt do CEO nao gera liberacao nem contexto", _dispW(
+      {"hook_event_name": "UserPromptSubmit", "session_id": "wallS", "prompt": "faz voce mesma"}) == {})
+_src_d = open(_DISPATCH_W, encoding="utf-8").read()
+check("sem muro: dispatch nao tem mais muralha nem liberacao por frase",
+      not any(t in _src_d for t in ("_wall_check", "direto.json", "_DIRECT_ASK_RE", "_is_client_write_without_delegation")))
+# PROVA PELO NEGATIVO: mutante que nega toda escrita da sessao principal tem que ser pego
 _mut = os.path.join(_TW, "mut", "v2")
 shutil.copytree(V2, _mut, ignore=shutil.ignore_patterns("__pycache__", "proof", "deep"))
 _mp = os.path.join(_mut, "hooks", "dispatch.py")
 _src = open(_mp, encoding="utf-8").read()
-_alvo = 'if event.get("_is_subagent") or _wall_off():\n        return None'
-check("muro: ponto de mutacao existe no dispatch", _src.count(_alvo) == 1)
-open(_mp, "w", encoding="utf-8", newline="").write(_src.replace(_alvo, "return None"))
-check("muro: NEGATIVO - mutante sem muro deixa a escrita passar (o teste acima o pegaria)",
-      not _muro(_dispW(_ev_w, dispatch=_mp)))
+_alvo = 'event["_is_subagent"] = bool(event.get("agent_id"))'
+check("sem muro: ponto de mutacao existe no dispatch", _src.count(_alvo) == 1)
+open(_mp, "w", encoding="utf-8", newline="").write(_src.replace(
+    _alvo, _alvo + '\n    if not event["_is_subagent"]:\n        return _deny("muro")'))
+check("sem muro: NEGATIVO - mutante que volta a barrar a sessao principal e pego",
+      _negado(_dispW(_ev_w, dispatch=_mp)))
 
 # PULSO vetado: sem ALIA_PULSO=1 nada entra no SessionStart nem no prompt do sub-agente, e o Stop
 # nao regrava. Prova pelo negativo com mutante que ignora a flag.
@@ -1696,7 +1632,7 @@ _w1_dest = os.path.join(_SCAN_ROOT, "___w1-aninhado.md")
 _w1_home = os.path.expanduser("~")
 _w1_ninho = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "w1",
              "tool_input": {"command": f'powershell -Command "Set-Content -Path {_w1_dest} -Value vazou"'}}
-_w1_n_out = _com_env({"ALIA_DELEGATION_WALL_OFF": "1"}, lambda: _disp_fr.handle_pretooluse_guard(dict(_w1_ninho)))
+_w1_n_out = _disp_fr.handle_pretooluse_guard(dict(_w1_ninho))
 check("shell aninhado: o guard NAO enxerga a escrita dentro de `powershell -Command` (a lacuna que a varredura cobre)",
       _w1_n_out == {}, str(_w1_n_out))
 _id_leaks_antes = len(_id_leaks)
@@ -2041,6 +1977,29 @@ print("\n=== relogio isolado (serie, depois do pool paralelo) ===")
 _rl_rc, _rl_out, _rl_dt = run_script(os.path.join(HERE, "relogio.py"))
 print(_rl_out.strip())
 check("relogio.py (mediana quente < 150 ms, Stop < 300 ms, Stop 50 mil linhas < 300 ms) sai verde", _rl_rc == 0, f"{_rl_dt*1000:.0f} ms")
+
+# TASK-886: TRAVA DE SINTAXE. task.py saiu com um "\n" virado quebra de linha real e o `task close` morreu em producao sem
+# nenhuma prova ver. Todo .py de v2/bin e v2/lib precisa compilar (compile), senao o check reprova.
+def _py_quebrados(pastas: list[str]) -> list[str]:
+    ruins = []
+    for _p in pastas:
+        for _r, _d, _fs in os.walk(_p):
+            for _f in _fs:
+                if _f.endswith(".py"):
+                    try:
+                        with open(os.path.join(_r, _f), "rb") as _src:
+                            compile(_src.read(), _f, "exec")
+                    except (SyntaxError, ValueError) as _e:
+                        ruins.append(f"{_f}: {_e}")
+    return ruins
+
+_pastas_py = [os.path.join(V2, "bin"), os.path.join(V2, "lib")]
+_ruins = _py_quebrados(_pastas_py)
+check("sintaxe: todo .py de v2/bin e v2/lib compila (compile)", not _ruins, "; ".join(_ruins))
+_sx = _sandbox_tempdir("sintaxe-")
+with open(os.path.join(_sx, "quebrado.py"), "w", encoding="utf-8") as _fh:
+    _fh.write('fh.write(x + "\n")\n'.replace("\n", "\n"))
+check("negativo sintaxe: string com quebra de linha real e PEGA pelo detector", len(_py_quebrados([_sx])) == 1)
 
 DT_TOTAL = time.perf_counter() - T0
 print(f"\n=== resultado ({DT_TOTAL:.2f} s) ===")

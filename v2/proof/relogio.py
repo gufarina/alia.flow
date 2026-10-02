@@ -37,7 +37,7 @@ def check(nome: str, cond: bool, detalhe: str = "") -> None:
 
 def roda(evento: dict, ledger: str, extra: dict | None = None) -> tuple[dict, float]:
     env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_PROJECT_DIR", "PYTHONNOUSERSITE") and not k.startswith("ALIA_")}  # hook real carrega o site do usuario
-    env.update({"ALIA_DELEGATION_WALL_OFF": "1", "ALIA_SPINE_OFF": "1", "ALIA_PULSO": "1", "ALIA_LEDGER_PATH": ledger})
+    env.update({"ALIA_SPINE_OFF": "1", "ALIA_PULSO": "1", "ALIA_LEDGER_PATH": ledger})
     env.update(extra or {})
     t0 = time.perf_counter()
     p = subprocess.run([sys.executable, DISPATCH], input=json.dumps(evento).encode("utf-8"),

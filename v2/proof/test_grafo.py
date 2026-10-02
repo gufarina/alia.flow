@@ -114,7 +114,7 @@ try:
     check("index primeiro: varrer sem ler index e acusado", t["varreu_sem_index"] == ["s1"] and t["varreu_com_index"] == ["s2"])
     check("privacidade: sessao que leu wiki/therapy e acusada", t["sessoes_que_tocaram_people_therapy"] == ["s3"])
 
-    # ---- 5. TASK-867: grafo_gate (itens 1-5) + muralha /dev/null (6) + dispatch grava a Task da sessao (7).
+    # ---- 5. TASK-867: grafo_gate (itens 1-5) + dispatch grava a Task da sessao (7).
     # Cada conserto e provado PELO NEGATIVO: um mutante que devolve o comportamento antigo tem de FALHAR no mesmo cenario.
     import importlib.util
     sys.path.insert(0, os.path.join(V2, "flow"))
@@ -147,7 +147,7 @@ try:
     antes_env = dict(os.environ)
     os.environ.update({"CLAUDE_PROJECT_DIR": ge, "ALIA_LEDGER_PATH": os.path.join(ge, "led.jsonl"),
                        "ALIA_CURRENT_TASK_PATH": os.path.join(ge, "cur.json")})
-    for k in ("ALIA_GRAPH_GATE_OFF", "ALIA_DELEGATION_WALL_OFF", "ALIA_SPINE_OFF"):
+    for k in ("ALIA_GRAPH_GATE_OFF", "ALIA_SPINE_OFF"):
         os.environ.pop(k, None)
     try:
         import ledger as _led
@@ -215,16 +215,8 @@ try:
             if qual:
                 check("negativo TASK-867 " + nome + ": o mutante (codigo antigo) FALHA", not antigos[qual][nome])
 
-        # 6. /dev/null nunca e alvo de escrita para a muralha
-        DISP = os.path.join(HOOKS, "dispatch.py")
+        # (o item 6, /dev/null na muralha, saiu com a muralha na 2.1.8)
         sys.path.insert(0, LIB)
-
-        def muralha(m) -> bool:
-            ev = {"session_id": "w6", "cwd": ge, "tool_name": "Bash", "tool_input": {"command": "ls clients 2>/dev/null"}}
-            return m._wall_check(ev) is None and m._wall_path_allowed("/dev/null") and m._wall_path_allowed("NUL")
-        check("TASK-867 6 muralha: 2>/dev/null nao e escrita", muralha(carrega(DISP)))
-        check("negativo TASK-867 6: mutante com a comparacao antiga FALHA", not muralha(carrega(
-            DISP, [('p.lstrip("/") in tuple(x.lstrip("/") for x in _WALL_NULL_SINKS):', 'p.lstrip("/") in _WALL_NULL_SINKS:')])))
 
         # 7. task dispatch --session X --id T grava a Task corrente da sessao X
         ALIA = os.path.join(BIN, "alia.py")

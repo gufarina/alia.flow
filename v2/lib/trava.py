@@ -1,7 +1,7 @@
 """trava.py - lock de arquivo e escrita atomica (TASK-862, 2.1.3). So biblioteca padrao.
 
 Dois hooks (ou duas sessoes) rodando ao mesmo tempo liam, alteravam e regravavam o mesmo JSON
-(contador de subagentes, direto.json, sidecar do grafo): o ultimo a gravar apagava o do outro, e uma
+(contador de subagentes, sidecar do grafo): o ultimo a gravar apagava o do outro, e uma
 leitura no meio de uma escrita truncada via JSON invalido e zerava o teto (falha aberta).
 
     with trava.trava(caminho):          # exclusao mutua entre processos (O_CREAT|O_EXCL + retry)

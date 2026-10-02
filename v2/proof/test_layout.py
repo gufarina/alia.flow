@@ -108,7 +108,7 @@ try:
     def hook(tool: str, ti: dict, extra_env: dict | None = None, cwd: str = ST) -> dict:
         env = {k: x for k, x in os.environ.items() if not k.startswith(("ALIA_", "CLAUDE_"))}
         env.update({"CLAUDE_PROJECT_DIR": ST, "ALIA_LEDGER_PATH": os.path.join(ST, "ledger.jsonl"),
-                    "ALIA_DELEGATION_WALL_OFF": "1", "ALIA_SPINE_OFF": "1"})
+                    "ALIA_SPINE_OFF": "1"})
         env.update(extra_env or {})
         ev = {"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": ti, "cwd": cwd, "session_id": "t"}
         p = subprocess.run([sys.executable, DISP], input=json.dumps(ev).encode("utf-8"), stdout=subprocess.PIPE,

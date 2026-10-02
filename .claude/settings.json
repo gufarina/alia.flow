@@ -59,18 +59,6 @@
           }
         ]
       }
-    ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/v2/hooks/dispatch.py\"",
-            "timeout": 10
-          }
-        ]
-      }
     ]
   },
   "env": {

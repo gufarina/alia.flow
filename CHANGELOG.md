@@ -18,6 +18,13 @@ testado na instancia viva (a instancia aplicada) antes de fechar. Um update = um
 reversivel. Fluxo: alterar engine -> bump VERSION -> entrada no CHANGELOG -> smoke-test-studio
 ALL GREEN -> tag.
 
+## [2.1.8] - 2026-10-02
+
+A 2.1.8 saiu em 02/10 e trouxe 2 mudanças:
+
+- Saiu por inteiro o bloqueio que impedia a Alia de executar o que o CEO pede: sem muralha de delegação, sem frase mágica de liberação, sem prazo de 60 minutos, sem o gancho de prompt (L80 revogada).
+- Saiu também a negação que barrava escrita em `clients/<id>/` sem sub-agente visto na sessão; as outras proteções (kernel, segredo, identidade, publicação, pastas) continuam.
+
 ## [2.1.7] - 2026-10-01
 
 A 2.1.7 saiu em 01/10 e trouxe 3 mudanças:
